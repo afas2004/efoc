@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "896506768903",
+    "project_id": "efoc-fcf44",
+    "storage_bucket": "efoc-fcf44.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:896506768903:android:0b221a79182ce7b84d44a2",
+        "android_client_info": {
+          "package_name": "com.example.efoc"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDCvdrop7PGFySMKuDp-7-6iNuVbPYxi3Q"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

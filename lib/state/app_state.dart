@@ -1,0 +1,215 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../models/log_group.dart';
+import '../models/member.dart';
+import '../services/clip_service.dart';
+import '../services/group_service.dart';
+
+class AppState extends ChangeNotifier {
+  AppState() {
+    _init();
+  }
+
+  SupabaseClient get _client => Supabase.instance.client;
+
+  // ---------- groups ----------
+  List<EfocLogGroup> groups = [];
+  bool isLoadingGroups = true;
+  String? groupsError;
+
+  static const _emptyGroup = EfocLogGroup(
+    id: '',
+    name: '',
+    avatarColor: Color(0xFFA855F7),
+    members: [],
+  );
+
+  // ---------- hours ----------
+    /// Every hour of the day. The pager filters this to what's worth showing.
+  final List<int> hours = List.generate(24, (i) => i);
+  int get currentHour => DateTime.now().hour;
+
+  int _currentGroupIndex = 0;
+  int _currentPageIndex = 0;
+
+  int get currentGroupIndex => _currentGroupIndex;
+  int get currentPageIndex => _currentPageIndex;
+
+  /// Hour value of the currently visible page.
+  int get currentHourIndex {
+    final visible = visibleHourIndices;
+    if (visible.isEmpty) return hours.first;
+    final idx = _currentPageIndex.clamp(0, visible.length - 1);
+    return visible[idx];
+  }
+
+  EfocLogGroup get currentGroup =>
+      groups.isEmpty ? _emptyGroup : groups[_currentGroupIndex];
+
+  bool get hasGroups => groups.isNotEmpty;
+
+  /// Indices into [hours] that should appear in the pager.
+  /// - Current wall-clock hour (if it's inside [hours])
+  /// - Past hours with at least one clip
+  /// - Future hours always hidden
+  List<int> get visibleHourIndices {
+    final nowHour = DateTime.now().hour;
+    final result = <int>[];
+    for (int i = 0; i < hours.length; i++) {
+      final h = hours[i];
+      if (h == nowHour) {
+        result.add(i);
+      } else if (h < nowHour) {
+        if (_hasAnyClipAt(h)) result.add(i);
+      }
+    }
+    return result;
+  }
+
+  bool _hasAnyClipAt(int hour) {
+    if (!hasGroups) return false;
+    for (final m in currentGroup.members) {
+      if (_clipsByUserAndHour.containsKey('${m.id}-$hour')) return true;
+    }
+    return false;
+  }
+
+  // ---------- clips ----------
+  final Map<String, Map<String, dynamic>> _clipsByUserAndHour = {};
+  bool isLoadingClips = false;
+  bool clipsLoadedOnce = false;
+
+  RealtimeChannel? _clipChannel;
+  Timer? _debounce;
+
+  // ---------- init ----------
+  Future<void> _init() async {
+    await _loadGroups();
+
+    if (hasGroups) {
+      await _loadClips();
+      _subscribeRealtime();
+    }
+  }
+
+  // ---------- setters ----------
+  void setGroup(int i) {
+    if (i < 0 || i >= groups.length) return;
+    _currentGroupIndex = i;
+    _currentPageIndex = 0;
+    notifyListeners();
+    _subscribeRealtime();
+    _loadClips();
+  }
+
+  void setPage(int pageIdx) {
+    final visible = visibleHourIndices;
+    if (pageIdx < 0 || pageIdx >= visible.length) return;
+    if (_currentPageIndex == pageIdx) return;
+    _currentPageIndex = pageIdx;
+    notifyListeners();
+  }
+
+  // ---------- data loading ----------
+  Future<void> _loadGroups() async {
+    isLoadingGroups = true;
+    groupsError = null;
+    notifyListeners();
+
+    try {
+      groups = await GroupService.instance.fetchMyGroups();
+      if (_currentGroupIndex >= groups.length) _currentGroupIndex = 0;
+    } catch (e) {
+      groupsError = 'Failed to load groups: $e';
+      debugPrint(groupsError);
+    } finally {
+      isLoadingGroups = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> _loadClips() async {
+    if (!hasGroups) {
+      _clipsByUserAndHour.clear();
+      notifyListeners();
+      return;
+    }
+
+    isLoadingClips = true;
+    notifyListeners();
+
+    try {
+      final map = await ClipService.instance.fetchClipsForDay(
+        groupId: currentGroup.id,
+        date: DateTime.now(),
+      );
+      _clipsByUserAndHour
+        ..clear()
+        ..addAll(map);
+    } catch (e) {
+      debugPrint('Load clips error: $e');
+    } finally {
+      isLoadingClips = false;
+      clipsLoadedOnce = true;
+      notifyListeners();
+    }
+  }
+
+  void _subscribeRealtime() {
+    _clipChannel?.unsubscribe();
+    _clipChannel = null;
+
+    if (!hasGroups) return;
+
+    _clipChannel = ClipService.instance.subscribeToGroupClips(
+      groupId: currentGroup.id,
+      onChange: () {
+        _debounce?.cancel();
+        _debounce = Timer(const Duration(milliseconds: 200), _loadClips);
+      },
+    );
+  }
+
+  Future<void> refresh() async {
+    await _loadGroups();
+    if (hasGroups) await _loadClips();
+  }
+
+    Future<void> createGroupAndReload(String name) async {
+    await GroupService.instance.createGroup(name);
+    await _loadGroups();
+    await _loadClips();
+    _subscribeRealtime();
+  }
+
+    Future<void> joinGroupAndReload(String inviteCode) async {
+    await GroupService.instance.joinGroup(inviteCode);
+    await _loadGroups();
+    await _loadClips();
+    _subscribeRealtime();
+  }
+  
+  // ---------- cell queries ----------
+  bool isCellFilled(int memberIdx, int hourIdx, EfocMember m) {
+    final hour = hours[hourIdx];
+    return _clipsByUserAndHour.containsKey('${m.id}-$hour');
+  }
+
+  Map<String, dynamic>? clipFor(int memberIdx, int hourIdx) {
+    if (!hasGroups) return null;
+    final member = currentGroup.members[memberIdx];
+    final hour = hours[hourIdx];
+    return _clipsByUserAndHour['${member.id}-$hour'];
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _clipChannel?.unsubscribe();
+    super.dispose();
+  }
+}
