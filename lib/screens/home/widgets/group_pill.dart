@@ -11,18 +11,14 @@ class GroupPill extends StatelessWidget {
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
     final group = state.currentGroup;
-
-    // TODO: ring should appear when yesterday's stitched vlog is unviewed.
-    // Requires a `vlog_views` table (or viewed_at column on vlogs).
-    // Disabled until that data exists.
-    const showRing = false;
+    final memberCount = group.members.length;
 
     return Container(
-      height: 42,
+      height: 48,
       padding: const EdgeInsets.fromLTRB(5, 0, 12, 0),
       decoration: BoxDecoration(
         color: EfocColors.surface,
-        borderRadius: BorderRadius.circular(21),
+        borderRadius: BorderRadius.circular(24),
       ),
       child: Row(
         children: [
@@ -31,18 +27,36 @@ class GroupPill extends StatelessWidget {
             initial: group.name.isEmpty
                 ? '?'
                 : group.name[0].toUpperCase(),
-            showRing: showRing,
+            showRing: false,
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 10),
           Expanded(
-            child: Text(
-              group.name,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-              ),
-              overflow: TextOverflow.ellipsis,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  group.name,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    height: 1.1,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '$memberCount member${memberCount == 1 ? "" : "s"} · hold to open settings',
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white38,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w500,
+                    height: 1.1,
+                  ),
+                ),
+              ],
             ),
           ),
           const Icon(
@@ -70,8 +84,8 @@ class _RingAvatar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 32,
-      height: 32,
+      width: 34,
+      height: 34,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         border: showRing
@@ -89,7 +103,7 @@ class _RingAvatar extends StatelessWidget {
           initial,
           style: const TextStyle(
             color: Colors.white,
-            fontSize: 12,
+            fontSize: 13,
             fontWeight: FontWeight.w800,
           ),
         ),

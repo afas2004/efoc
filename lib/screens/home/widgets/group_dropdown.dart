@@ -69,47 +69,7 @@ class GroupDropdown extends StatelessWidget {
                     height: 1,
                     color: Colors.white.withValues(alpha: 0.06),
                   ),
-                  if (!state.currentGroup.isPersonal)
-                    InkWell(
-                      onTap: () {
-                        onDismiss();
-                        onOpenSettings();
-                      },
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 12,
-                        ),
-                        child: Row(
-                          children: [
-                            Container(
-                              width: 28,
-                              height: 28,
-                              decoration: BoxDecoration(
-                                color: EfocColors.accent
-                                    .withValues(alpha: 0.15),
-                                shape: BoxShape.circle,
-                              ),
-                              child: const Icon(
-                                Icons.settings_outlined,
-                                size: 15,
-                                color: EfocColors.accentBright,
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            const Text(
-                              'Log settings',
-                              style: TextStyle(
-                                color: Colors.white70,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  InkWell(
+                                    InkWell(
                     onTap: () {
                       onDismiss();
                       onCreateJoin();

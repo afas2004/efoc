@@ -9,6 +9,7 @@ class HomeTopBar extends StatelessWidget {
   final LayerLink groupLink;
   final LayerLink downloadLink;
   final VoidCallback onToggleGroup;
+  final VoidCallback onOpenGroupSettings;
   final VoidCallback onToggleDownload;
   final VoidCallback onOpenProfile;
   final VoidCallback onOpenChat;
@@ -18,6 +19,7 @@ class HomeTopBar extends StatelessWidget {
     required this.groupLink,
     required this.downloadLink,
     required this.onToggleGroup,
+    required this.onOpenGroupSettings,
     required this.onToggleDownload,
     required this.onOpenProfile,
     required this.onOpenChat,
@@ -31,7 +33,6 @@ class HomeTopBar extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(14, 6, 14, 10),
       child: Row(
         children: [
-          // Profile avatar
           GestureDetector(
             onTap: onOpenProfile,
             child: Container(
@@ -56,19 +57,20 @@ class HomeTopBar extends StatelessWidget {
           ),
           const SizedBox(width: 8),
 
-          // Group pill (with dropdown anchor)
           Expanded(
             child: CompositedTransformTarget(
               link: groupLink,
               child: GestureDetector(
                 onTap: onToggleGroup,
+                onLongPress: state.currentGroup.isPersonal
+                    ? null
+                    : onOpenGroupSettings,
                 child: const GroupPill(),
               ),
             ),
           ),
           const SizedBox(width: 8),
 
-          // Download
           CompositedTransformTarget(
             link: downloadLink,
             child: _IconBtn(
@@ -78,7 +80,6 @@ class HomeTopBar extends StatelessWidget {
           ),
           const SizedBox(width: 8),
 
-          // Chat
           _IconBtn(
             icon: Icons.chat_bubble_outline_rounded,
             onTap: onOpenChat,

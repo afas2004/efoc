@@ -255,10 +255,11 @@ class _HomeScreenState extends State<HomeScreen> {
         body: SafeArea(
           child: Column(
             children: [
-              HomeTopBar(
+                HomeTopBar(
                 groupLink: _groupLink,
                 downloadLink: _dlLink,
                 onToggleGroup: _toggleGroupMenu,
+                onOpenGroupSettings: _openGroupSettings,
                 onToggleDownload: _toggleDownloadMenu,
                 onOpenProfile: _openProfile,
                 onOpenChat: () {

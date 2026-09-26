@@ -1,5 +1,14 @@
 <!DOCTYPE html>
 <html>
+  <script>
+  // Dev-phase kill switch: force-unregister any existing service worker.
+  // Remove this once you're ready to ship real PWA offline support.
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.getRegistrations().then(function(regs) {
+      regs.forEach(function(r) { r.unregister(); });
+    });
+  }
+</script>
 <head>
   <base href="$FLUTTER_BASE_HREF">
 

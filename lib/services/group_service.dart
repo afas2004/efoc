@@ -63,9 +63,10 @@ class GroupService {
 
     final groups = groupRows.map((row) {
       final id = row['id'] as String;
-      return EfocLogGroup(
+        return EfocLogGroup(
         id: id,
         name: row['name'] as String,
+        ownerId: (row['owner_id'] as String?) ?? '',
         avatarColor: _colorForId(id),
         members: membersByGroup[id] ?? const [],
         isPersonal: (row['is_personal'] as bool?) ?? false,
@@ -129,6 +130,31 @@ class GroupService {
         .eq('id', groupId)
         .single();
     return row['invite_code'] as String;
+  }
+
+    Future<void> renameGroup(String groupId, String newName) async {
+    final trimmed = newName.trim();
+    if (trimmed.isEmpty) throw Exception('Name required');
+
+    await _client
+        .from('groups')
+        .update({'name': trimmed})
+        .eq('id', groupId);
+  }
+
+  Future<void> leaveGroup(String groupId) async {
+    final userId = _client.auth.currentUser?.id;
+    if (userId == null) throw Exception('Not signed in');
+
+    await _client
+        .from('group_members')
+        .delete()
+        .eq('group_id', groupId)
+        .eq('user_id', userId);
+  }
+
+  Future<void> deleteGroup(String groupId) async {
+    await _client.rpc('delete_group', params: {'gid': groupId});
   }
 
   String _generateInviteCode() {

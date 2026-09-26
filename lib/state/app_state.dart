@@ -24,12 +24,12 @@ class AppState extends ChangeNotifier {
   static const _emptyGroup = EfocLogGroup(
     id: '',
     name: '',
+    ownerId: '',
     avatarColor: Color(0xFFA855F7),
     members: [],
   );
 
   // ---------- hours ----------
-    /// Every hour of the day. The pager filters this to what's worth showing.
   final List<int> hours = List.generate(24, (i) => i);
   int get currentHour => DateTime.now().hour;
 
@@ -39,7 +39,6 @@ class AppState extends ChangeNotifier {
   int get currentGroupIndex => _currentGroupIndex;
   int get currentPageIndex => _currentPageIndex;
 
-  /// Hour value of the currently visible page.
   int get currentHourIndex {
     final visible = visibleHourIndices;
     if (visible.isEmpty) return hours.first;
@@ -52,10 +51,13 @@ class AppState extends ChangeNotifier {
 
   bool get hasGroups => groups.isNotEmpty;
 
-  /// Indices into [hours] that should appear in the pager.
-  /// - Current wall-clock hour (if it's inside [hours])
-  /// - Past hours with at least one clip
-  /// - Future hours always hidden
+  /// True if the logged-in user owns the currently selected group.
+  bool get isCurrentGroupOwner {
+    final uid = _client.auth.currentUser?.id;
+    if (uid == null) return false;
+    return currentGroup.ownerId == uid;
+  }
+
   List<int> get visibleHourIndices {
     final nowHour = DateTime.now().hour;
     final result = <int>[];
@@ -76,6 +78,16 @@ class AppState extends ChangeNotifier {
       if (_clipsByUserAndHour.containsKey('${m.id}-$hour')) return true;
     }
     return false;
+  }
+
+  int get defaultPageIndex {
+    final visible = visibleHourIndices;
+    if (visible.isEmpty) return 0;
+    final nowHour = DateTime.now().hour;
+    for (int p = 0; p < visible.length; p++) {
+      if (hours[visible[p]] == nowHour) return p;
+    }
+    return visible.length - 1;
   }
 
   // ---------- clips ----------
@@ -179,20 +191,46 @@ class AppState extends ChangeNotifier {
     if (hasGroups) await _loadClips();
   }
 
-    Future<void> createGroupAndReload(String name) async {
+  // ---------- group mutations ----------
+
+  Future<void> createGroupAndReload(String name) async {
     await GroupService.instance.createGroup(name);
     await _loadGroups();
     await _loadClips();
     _subscribeRealtime();
   }
 
-    Future<void> joinGroupAndReload(String inviteCode) async {
+  Future<void> joinGroupAndReload(String inviteCode) async {
     await GroupService.instance.joinGroup(inviteCode);
     await _loadGroups();
     await _loadClips();
     _subscribeRealtime();
   }
-  
+
+  Future<void> renameCurrentGroup(String newName) async {
+    await GroupService.instance.renameGroup(currentGroup.id, newName);
+    await _loadGroups();
+    notifyListeners();
+  }
+
+  Future<void> leaveCurrentGroup() async {
+    await GroupService.instance.leaveGroup(currentGroup.id);
+    _currentGroupIndex = 0;
+    _currentPageIndex = 0;
+    await _loadGroups();
+    await _loadClips();
+    _subscribeRealtime();
+  }
+
+  Future<void> deleteCurrentGroup() async {
+    await GroupService.instance.deleteGroup(currentGroup.id);
+    _currentGroupIndex = 0;
+    _currentPageIndex = 0;
+    await _loadGroups();
+    await _loadClips();
+    _subscribeRealtime();
+  }
+
   // ---------- cell queries ----------
   bool isCellFilled(int memberIdx, int hourIdx, EfocMember m) {
     final hour = hours[hourIdx];

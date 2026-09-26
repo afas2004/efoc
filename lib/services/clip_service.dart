@@ -30,6 +30,8 @@ class ClipService {
 
   /// Public URL for a clip's thumbnail. Works because the clips bucket
   /// allows public SELECT on `.jpg` files.
+    /// Public URL for a clip's thumbnail. Thumbnails live in their own
+  /// public bucket, at the same path as the video but with a .jpg extension.
   String? publicThumbnailUrl(String storagePath) {
     String thumbPath;
     if (storagePath.endsWith('.mp4')) {
@@ -41,7 +43,7 @@ class ClipService {
     } else {
       return null;
     }
-    return _client.storage.from('clips').getPublicUrl(thumbPath);
+    return _client.storage.from('thumbnails').getPublicUrl(thumbPath);
   }
 
   // ---------- upload ----------
@@ -117,7 +119,7 @@ class ClipService {
         return;
       }
 
-      await _client.storage.from('clips').uploadBinary(
+        await _client.storage.from('thumbnails').uploadBinary(
             thumbPath,
             bytes,
             fileOptions: const FileOptions(
