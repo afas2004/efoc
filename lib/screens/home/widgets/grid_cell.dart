@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../../models/member.dart';
+import '../../../services/clip_service.dart';
 import '../../../state/app_state.dart';
 import '../../../theme/colors.dart';
 
@@ -139,7 +140,6 @@ class _FilledCell extends StatelessWidget {
     [Color(0xFF6366F1), Color(0xFF3730A3)],
   ];
 
-  /// Parses a `#RRGGBB` hex string into a Color. Falls back to white.
   Color _parseColor(String? hex) {
     if (hex == null || hex.isEmpty) return Colors.white;
     final cleaned = hex.startsWith('#') ? hex.substring(1) : hex;
@@ -156,6 +156,11 @@ class _FilledCell extends StatelessWidget {
     final overlayColor = _parseColor(clip?['text_color'] as String?);
     final hasOverlay = overlayText.isNotEmpty;
 
+    final storagePath = clip?['storage_path'] as String?;
+    final thumbUrl = storagePath == null
+        ? null
+        : ClipService.instance.publicThumbnailUrl(storagePath);
+
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -167,7 +172,39 @@ class _FilledCell extends StatelessWidget {
           ),
         ),
         child: Stack(
+          fit: StackFit.expand,
           children: [
+            // 1. Thumbnail (falls back to gradient if missing)
+            if (thumbUrl != null)
+              Image.network(
+                thumbUrl,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                loadingBuilder: (_, child, progress) {
+                  return progress == null
+                      ? child
+                      : const SizedBox.shrink();
+                },
+              ),
+
+            // 2. Dark scrim for readability
+            Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.black.withValues(alpha: 0.25),
+                    Colors.transparent,
+                    Colors.transparent,
+                    Colors.black.withValues(alpha: 0.35),
+                  ],
+                  stops: const [0, 0.2, 0.7, 1],
+                ),
+              ),
+            ),
+
+            // 3. Live pip
             Positioned(
               top: 12,
               right: 12,
@@ -180,12 +217,16 @@ class _FilledCell extends StatelessWidget {
                 ),
               ),
             ),
+
+            // 4. User chip
             Positioned(
               top: 10,
               left: 10,
               right: 40,
               child: _UserChip(member: member, onDark: true),
             ),
+
+            // 5. Text overlay
             if (hasOverlay)
               Positioned(
                 bottom: 14,

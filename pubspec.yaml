@@ -44,6 +44,8 @@ dependencies:
   storage_client: 2.8.0
   ffmpeg_wasm: ^1.0.3
   video_player: ^2.9.2
+  video_thumbnail: ^0.5.3
+  web: ^1.1.0
 
 
 dev_dependencies:

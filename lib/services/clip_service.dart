@@ -2,8 +2,10 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:http/http.dart' as http;
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+import 'thumbnail_extractor.dart';
 
 class ClipService {
   ClipService._();
@@ -14,8 +16,6 @@ class ClipService {
   // ---------- signed URL cache ----------
   final Map<String, String> _signedUrlCache = {};
 
-  /// Returns a signed URL for reading a clip from the private storage bucket.
-  /// Cached per-path so repeated opens don't re-sign.
   Future<String> getSignedUrl(String storagePath) async {
     final cached = _signedUrlCache[storagePath];
     if (cached != null) return cached;
@@ -28,12 +28,24 @@ class ClipService {
     return url;
   }
 
+  /// Public URL for a clip's thumbnail. Works because the clips bucket
+  /// allows public SELECT on `.jpg` files.
+  String? publicThumbnailUrl(String storagePath) {
+    String thumbPath;
+    if (storagePath.endsWith('.mp4')) {
+      thumbPath = storagePath.replaceAll('.mp4', '.jpg');
+    } else if (storagePath.endsWith('.webm')) {
+      thumbPath = storagePath.replaceAll('.webm', '.jpg');
+    } else if (storagePath.endsWith('.mov')) {
+      thumbPath = storagePath.replaceAll('.mov', '.jpg');
+    } else {
+      return null;
+    }
+    return _client.storage.from('clips').getPublicUrl(thumbPath);
+  }
+
   // ---------- upload ----------
 
-  /// Uploads a recorded clip file to Supabase Storage, then
-  /// upserts a row in the clips table.
-  ///
-  /// Path: clips/{group_id}/{user_id}/{hour}-{YYYY-MM-DD}.{ext}
   Future<void> uploadClip({
     required String filePath,
     required String groupId,
@@ -46,7 +58,7 @@ class ClipService {
     final userId = _client.auth.currentUser?.id;
     if (userId == null) throw Exception('Not signed in');
 
-    // ---------- 1. prepare file bytes ----------
+    // 1. Prepare bytes + path
     final Uint8List bytes = await _readFileBytes(filePath);
     final ext = _extFromPath(filePath);
 
@@ -55,7 +67,7 @@ class ClipService {
     final hourStr = hour.toString().padLeft(2, '0');
     final storagePath = '$groupId/$userId/$hourStr-$dateStr.$ext';
 
-    // ---------- 2. upload to storage ----------
+    // 2. Upload video
     await _client.storage.from('clips').uploadBinary(
           storagePath,
           bytes,
@@ -65,7 +77,13 @@ class ClipService {
           ),
         );
 
-    // ---------- 3. upsert clip row (retakes overwrite) ----------
+    // 3. Extract + upload thumbnail (runs on both web and native)
+    await _extractAndUploadThumbnail(
+      videoPath: filePath,
+      storagePath: storagePath,
+    );
+
+    // 4. Upsert clip row
     debugPrint(
       'SEND hour=$hour date=$dateStr user=$userId group=$groupId path=$storagePath',
     );
@@ -76,7 +94,7 @@ class ClipService {
         'storage_path': storagePath,
         'hour_of_day': hour,
         'recorded_on': dateStr,
-        'aspect_ratio': ratio.replaceAll('x', ':'), // '9x16' -> '9:16'
+        'aspect_ratio': ratio.replaceAll('x', ':'),
         'text_overlay': text.isEmpty ? null : text,
         'text_font': fontKey,
         'text_color': textColorHex,
@@ -85,10 +103,38 @@ class ClipService {
     );
   }
 
+  Future<void> _extractAndUploadThumbnail({
+    required String videoPath,
+    required String storagePath,
+  }) async {
+    final thumbPath =
+        storagePath.replaceAll(RegExp(r'\.(mp4|webm|mov)$'), '.jpg');
+
+    try {
+      final bytes = await extractThumbnailJpeg(videoPath);
+      if (bytes == null) {
+        debugPrint('Thumbnail extraction returned null for $videoPath');
+        return;
+      }
+
+      await _client.storage.from('clips').uploadBinary(
+            thumbPath,
+            bytes,
+            fileOptions: const FileOptions(
+              contentType: 'image/jpeg',
+              upsert: true,
+            ),
+          );
+
+      debugPrint('Thumbnail uploaded: $thumbPath');
+    } catch (e) {
+      // Non-fatal — the grid falls back to a gradient.
+      debugPrint('Thumbnail failed: $e');
+    }
+  }
+
   // ---------- fetch ----------
 
-  /// Fetches all clips for a group on a given date.
-  /// Returns a map keyed by "userId-hour".
   Future<Map<String, Map<String, dynamic>>> fetchClipsForDay({
     required String groupId,
     required DateTime date,
@@ -110,8 +156,6 @@ class ClipService {
     return map;
   }
 
-  /// Subscribes to live clip changes for a group.
-  /// Caller owns the returned channel and must unsubscribe on dispose.
   RealtimeChannel subscribeToGroupClips({
     required String groupId,
     required void Function() onChange,
