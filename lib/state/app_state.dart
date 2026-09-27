@@ -11,10 +11,56 @@ import '../services/group_service.dart';
 
 class AppState extends ChangeNotifier {
   AppState() {
+    _listenAuth();
     _init();
   }
 
   SupabaseClient get _client => Supabase.instance.client;
+
+  // ---------- auth ----------
+  StreamSubscription<AuthState>? _authSub;
+
+  void _listenAuth() {
+    _authSub = _client.auth.onAuthStateChange.listen((event) {
+      debugPrint('AUTH EVENT: ${event.event}');
+      switch (event.event) {
+        case AuthChangeEvent.signedOut:
+          _reset();
+          break;
+        case AuthChangeEvent.signedIn:
+        case AuthChangeEvent.initialSession:
+          _reset();
+          _init();
+          break;
+        default:
+          break;
+      }
+    });
+  }
+
+  /// Wipes all per-user state. Called on every auth transition so
+  /// accounts can't inherit each other's data within a single session.
+  void _reset() {
+    _clipChannel?.unsubscribe();
+    _clipChannel = null;
+    _debounce?.cancel();
+    _debounce = null;
+
+    groups = [];
+    isLoadingGroups = true;
+    groupsError = null;
+
+    _clipsByUserAndHour.clear();
+    isLoadingClips = false;
+    clipsLoadedOnce = false;
+
+    _currentGroupIndex = 0;
+    _currentPageIndex = 0;
+
+    ClipService.instance.clearCache();
+
+    notifyListeners();
+  }
 
   // ---------- groups ----------
   List<EfocLogGroup> groups = [];
@@ -51,7 +97,6 @@ class AppState extends ChangeNotifier {
 
   bool get hasGroups => groups.isNotEmpty;
 
-  /// True if the logged-in user owns the currently selected group.
   bool get isCurrentGroupOwner {
     final uid = _client.auth.currentUser?.id;
     if (uid == null) return false;
@@ -246,6 +291,7 @@ class AppState extends ChangeNotifier {
 
   @override
   void dispose() {
+    _authSub?.cancel();
     _debounce?.cancel();
     _clipChannel?.unsubscribe();
     super.dispose();

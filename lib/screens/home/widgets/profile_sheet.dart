@@ -1,5 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
+import 'dart:typed_data';
+
+import 'package:image_picker/image_picker.dart';
+import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../../../state/app_state.dart';
+import 'profile/avatar_crop_sheet.dart';
+import '../../../state/app_state.dart';
 import '../../../services/auth_service.dart';
 import '../../../services/profile_service.dart';
 import '../../../theme/colors.dart';
@@ -27,7 +37,7 @@ class _ProfileSheetState extends State<ProfileSheet> {
   String? _avatarUrl;
 
   bool _loadingProfile = true;
-
+  
   @override
   void initState() {
     super.initState();
@@ -77,40 +87,83 @@ class _ProfileSheetState extends State<ProfileSheet> {
     );
   }
 
-  Future<void> _openAccountSheet() async {
-    final result = await showModalBottomSheet<Map<String, String>>(
+    Future<void> _openAccountSheet() async {
+    await showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (_) => AccountSheet(
-        initialName: _displayName,
-        initialHandle: _handle,
-      ),
+      builder: (_) => const AccountSheet(),
     );
-    if (result != null && mounted) {
-      setState(() {
-        _displayName = result['displayName'] ?? _displayName;
-        _handle = result['handle'] ?? _handle;
-      });
-    }
+    if (!mounted) return;
+
+    // Sheet no longer returns values — it saves directly.
+    // Reload the identity row and refresh group members so the grid
+    // picks up the new display name.
+    await _loadProfile();
+    if (!mounted) return;
+    context.read<AppState>().refresh();
   }
 
-  Future<void> _openAvatarPicker() async {
-    final result = await showModalBottomSheet<String>(
+    Future<void> _openAvatarPicker() async {
+    // 1. Pick a source and let image_picker return an XFile.
+    final XFile? file = await showModalBottomSheet<XFile>(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
       builder: (_) => const AvatarSourceSheet(),
     );
-    if (result != null && mounted) {
-      // For now, result is a placeholder ("library" / "camera")
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Avatar source: $result — coming soon'),
-          duration: const Duration(milliseconds: 1200),
-        ),
-      );
+    if (file == null || !mounted) return;
+
+    // 2. Load the bytes.
+    Uint8List bytes;
+    try {
+      bytes = await file.readAsBytes();
+    } catch (e) {
+      if (!mounted) return;
+      _showSnack('Could not read image');
+      return;
     }
+    if (!mounted) return;
+
+    // 3. Crop.
+    final Uint8List? cropped = await showModalBottomSheet<Uint8List>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) => AvatarCropSheet(imageBytes: bytes),
+    );
+    if (cropped == null || !mounted) return;
+
+    // 4. Upload + update profile.
+    final userId = Supabase.instance.client.auth.currentUser?.id;
+    if (userId == null) return;
+
+    try {
+      final url = await ProfileService.instance.uploadAvatar(
+        targetUserId: userId,
+        bytes: cropped,
+      );
+      if (!mounted) return;
+      if (url == null) {
+        _showSnack('Could not save avatar');
+        return;
+      }
+      setState(() => _avatarUrl = url);
+      if (!mounted) return;
+      context.read<AppState>().refresh();
+    } catch (e) {
+      if (!mounted) return;
+      _showSnack('Upload failed: $e');
+    }
+  }
+
+  void _showSnack(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        duration: const Duration(milliseconds: 1600),
+      ),
+    );
   }
 
   Future<void> _openQrSheet() async {
@@ -286,7 +339,7 @@ class _IdentityRow extends StatelessWidget {
   final String? avatarUrl;
   final VoidCallback onAvatarTap;
   final VoidCallback onQrTap;
-
+  
   const _IdentityRow({
     required this.loading,
     required this.displayName,
@@ -300,6 +353,11 @@ class _IdentityRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final initial =
         displayName.isEmpty ? '?' : displayName[0].toUpperCase();
+    final state = context.watch<AppState>();
+    final me = state.hasGroups
+        ? state.currentGroup.members.where((m) => m.isMe).firstOrNull
+        : null;
+    final myColor = me?.color ?? EfocColors.accent;
 
     return Row(
       children: [
@@ -313,14 +371,7 @@ class _IdentityRow extends StatelessWidget {
                 height: 64,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  gradient: avatarUrl == null
-                      ? const LinearGradient(
-                          colors: [
-                            EfocColors.accent,
-                            EfocColors.accentDark,
-                          ],
-                        )
-                      : null,
+                  color: myColor,
                   image: avatarUrl != null
                       ? DecorationImage(
                           image: NetworkImage(avatarUrl!),

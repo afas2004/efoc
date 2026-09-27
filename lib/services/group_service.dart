@@ -57,6 +57,7 @@ class GroupService {
                   : (profile['username'] as String? ?? 'User'),
               color: _colorForId(row['user_id'] as String),
               isMe: row['user_id'] == userId,
+              avatarUrl: profile['avatar_url'] as String?,
             ),
           );
     }

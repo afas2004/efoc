@@ -35,25 +35,7 @@ class HomeTopBar extends StatelessWidget {
         children: [
           GestureDetector(
             onTap: onOpenProfile,
-            child: Container(
-              width: 38,
-              height: 38,
-              decoration: const BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: LinearGradient(
-                  colors: [EfocColors.accent, EfocColors.accentDark],
-                ),
-              ),
-              alignment: Alignment.center,
-              child: const Text(
-                'A',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ),
+            child: _MyAvatar(state: state),
           ),
           const SizedBox(width: 8),
 
@@ -85,6 +67,61 @@ class HomeTopBar extends StatelessWidget {
             onTap: onOpenChat,
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _MyAvatar extends StatelessWidget {
+  final AppState state;
+
+  const _MyAvatar({required this.state});
+
+  @override
+  Widget build(BuildContext context) {
+    String initial = '?';
+    String? avatarUrl;
+    Color backgroundColor = EfocColors.accent;
+
+    if (state.hasGroups) {
+      final me = state.currentGroup.members.where((m) => m.isMe).firstOrNull;
+      if (me != null) {
+        if (me.name.isNotEmpty) initial = me.name[0].toUpperCase();
+        avatarUrl = me.avatarUrl;
+        backgroundColor = me.color;
+      }
+    }
+
+    final hasAvatar = avatarUrl != null && avatarUrl!.isNotEmpty;
+
+    return Container(
+      width: 38,
+      height: 38,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: backgroundColor,
+      ),
+      clipBehavior: Clip.antiAlias,
+      alignment: Alignment.center,
+      child: hasAvatar
+          ? Image.network(
+              avatarUrl!,
+              fit: BoxFit.cover,
+              width: 38,
+              height: 38,
+              errorBuilder: (_, __, ___) => _initialText(initial),
+            )
+          : _initialText(initial),
+    );
+  }
+
+  Widget _initialText(String initial) {
+    return Text(
+      initial,
+      style: const TextStyle(
+        color: Colors.white,
+        fontSize: 14,
+        fontWeight: FontWeight.w800,
       ),
     );
   }

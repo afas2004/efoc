@@ -174,20 +174,16 @@ class _FilledCell extends StatelessWidget {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            // 1. Thumbnail (falls back to gradient if missing)
             if (thumbUrl != null)
               Image.network(
                 thumbUrl,
                 fit: BoxFit.cover,
                 errorBuilder: (_, __, ___) => const SizedBox.shrink(),
                 loadingBuilder: (_, child, progress) {
-                  return progress == null
-                      ? child
-                      : const SizedBox.shrink();
+                  return progress == null ? child : const SizedBox.shrink();
                 },
               ),
 
-            // 2. Dark scrim for readability
             Container(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
@@ -204,7 +200,6 @@ class _FilledCell extends StatelessWidget {
               ),
             ),
 
-            // 3. Live pip
             Positioned(
               top: 12,
               right: 12,
@@ -218,7 +213,6 @@ class _FilledCell extends StatelessWidget {
               ),
             ),
 
-            // 4. User chip
             Positioned(
               top: 10,
               left: 10,
@@ -226,7 +220,6 @@ class _FilledCell extends StatelessWidget {
               child: _UserChip(member: member, onDark: true),
             ),
 
-            // 5. Text overlay
             if (hasOverlay)
               Positioned(
                 bottom: 14,
@@ -272,6 +265,8 @@ class _UserChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final initial = member.isMe ? 'Y' : member.name[0].toUpperCase();
     final label = member.isMe ? 'You' : member.name;
+    final avatarUrl = member.avatarUrl;
+    final hasAvatar = avatarUrl != null && avatarUrl.isNotEmpty;
 
     return Row(
       children: [
@@ -288,15 +283,31 @@ class _UserChip extends StatelessWidget {
               width: 1.5,
             ),
           ),
+          clipBehavior: Clip.antiAlias,
           alignment: Alignment.center,
-          child: Text(
-            initial,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
+          child: hasAvatar
+              ? Image.network(
+                  avatarUrl,
+                  fit: BoxFit.cover,
+                  width: 26,
+                  height: 26,
+                  errorBuilder: (_, __, ___) => Text(
+                    initial,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                )
+              : Text(
+                  initial,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
         ),
         const SizedBox(width: 7),
         Flexible(

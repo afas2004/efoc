@@ -16,6 +16,12 @@ class ClipService {
   // ---------- signed URL cache ----------
   final Map<String, String> _signedUrlCache = {};
 
+  /// Drops cached signed URLs. Call on logout so a new user
+  /// doesn't inherit another session's URLs.
+  void clearCache() {
+    _signedUrlCache.clear();
+  }
+
   Future<String> getSignedUrl(String storagePath) async {
     final cached = _signedUrlCache[storagePath];
     if (cached != null) return cached;

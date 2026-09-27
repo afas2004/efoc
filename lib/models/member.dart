@@ -5,11 +5,13 @@ class EfocMember {
   final String name;
   final Color color;
   final bool isMe;
+  final String? avatarUrl;
 
   const EfocMember({
     required this.id,
     required this.name,
     required this.color,
     this.isMe = false,
+    this.avatarUrl,
   });
 }
