@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import 'profile/qr_sheet.dart';
 import '../../../services/group_service.dart';
 import '../../../state/app_state.dart';
 import '../../../theme/colors.dart';
@@ -53,6 +54,15 @@ class _GroupSettingsSheetState extends State<GroupSettingsSheet> {
     Future.delayed(const Duration(seconds: 2), () {
       if (mounted) setState(() => _copied = false);
     });
+  }
+
+  Future<void> _openQr() async {
+    await showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) => const QrSheet(),
+    );
   }
 
   Future<void> _rename() async {
@@ -305,27 +315,27 @@ class _GroupSettingsSheetState extends State<GroupSettingsSheet> {
                 ),
               )
             else
-              GestureDetector(
-                onTap: _copy,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 16,
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 10,
+                ),
+                decoration: BoxDecoration(
+                  color: EfocColors.surface,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: _copied
+                        ? EfocColors.success
+                        : Colors.white.withValues(alpha: 0.08),
+                    width: 1,
                   ),
-                  decoration: BoxDecoration(
-                    color: EfocColors.surface,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                      color: _copied
-                          ? EfocColors.success
-                          : Colors.white.withValues(alpha: 0.08),
-                      width: 1,
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      Text(
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
                         _code ?? '------',
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 24,
@@ -334,16 +344,35 @@ class _GroupSettingsSheetState extends State<GroupSettingsSheet> {
                           fontFamily: 'monospace',
                         ),
                       ),
-                      const Spacer(),
-                      Icon(
-                        _copied ? Icons.check : Icons.copy_rounded,
-                        color: _copied
-                            ? EfocColors.success
-                            : Colors.white54,
-                        size: 20,
+                    ),
+                    const SizedBox(width: 8),
+                    GestureDetector(
+                      onTap: _copy,
+                      behavior: HitTestBehavior.opaque,
+                      child: Padding(
+                        padding: const EdgeInsets.all(6),
+                        child: Icon(
+                          _copied ? Icons.check : Icons.copy_rounded,
+                          color: _copied
+                              ? EfocColors.success
+                              : Colors.white54,
+                          size: 20,
+                        ),
                       ),
-                    ],
-                  ),
+                    ),
+                    GestureDetector(
+                      onTap: _openQr,
+                      behavior: HitTestBehavior.opaque,
+                      child: const Padding(
+                        padding: EdgeInsets.all(6),
+                        child: Icon(
+                          Icons.qr_code_rounded,
+                          color: Colors.white54,
+                          size: 20,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             const SizedBox(height: 12),

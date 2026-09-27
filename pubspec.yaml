@@ -47,6 +47,8 @@ dependencies:
   video_thumbnail: ^0.5.3
   web: ^1.1.0
   image_picker: ^1.1.2
+  qr_flutter: ^4.1.0
+  share_plus: ^10.1.2
 
 dev_dependencies:
   flutter_test:

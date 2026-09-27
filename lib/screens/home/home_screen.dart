@@ -2,6 +2,7 @@ import 'package:efoc/screens/capture/capture_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../chat/chat_screen.dart';
 import '../../state/app_state.dart';
 import '../../theme/colors.dart';
 import 'widgets/clip_popup.dart';
@@ -34,6 +35,37 @@ class _HomeScreenState extends State<HomeScreen> {
     _groupOverlay = null;
     _dlOverlay?.remove();
     _dlOverlay = null;
+  }
+
+    void _openChat() {
+    final state = context.read<AppState>();
+    if (!state.hasGroups) return;
+    final group = state.currentGroup;
+
+    Navigator.of(context).push(
+      PageRouteBuilder(
+        pageBuilder: (_, __, ___) => ChatScreen(
+          groupId: group.id,
+          groupName: group.name,
+        ),
+        transitionsBuilder: (_, animation, __, child) {
+          return SlideTransition(
+            position: Tween<Offset>(
+              begin: const Offset(1, 0),
+              end: Offset.zero,
+            ).animate(
+              CurvedAnimation(
+                parent: animation,
+                curve: Curves.easeOutCubic,
+              ),
+            ),
+            child: child,
+          );
+        },
+        transitionDuration: const Duration(milliseconds: 260),
+        reverseTransitionDuration: const Duration(milliseconds: 220),
+      ),
+    );
   }
 
   void _toggleGroupMenu() {
@@ -262,9 +294,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 onOpenGroupSettings: _openGroupSettings,
                 onToggleDownload: _toggleDownloadMenu,
                 onOpenProfile: _openProfile,
-                onOpenChat: () {
-                  // TODO: wire chat page later
-                },
+                onOpenChat: _openChat,
               ),
               HourDots(controller: _hourController),
               Expanded(
