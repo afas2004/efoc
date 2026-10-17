@@ -63,7 +63,7 @@ CAPTION_FONTS = {
 }
 
 
-def caption_font(key: str) -> tuple[str, int]:
+def caption_font_file(key: str) -> tuple[str, int]:
     name, size, fallback = CAPTION_FONTS.get(key, CAPTION_FONTS["classic"])
     path = Path(FONT_DIR) / name
     if path.is_file():
@@ -259,7 +259,8 @@ def normalize_clip(src: Path, dest: Path, label: str, caption: str | None,
     label_file.write_text(label, encoding="utf-8")
 
     font = _filter_path(Path(FONT_FILE))
-    upright = "transpose=2," if rotation == 90 else ""  # 90° counter-clockwise
+    # 90: back camera, turn counter-clockwise; 270: front camera, clockwise.
+    upright = {90: "transpose=2,", 270: "transpose=1,"}.get(rotation, "")
     vf = (
         f"[0:v]{upright}split=2[a][b];"
         f"[a]scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase,"
@@ -273,7 +274,7 @@ def normalize_clip(src: Path, dest: Path, label: str, caption: str | None,
     if caption:
         caption_file = work / f"{dest.stem}.caption.txt"
         caption_file.write_text(caption, encoding="utf-8")
-        font_path, size = caption_font(caption_font)
+        font_path, size = caption_font_file(caption_font)
         box, text_color = caption_box(caption_bg, caption_color)
         ax, ay = caption_align
         # Same maths as Flutter's Align: -1 = flush left/top, 1 = right/bottom,
