@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../../services/auth_service.dart';
 import '../../theme/colors.dart';
 import 'check_email_screen.dart';
+import 'username_screen.dart';
+import 'what_we_store_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -148,6 +150,9 @@ class _LoginScreenState extends State<LoginScreen> {
                       r'^[\w\.\-\+]+@[\w\-]+\.[\w\-\.]+$',
                     ).hasMatch(value);
                     if (!ok) return 'Enter a valid email';
+                    if (AuthService.isUsernameEmail(value)) {
+                      return 'Use "No email? Use a username" below';
+                    }
                     return null;
                   },
                 ),
@@ -196,6 +201,43 @@ class _LoginScreenState extends State<LoginScreen> {
                     style: TextStyle(
                       color: Colors.white.withValues(alpha: 0.35),
                       fontSize: 11,
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 18),
+
+                Center(
+                  child: TextButton(
+                    onPressed: _loading
+                        ? null
+                        : () => Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => const UsernameScreen(),
+                              ),
+                            ),
+                    child: Text(
+                      'No email? Use a username',
+                      style: TextStyle(
+                        color: EfocColors.accentBright,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+                Center(
+                  child: TextButton(
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const WhatWeStoreScreen(),
+                      ),
+                    ),
+                    child: const Text(
+                      'What we store',
+                      style: TextStyle(
+                        color: EfocColors.textMuted,
+                        fontSize: 12,
+                      ),
                     ),
                   ),
                 ),

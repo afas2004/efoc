@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../../screens/auth/what_we_store_screen.dart';
+import '../../../../services/auth_service.dart';
 import '../../../../services/profile_service.dart';
 import '../../../../theme/colors.dart';
 
@@ -22,8 +24,10 @@ class _AccountSheetState extends State<AccountSheet> {
   late final String _userId;
   String _savedName = '';
   String _username = '';
-  String _email = '';
+  String? _email;
+  bool _usernameAccount = false;
   bool _loading = true;
+  bool _deleting = false;
 
   Timer? _debounce;
   int _saveVersion = 0;
@@ -33,7 +37,8 @@ class _AccountSheetState extends State<AccountSheet> {
   void initState() {
     super.initState();
     _userId = Supabase.instance.client.auth.currentUser?.id ?? '';
-    _email = Supabase.instance.client.auth.currentUser?.email ?? '';
+    _usernameAccount = AuthService.instance.isUsernameAccount;
+    _email = AuthService.instance.realEmail;
     _nameController.addListener(_onNameChanged);
     _focusNode.addListener(_onFocusChanged);
     _load();
@@ -139,6 +144,52 @@ class _AccountSheetState extends State<AccountSheet> {
       if (!mounted) return;
       if (_saveVersion != myVersion) return;
       setState(() => _status = _SaveStatus.error);
+    }
+  }
+
+  Future<void> _deleteAccount() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: EfocColors.surface,
+        title: const Text(
+          'Delete your account?',
+          style: TextStyle(color: Colors.white),
+        ),
+        content: const Text(
+          'This removes your login, profile, clips, messages and files. '
+          "Logs you own go to another member, or are deleted if you're "
+          "alone in them. This can't be undone.",
+          style: TextStyle(color: EfocColors.textMuted, height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text(
+              'Delete',
+              style: TextStyle(color: EfocColors.danger),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _deleting = true);
+    try {
+      // On success the auth listener signs out and pops this sheet.
+      await AuthService.instance.deleteAccount();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _deleting = false);
+      messenger.showSnackBar(
+        SnackBar(content: Text('$e'), backgroundColor: EfocColors.danger),
+      );
     }
   }
 
@@ -273,9 +324,9 @@ class _AccountSheetState extends State<AccountSheet> {
             ),
             const SizedBox(height: 22),
 
-            // Email (read-only)
-            const Text(
-              'EMAIL',
+            // Email (read-only). Username accounts have none to show.
+            Text(
+              _usernameAccount ? 'LOGIN' : 'EMAIL',
               style: TextStyle(
                 color: EfocColors.textFaint,
                 fontSize: 11,
@@ -294,7 +345,9 @@ class _AccountSheetState extends State<AccountSheet> {
                 borderRadius: BorderRadius.circular(14),
               ),
               child: Text(
-                _email.isEmpty ? '—' : _email,
+                _usernameAccount
+                    ? 'Username and password · no email'
+                    : (_email ?? '—'),
                 style: const TextStyle(
                   color: EfocColors.textMuted,
                   fontSize: 14,
@@ -302,12 +355,47 @@ class _AccountSheetState extends State<AccountSheet> {
               ),
             ),
             const SizedBox(height: 10),
-            const Text(
-              'Signed in via one-time code. No password to change.',
-              style: TextStyle(
+            Text(
+              _usernameAccount
+                  ? "Only you see this. There's no email, so keep your password safe."
+                  : 'Only you see this. Signed in via one-time code.',
+              style: const TextStyle(
                 color: EfocColors.textFaint,
                 fontSize: 11,
               ),
+            ),
+            const SizedBox(height: 18),
+            Row(
+              children: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const WhatWeStoreScreen(),
+                    ),
+                  ),
+                  child: const Text(
+                    'What we store',
+                    style: TextStyle(color: EfocColors.textMuted),
+                  ),
+                ),
+                const Spacer(),
+                TextButton(
+                  onPressed: _deleting ? null : _deleteAccount,
+                  child: _deleting
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: EfocColors.danger,
+                          ),
+                        )
+                      : const Text(
+                          'Delete account',
+                          style: TextStyle(color: EfocColors.danger),
+                        ),
+                ),
+              ],
             ),
           ],
         ),
