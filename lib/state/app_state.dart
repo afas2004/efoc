@@ -513,6 +513,16 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> transferCurrentGroup(String newOwnerId) async {
+    await GroupService.instance.transferOwnership(currentGroup.id, newOwnerId);
+    await _loadGroups();
+  }
+
+  Future<void> removeMemberFromCurrentGroup(String userId) async {
+    await GroupService.instance.removeMember(currentGroup.id, userId);
+    await _loadGroups();
+  }
+
   Future<void> leaveCurrentGroup() async {
     await GroupService.instance.leaveGroup(currentGroup.id);
     _currentGroupIndex = 0;

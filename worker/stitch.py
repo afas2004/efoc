@@ -47,6 +47,20 @@ FONT_FILE = os.environ.get(
     "FONT_FILE", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 )
 
+# Caption fonts, matching the app's Classic / Bold / Elegant / Mono
+# (fonts-dejavu-core + fonts-dejavu-extra on the runner). Missing files
+# fall back to FONT_FILE.
+_DEJAVU = "/usr/share/fonts/truetype/dejavu/"
+CAPTION_FONTS = {
+    "classic": (_DEJAVU + "DejaVuSans-Bold.ttf", 56),
+    "bold": (_DEJAVU + "DejaVuSansCondensed-Bold.ttf", 64),
+    "elegant": (_DEJAVU + "DejaVuSerif-Italic.ttf", 58),
+    "mono": (_DEJAVU + "DejaVuSansMono-Bold.ttf", 50),
+}
+
+# Where the app puts a caption with no saved position (Alignment(0, -0.3)).
+DEFAULT_CAPTION_ALIGN = (0.0, -0.3)
+
 WIDTH, HEIGHT, FPS = 720, 1280, 30
 MAX_CLIP_SECONDS = 4  # clips are 3s; cap guards against odd uploads
 
@@ -195,7 +209,8 @@ def _hour_label(hour: int) -> str:
 
 
 def normalize_clip(src: Path, dest: Path, label: str, caption: str | None,
-                   caption_color: str, work: Path) -> None:
+                   caption_color: str, work: Path, caption_font: str = "classic",
+                   caption_align: tuple[float, float] = DEFAULT_CAPTION_ALIGN) -> None:
     """Re-encodes one clip to the shared format with label + caption burned in.
 
     Clips arrive as WebM (web) or MP4 (Android) in 9:16, 1:1 or 16:9. Each is
@@ -219,10 +234,20 @@ def normalize_clip(src: Path, dest: Path, label: str, caption: str | None,
     if caption:
         caption_file = work / f"{dest.stem}.caption.txt"
         caption_file.write_text(caption, encoding="utf-8")
+        font_path, size = CAPTION_FONTS.get(caption_font, CAPTION_FONTS["classic"])
+        if not Path(font_path).is_file():
+            font_path = FONT_FILE
+        ax, ay = caption_align
+        # Same maths as Flutter's Align: -1 = flush left/top, 1 = right/bottom,
+        # inside a margin so the box never touches the edge.
+        margin = 48
         vf += (
-            f",drawtext=fontfile='{font}':textfile='{_filter_path(caption_file)}':"
-            f"fontsize=56:fontcolor={caption_color}:"
-            f"x=(w-text_w)/2:y=h*0.62:borderw=3:bordercolor=black@0.6"
+            f",drawtext=fontfile='{_filter_path(Path(font_path))}':"
+            f"textfile='{_filter_path(caption_file)}':"
+            f"fontsize={size}:fontcolor={caption_color}:"
+            f"box=1:boxcolor=black@0.55:boxborderw=18:"
+            f"x=(w-text_w)/2+({ax:.3f})*((w-text_w)/2-{margin}):"
+            f"y=(h-text_h)/2+({ay:.3f})*((h-text_h)/2-{margin})"
         )
     vf += "[v]"
 
@@ -292,6 +317,12 @@ def stitch_group(group_id: str, date: str, clips: list[dict],
                     caption=(clip.get("text_overlay") or "").strip() or None,
                     caption_color=f"0x{m.group(1)}" if m else "white",
                     work=work,
+                    caption_font=clip.get("text_font") or "classic",
+                    caption_align=(
+                        (float(clip["text_x"]), float(clip["text_y"]))
+                        if clip.get("text_x") is not None and clip.get("text_y") is not None
+                        else DEFAULT_CAPTION_ALIGN
+                    ),
                 )
                 segments.append(seg)
             except Exception as e:  # one bad clip shouldn't sink the vlog
@@ -438,7 +469,8 @@ def stitch_day(args: argparse.Namespace) -> int:
     print(f"Stitching {date} ({APP_TZ.key})")
 
     params = {
-        "select": "user_id,group_id,storage_path,hour_of_day,text_overlay,text_color",
+        "select": "user_id,group_id,storage_path,hour_of_day,text_overlay,"
+                  "text_color,text_font,text_x,text_y",
         "recorded_on": f"eq.{date}",
         "order": "hour_of_day.asc,created_at.asc",
     }

@@ -4,7 +4,7 @@ import 'package:video_player/video_player.dart';
 
 import '../../../services/clip_service.dart';
 import '../../../state/app_state.dart';
-import '../../../theme/colors.dart';
+import '../../../widgets/caption.dart';
 
 class ClipPopup extends StatefulWidget {
   final int initialMemberIdx;
@@ -123,7 +123,7 @@ class _ClipPopupState extends State<ClipPopup> {
     final state = context.watch<AppState>();
     final member = state.currentGroup.members[_memberIdx];
     final overlayText = (_clip?['text_overlay'] as String?)?.trim() ?? '';
-    final overlayColor = _parseColor(_clip?['text_color'] as String?);
+    final overlayColor = parseCaptionColor(_clip?['text_color'] as String?);
 
     return GestureDetector(
       onTap: () => Navigator.of(context).pop(),
@@ -313,42 +313,18 @@ class _ClipPopupState extends State<ClipPopup> {
               ),
             ),
 
-            // 4. Text overlay (centered)
+            // 4. Caption, where it was placed when recorded
             if (overlayText.isNotEmpty)
-              Center(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 20,
-                    vertical: 12,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.55),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Text(
-                    overlayText,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: overlayColor,
-                      fontSize: 20,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
+              PositionedCaption(
+                text: overlayText,
+                fontKey: _clip?['text_font'] as String?,
+                color: overlayColor,
+                alignment: captionAlignmentOf(_clip),
               ),
           ],
         ),
       ),
     );
-  }
-
-  Color _parseColor(String? hex) {
-    if (hex == null || hex.isEmpty) return Colors.white;
-    final cleaned = hex.startsWith('#') ? hex.substring(1) : hex;
-    if (cleaned.length != 6) return Colors.white;
-    final value = int.tryParse(cleaned, radix: 16);
-    if (value == null) return Colors.white;
-    return Color(0xFF000000 | value);
   }
 
   String _formatHour(int hour) {

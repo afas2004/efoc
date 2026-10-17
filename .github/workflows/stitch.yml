@@ -34,7 +34,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install ffmpeg
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg fonts-dejavu-core
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg fonts-dejavu-core fonts-dejavu-extra
 
       - uses: actions/setup-python@v5
         with:

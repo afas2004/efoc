@@ -5,6 +5,7 @@ import '../../../models/member.dart';
 import '../../../services/clip_service.dart';
 import '../../../state/app_state.dart';
 import '../../../theme/colors.dart';
+import '../../../widgets/caption.dart';
 
 class EfocGridCell extends StatelessWidget {
   final int memberIdx;
@@ -155,20 +156,11 @@ class _FilledCell extends StatelessWidget {
     [Color(0xFF6366F1), Color(0xFF3730A3)],
   ];
 
-  Color _parseColor(String? hex) {
-    if (hex == null || hex.isEmpty) return Colors.white;
-    final cleaned = hex.startsWith('#') ? hex.substring(1) : hex;
-    if (cleaned.length != 6) return Colors.white;
-    final value = int.tryParse(cleaned, radix: 16);
-    if (value == null) return Colors.white;
-    return Color(0xFF000000 | value);
-  }
-
   @override
   Widget build(BuildContext context) {
     final pair = _gradients[memberIdx % _gradients.length];
     final overlayText = (clip?['text_overlay'] as String?)?.trim() ?? '';
-    final overlayColor = _parseColor(clip?['text_color'] as String?);
+    final overlayColor = parseCaptionColor(clip?['text_color'] as String?);
     final hasOverlay = overlayText.isNotEmpty;
 
     final storagePath = clip?['storage_path'] as String?;
@@ -255,32 +247,13 @@ class _FilledCell extends StatelessWidget {
             ),
 
             if (hasOverlay)
-              Positioned(
-                bottom: 14,
-                left: 0,
-                right: 0,
-                child: Center(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 5,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.55),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Text(
-                      overlayText,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: overlayColor,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                ),
+              PositionedCaption(
+                text: overlayText,
+                fontKey: clip?['text_font'] as String?,
+                color: overlayColor,
+                alignment: captionAlignmentOf(clip),
+                size: 12,
+                maxLines: 1,
               ),
           ],
         ),

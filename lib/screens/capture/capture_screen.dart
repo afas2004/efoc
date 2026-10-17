@@ -10,6 +10,7 @@ import '../../services/clip_service.dart';
 import '../../services/video_remux_service.dart';
 import '../../state/app_state.dart';
 import '../../theme/colors.dart';
+import '../../widgets/caption.dart';
 import 'capture_phase.dart';
 import 'capture_stage.dart';
 import 'widgets/big_countdown.dart';
@@ -43,7 +44,7 @@ class _CaptureScreenState extends State<CaptureScreen>
   String _text = '';
   String _fontKey = 'classic';
   Color _textColor = Colors.white;
-  Offset _textAlign = const Offset(0, -0.3);
+  Offset _textAlign = Offset(kDefaultCaptionAlignment.x, kDefaultCaptionAlignment.y);
 
   // groups
   late Set<String> _selectedGroups;
@@ -252,6 +253,8 @@ class _CaptureScreenState extends State<CaptureScreen>
           textColorHex: colorHex,
           ratio: _ratio,
           mimeType: _recordedFile!.mimeType,
+          textX: _textAlign.dx,
+          textY: _textAlign.dy,
         );
         successCount++;
       } catch (e) {

@@ -154,6 +154,22 @@ class GroupService {
         .eq('user_id', userId);
   }
 
+  /// Makes [newOwnerId] the owner; the caller becomes a regular member.
+  Future<void> transferOwnership(String groupId, String newOwnerId) async {
+    await _client.rpc(
+      'transfer_group_ownership',
+      params: {'gid': groupId, 'new_owner': newOwnerId},
+    );
+  }
+
+  /// Owner only. Their clips stay; they lose access to the Log.
+  Future<void> removeMember(String groupId, String userId) async {
+    await _client.rpc(
+      'remove_group_member',
+      params: {'gid': groupId, 'member': userId},
+    );
+  }
+
   Future<void> deleteGroup(String groupId) async {
     await _client.rpc('delete_group', params: {'gid': groupId});
   }

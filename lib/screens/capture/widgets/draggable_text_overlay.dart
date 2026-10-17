@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../widgets/caption.dart';
+
 class DraggableTextOverlay extends StatefulWidget {
   final String text;
   final String fontKey;
@@ -38,43 +40,6 @@ class _DraggableTextOverlayState extends State<DraggableTextOverlay> {
     }
   }
 
-  TextStyle get _style {
-    switch (widget.fontKey) {
-      case 'bold':
-        return TextStyle(
-          fontFamily: 'Impact',
-          fontSize: 20,
-          fontWeight: FontWeight.w900,
-          color: widget.color,
-          height: 1.1,
-        );
-      case 'elegant':
-        return TextStyle(
-          fontFamily: 'serif',
-          fontSize: 20,
-          fontStyle: FontStyle.italic,
-          color: widget.color,
-          height: 1.2,
-        );
-      case 'mono':
-        return TextStyle(
-          fontFamily: 'monospace',
-          fontSize: 18,
-          fontWeight: FontWeight.w700,
-          color: widget.color,
-          height: 1.2,
-        );
-      case 'classic':
-      default:
-        return TextStyle(
-          fontSize: 20,
-          fontWeight: FontWeight.w800,
-          color: widget.color,
-          height: 1.2,
-        );
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
@@ -108,7 +73,7 @@ class _DraggableTextOverlayState extends State<DraggableTextOverlay> {
               child: Text(
                 widget.text.isEmpty ? ' ' : widget.text,
                 textAlign: TextAlign.center,
-                style: _style,
+                style: captionStyle(widget.fontKey, widget.color),
               ),
             ),
           ),

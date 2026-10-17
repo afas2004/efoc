@@ -60,6 +60,8 @@ class ClipService {
     required String textColorHex,
     required String ratio,
     String? mimeType,
+    double? textX,
+    double? textY,
   }) async {
     final userId = _client.auth.currentUser?.id;
     if (userId == null) throw Exception('Not signed in');
@@ -104,6 +106,8 @@ class ClipService {
         'text_overlay': text.isEmpty ? null : text,
         'text_font': fontKey,
         'text_color': textColorHex,
+        'text_x': textX,
+        'text_y': textY,
       },
       onConflict: 'user_id,group_id,hour_of_day,recorded_on',
     );

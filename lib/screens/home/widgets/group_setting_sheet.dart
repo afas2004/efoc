@@ -45,8 +45,9 @@ class _GroupSettingsSheetState extends State<GroupSettingsSheet> {
   Future<void> _load() async {
     try {
       final state = context.read<AppState>();
-      final code = await GroupService.instance
-          .fetchInviteCode(state.currentGroup.id);
+      final code = await GroupService.instance.fetchInviteCode(
+        state.currentGroup.id,
+      );
       if (!mounted) return;
       setState(() {
         _code = code;
@@ -115,8 +116,7 @@ class _GroupSettingsSheetState extends State<GroupSettingsSheet> {
             child: const Text('Cancel'),
           ),
           TextButton(
-            onPressed: () =>
-                Navigator.of(ctx).pop(controller.text.trim()),
+            onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
             child: const Text(
               'Rename',
               style: TextStyle(color: EfocColors.accentBright),
@@ -150,7 +150,8 @@ class _GroupSettingsSheetState extends State<GroupSettingsSheet> {
   Future<void> _leave() async {
     final confirmed = await _confirm(
       title: 'Leave Log?',
-      body: 'You will stop seeing clips from this Log. You can rejoin with the invite code.',
+      body:
+          'You will stop seeing clips from this Log. You can rejoin with the invite code.',
       action: 'Leave',
     );
     if (confirmed != true) return;
@@ -192,6 +193,100 @@ class _GroupSettingsSheetState extends State<GroupSettingsSheet> {
         _error = _friendly(e, "Couldn't delete the Log. Try again.");
       });
     }
+  }
+
+  Future<void> _memberActions(EfocMember m) async {
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        decoration: const BoxDecoration(
+          color: EfocColors.surface,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        padding: const EdgeInsets.fromLTRB(8, 12, 8, 24),
+        child: SafeArea(
+          top: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Text(
+                  m.name,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              ListTile(
+                leading: const Icon(
+                  Icons.workspace_premium_outlined,
+                  color: EfocColors.accentBright,
+                ),
+                title: const Text(
+                  'Make owner',
+                  style: TextStyle(color: Colors.white),
+                ),
+                subtitle: const Text(
+                  "They can rename or delete the Log. You'll be a member.",
+                  style: TextStyle(color: Colors.white54, fontSize: 12),
+                ),
+                onTap: () => Navigator.of(ctx).pop('owner'),
+              ),
+              ListTile(
+                leading: const Icon(
+                  Icons.person_remove_outlined,
+                  color: EfocColors.danger,
+                ),
+                title: const Text(
+                  'Remove from Log',
+                  style: TextStyle(color: EfocColors.danger),
+                ),
+                onTap: () => Navigator.of(ctx).pop('remove'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (action == null || !mounted) return;
+
+    final isTransfer = action == 'owner';
+    final ok = await _confirm(
+      title: isTransfer ? 'Make ${m.name} the owner?' : 'Remove ${m.name}?',
+      body: isTransfer
+          ? "You'll become a regular member and can then leave the Log."
+          : "They'll stop seeing this Log. Their clips stay. They could "
+                'rejoin with the invite code.',
+      action: isTransfer ? 'Make owner' : 'Remove',
+    );
+    if (ok != true || !mounted) return;
+
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    final state = context.read<AppState>();
+    try {
+      if (isTransfer) {
+        await state.transferCurrentGroup(m.id);
+      } else {
+        await state.removeMemberFromCurrentGroup(m.id);
+      }
+    } catch (e) {
+      if (mounted) {
+        _error = _friendly(
+          e,
+          isTransfer
+              ? "Couldn't hand over the Log. Try again."
+              : "Couldn't remove them. Try again.",
+        );
+      }
+    }
+    if (mounted) setState(() => _busy = false);
   }
 
   Future<bool?> _confirm({
@@ -372,9 +467,7 @@ class _GroupSettingsSheetState extends State<GroupSettingsSheet> {
                         padding: const EdgeInsets.all(6),
                         child: Icon(
                           _copied ? Icons.check : Icons.copy_rounded,
-                          color: _copied
-                              ? EfocColors.success
-                              : Colors.white54,
+                          color: _copied ? EfocColors.success : Colors.white54,
                           size: 20,
                         ),
                       ),
@@ -411,62 +504,77 @@ class _GroupSettingsSheetState extends State<GroupSettingsSheet> {
             ),
             const SizedBox(height: 8),
             for (final m in group.members)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 6),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 30,
-                      height: 30,
-                      decoration: BoxDecoration(
-                        color: m.color,
-                        shape: BoxShape.circle,
-                      ),
-                      clipBehavior: Clip.antiAlias,
-                      alignment: Alignment.center,
-                      child: (m.avatarUrl?.isNotEmpty ?? false)
-                          ? Image.network(
-                              m.avatarUrl!,
-                              width: 30,
-                              height: 30,
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, _, _) => _MemberInitial(m),
-                            )
-                          : _MemberInitial(m),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        m.isMe ? 'You' : m.name,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                    if (m.id == group.ownerId)
+              InkWell(
+                onTap: isOwner && !m.isMe && !_busy
+                    ? () => _memberActions(m)
+                    : null,
+                borderRadius: BorderRadius.circular(10),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  child: Row(
+                    children: [
                       Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 3,
-                        ),
+                        width: 30,
+                        height: 30,
                         decoration: BoxDecoration(
-                          color: EfocColors.accent.withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(8),
+                          color: m.color,
+                          shape: BoxShape.circle,
                         ),
-                        child: const Text(
-                          'OWNER',
-                          style: TextStyle(
-                            color: EfocColors.accentBright,
-                            fontSize: 9,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 0.5,
+                        clipBehavior: Clip.antiAlias,
+                        alignment: Alignment.center,
+                        child: (m.avatarUrl?.isNotEmpty ?? false)
+                            ? Image.network(
+                                m.avatarUrl!,
+                                width: 30,
+                                height: 30,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, _, _) => _MemberInitial(m),
+                              )
+                            : _MemberInitial(m),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          m.isMe ? 'You' : m.name,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                       ),
-                  ],
+                      if (m.id == group.ownerId)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: EfocColors.accent.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Text(
+                            'OWNER',
+                            style: TextStyle(
+                              color: EfocColors.accentBright,
+                              fontSize: 9,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ),
+                      if (isOwner && !m.isMe)
+                        const Padding(
+                          padding: EdgeInsets.only(left: 6),
+                          child: Icon(
+                            Icons.more_horiz,
+                            size: 18,
+                            color: Colors.white38,
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
               ),
             const SizedBox(height: 32),
@@ -478,20 +586,28 @@ class _GroupSettingsSheetState extends State<GroupSettingsSheet> {
                 label: _busy ? 'Leaving…' : 'Leave Log',
                 onTap: _busy ? null : _leave,
               ),
-            if (isOwner)
+            if (isOwner) ...[
               _DangerButton(
-                label: _busy ? 'Deleting…' : 'Delete Log',
+                label: _busy ? 'Working…' : 'Delete Log',
                 onTap: _busy ? null : _delete,
               ),
+              if (group.members.length > 1)
+                const Padding(
+                  padding: EdgeInsets.only(top: 10),
+                  child: Text(
+                    'Want to leave instead? Tap a member and make them the '
+                    'owner first.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.white38, fontSize: 11),
+                  ),
+                ),
+            ],
 
             if (_error != null && _code != null) ...[
               const SizedBox(height: 12),
               Text(
                 _error!,
-                style: const TextStyle(
-                  color: EfocColors.danger,
-                  fontSize: 12,
-                ),
+                style: const TextStyle(color: EfocColors.danger, fontSize: 12),
               ),
             ],
           ],
