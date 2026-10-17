@@ -1,5 +1,5 @@
 {
-    "latest_version":  "1.3.2",
-    "latest_build":  7,
-    "release_notes":  "Fix hourly reminders on the web"
+    "latest_version":  "1.4.0",
+    "latest_build":  8,
+    "release_notes":  "In-app reminder banner, save yesterday\u0027s vlog from Export"
 }
