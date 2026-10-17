@@ -25,6 +25,17 @@ export type ToGame =
       settings?: Record<string, unknown>;
       humour?: 'off' | 'mild' | 'spicy';
       insets?: { top: number; right: number; bottom: number; left: number };
+      /** An online table: the page runs it on the bridge store (src/net/bridgeStore.ts). */
+      online?: {
+        room: string;
+        uid: string;
+        name: string;
+        avatar: string;
+        /** Server time minus local time, in ms. */
+        clockOffset?: number;
+        /** Set when this phone opens the table: the group and its member uids. */
+        create?: { groupId: string; allowed: string[] };
+      };
     }
   | { t: 'log'; entries: unknown[] }
   | { t: 'private'; data: unknown }
@@ -33,7 +44,11 @@ export type ToGame =
   | { t: 'pause' }
   | { t: 'resume' }
   | { t: 'intent'; seat: number; n: number; move: unknown }
-  | { t: 'restore'; state: unknown };
+  | { t: 'restore'; state: unknown }
+  | { t: 'dbResult'; id: number; ok: boolean; value?: unknown; error?: string }
+  | { t: 'dbValue'; id: number; value: unknown }
+  | { t: 'dbChild'; id: number; key: string; value: unknown }
+  | { t: 'dbClock'; offset: number };
 
 export type FromGame =
   | { t: 'ready'; version: string }
@@ -41,7 +56,8 @@ export type FromGame =
   | { t: 'output'; entry: unknown; private: Record<string, unknown>; snapshot?: unknown }
   | { t: 'vote'; yes?: boolean; start?: boolean }
   | { t: 'haptic'; kind: HapticKind }
-  | { t: 'exit' };
+  | { t: 'exit' }
+  | { t: 'db'; id: number; op: 'get' | 'set' | 'update' | 'push' | 'onDisconnect' | 'watch' | 'watchChildren' | 'unwatch'; path?: string; value?: unknown; values?: Record<string, unknown> };
 
 /** Origins allowed to embed the page and talk to it on the web. */
 const PARENT_ORIGINS = [/^https:\/\/(www\.)?efoc\.party$/, /^http:\/\/localhost(:\d+)?$/, /^http:\/\/127\.0\.0\.1(:\d+)?$/];

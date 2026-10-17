@@ -13,6 +13,10 @@
   - Spectators: at most 8, via `spectatorSlots/0..7` (the rules language
     can't count children, so a slot is claimed in the same write as the
     spectator record).
+  - Open tables: `tables/{groupId}/{roomId}` lists a group's tables for
+    the Games tab. Any signed-in player reads a group's list; only the
+    room's host adds an entry (under the room's own groupId, stamped with
+    server time); players in the room take it down.
   - Chat (Phase 4): 1 message per second via `chatRate/{room}/{uid}`, text
     1–200 characters, as yourself.
 - `firestore.rules`: stats, achievements and reports.

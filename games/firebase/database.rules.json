@@ -79,6 +79,15 @@
         }
       }
     },
+    "tables": {
+      "$group": {
+        ".read": "auth != null",
+        "$room": {
+          ".write": "auth != null && ((!data.exists() && newData.child('hostUid').val() === auth.uid && root.child('rooms').child($room).child('meta/hostUid').val() === auth.uid && root.child('rooms').child($room).child('meta/groupId').val() === $group) || (data.exists() && !newData.exists() && root.child('rooms').child($room).child('allowed').child(auth.uid).exists()))",
+          ".validate": "!newData.exists() || (newData.hasChildren(['gameId', 'hostUid', 'hostName', 'createdAt']) && newData.child('gameId').isString() && newData.child('gameId').val().length <= 16 && newData.child('hostName').isString() && newData.child('hostName').val().length <= 40 && newData.child('createdAt').val() === now)"
+        }
+      }
+    },
     "presence": {
       "$room": {
         ".read": "root.child('rooms').child($room).child('allowed').child(auth.uid).exists()",

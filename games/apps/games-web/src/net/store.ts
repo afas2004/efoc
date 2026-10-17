@@ -11,6 +11,18 @@
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 export type Unsubscribe = () => void;
 
+/** Server time at the moment of the write (Firebase's placeholder; LocalStore fills in Date.now()). */
+export const TIMESTAMP: Json = { '.sv': 'timestamp' };
+
+const isTimestamp = (v: Json): boolean => isPlainObject(v) && Object.keys(v).length === 1 && v['.sv'] === 'timestamp';
+
+function resolveTimestamps(v: Json, now: number): Json {
+  if (isTimestamp(v)) return now;
+  if (Array.isArray(v)) return v.map((x) => resolveTimestamps(x, now));
+  if (isPlainObject(v)) return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, resolveTimestamps(x, now)]));
+  return v;
+}
+
 export interface RoomStore {
   readonly uid: string;
   /** Server clock in ms (Date.now() locally; server offset on Firebase). */
@@ -108,7 +120,8 @@ export class LocalStore implements RoomStore {
     return root;
   }
 
-  private write(path: string, value: Json): void {
+  private write(path: string, raw: Json): void {
+    const value = resolveTimestamps(raw, Date.now());
     const { above, atOrBelow } = this.related(path);
     if (above) {
       // Edit inside the ancestor's value, keeping it one key.

@@ -13,6 +13,7 @@ class HomeTopBar extends StatelessWidget {
   final VoidCallback onToggleDownload;
   final VoidCallback onOpenProfile;
   final VoidCallback onOpenChat;
+  final VoidCallback onOpenGames;
   final bool chatHasUnread;
 
   const HomeTopBar({
@@ -24,6 +25,7 @@ class HomeTopBar extends StatelessWidget {
     required this.onToggleDownload,
     required this.onOpenProfile,
     required this.onOpenChat,
+    required this.onOpenGames,
     this.chatHasUnread = false,
   });
 
@@ -61,6 +63,12 @@ class HomeTopBar extends StatelessWidget {
               icon: Icons.download_rounded,
               onTap: onToggleDownload,
             ),
+          ),
+          const SizedBox(width: 8),
+
+          _IconBtn(
+            icon: Icons.style_rounded,
+            onTap: onOpenGames,
           ),
           const SizedBox(width: 8),
 

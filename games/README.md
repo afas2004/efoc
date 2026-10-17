@@ -12,7 +12,7 @@ firebase/          Realtime Database and Firestore rules (not deployed yet)
 docs/              spec, decisions, rule sheets, Jester lines
 ```
 
-The Flutter side lives in `../lib/games/`.
+The Flutter side lives in `../lib/games/` (see [docs/phase3c.md](docs/phase3c.md)).
 
 ```bash
 npm install        # from games/

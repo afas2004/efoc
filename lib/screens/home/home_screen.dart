@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../../games/games_screen.dart';
 import '../../services/reminder_service.dart';
 import '../../services/update_service.dart';
 import '../../services/vlog_service.dart';
@@ -255,6 +256,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     // Messages that arrived while the chat was open were seen there.
     state.markChatRead(group.id);
+  }
+
+  void _openGames() {
+    final state = context.read<AppState>();
+    if (!state.hasGroups) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => GamesScreen(group: state.currentGroup),
+      ),
+    );
   }
 
   void _toggleGroupMenu() {
@@ -529,6 +540,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   onToggleDownload: _toggleDownloadMenu,
                   onOpenProfile: _openProfile,
                   onOpenChat: _openChat,
+                  onOpenGames: _openGames,
                   chatHasUnread: currentGroupHasUnread,
                 ),
                 HourDots(controller: _hourController),

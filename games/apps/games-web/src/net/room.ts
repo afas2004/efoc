@@ -18,7 +18,7 @@ import { arr, Follower, reviveState, type FollowUpdate } from './follower';
 import { HostRelay } from './hostRelay';
 import { lobbySeats, renderLobby } from './lobby';
 import { HEARTBEAT_MS, P, type Member, type RoomMeta, type SeatEntry } from './protocol';
-import type { Json, RoomStore } from './store';
+import { TIMESTAMP, type Json, type RoomStore } from './store';
 
 export interface Me {
   uid: string;
@@ -101,7 +101,7 @@ export class OnlineGame {
     const p = P.presenceOf(this.room, this.me.uid);
     const beat = (): void => void this.store.set(p, { online: true, lastSeen: this.store.now() });
     beat();
-    this.store.onDisconnect(p, { online: false, lastSeen: this.store.now() });
+    this.store.onDisconnect(p, { online: false, lastSeen: TIMESTAMP });
     this.timers.push(window.setInterval(beat, HEARTBEAT_MS));
     this.timers.push(window.setInterval(() => this.checkHost(), 1000));
 

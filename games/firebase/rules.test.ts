@@ -31,7 +31,7 @@ async function seedRoom(extra: Record<string, unknown> = {}): Promise<void> {
   await env.withSecurityRulesDisabled(async (ctx) => {
     await set(ref(ctx.database(), R), {
       allowed: { h: true, a: true, b: true },
-      meta: { hostUid: 'h', status: 'playing', gameId: 'bigtwo' },
+      meta: { hostUid: 'h', status: 'playing', gameId: 'bigtwo', groupId: 'g1' },
       members: {
         h: { name: 'Host', avatar: '😎', ready: true, joinedAt: 1 },
         a: { name: 'Ann', avatar: '🐇', ready: true, joinedAt: 2 },
@@ -195,6 +195,33 @@ describe('host migration', () => {
     await assertFails(set(ref(db('a'), `${R}/meta/hostUid`), 'b'));
     await assertFails(set(ref(db('a'), `${R}/meta`), { hostUid: 'a', status: 'waiting' }));
     await assertFails(set(ref(db('o'), `${R}/meta/hostUid`), 'o'));
+  });
+});
+
+describe("a group's open tables", () => {
+  const T = 'tables/g1/r1';
+  const entry = (hostUid: string) => ({ gameId: 'bigtwo', hostUid, hostName: 'Host', createdAt: serverTimestamp() });
+  it('the host lists their own room under its group', async () => {
+    await seedRoom();
+    await assertSucceeds(set(ref(db('h'), T), entry('h')));
+    await assertSucceeds(get(ref(db('a'), 'tables/g1')));
+  });
+  it("nobody lists a room they don't host, or under another group", async () => {
+    await seedRoom();
+    await assertFails(set(ref(db('a'), T), entry('a')));
+    await assertFails(set(ref(db('a'), T), entry('h')));
+    await assertFails(set(ref(db('h'), 'tables/g2/r1'), entry('h')));
+    await assertFails(set(ref(db('h'), 'tables/g1/nope'), entry('h')));
+  });
+  it("a listing can't be edited; players in the room can take it down", async () => {
+    await seedRoom();
+    await assertSucceeds(set(ref(db('h'), T), entry('h')));
+    await assertFails(set(ref(db('h'), `${T}/hostName`), 'Someone else'));
+    await assertFails(set(ref(db('o'), T), null));
+    await assertSucceeds(set(ref(db('a'), T), null));
+  });
+  it('signed-out users see no tables', async () => {
+    await assertFails(get(ref(db(null), 'tables/g1')));
   });
 });
 

@@ -53,6 +53,9 @@ dependencies:
   app_links: ^7.0.0
   firebase_messaging: ^16.7.0
   shared_preferences: ^2.5.5
+  firebase_auth: ^6.7.0
+  firebase_database: ^12.6.0
+  flutter_inappwebview: ^6.1.5
 
 dev_dependencies:
   flutter_test:

@@ -5,8 +5,9 @@
 
 import './styles.css';
 import { bigtwo } from '@efoc/engine';
-import { inApp, onMessage, send, startBridge } from './bridge';
+import { inApp, onMessage, send, startBridge, type ToGame } from './bridge';
 import type { Humour } from './feel/jester';
+import type { RoomStore } from './net/store';
 import { startPractice } from './games/bigtwo/practice';
 import { showSetup, type SetupChoice } from './games/bigtwo/setup';
 
@@ -83,23 +84,41 @@ function setup(base: Omit<Launch, 'players' | 'humour'> & Partial<Launch>): void
  * Online table in a plain browser (development and the multi-player tests),
  * on the localStorage room store:
  *   ?room=r1&uid=u1&name=Ali&create=1&allowed=u1,u2,u3&turn=20000&migrate=60000&preview=15000&autopilot=1
- * Inside EFOC the same OnlineGame runs on the bridge store (Phase 3c).
+ * Inside EFOC the same OnlineGame runs on the bridge store: the app sends
+ * `init` with `online` and proxies every database call (net/bridgeStore.ts).
  */
-async function launchOnline(): Promise<void> {
-  const { LocalStore } = await import('./net/store');
+async function launchOnline(app?: NonNullable<Extract<ToGame, { t: 'init' }>['online']>): Promise<void> {
   const { OnlineGame, createRoom, exitApp } = await import('./net/room');
-  const uid = q.get('uid') ?? `u${Math.floor(Math.random() * 1e6)}`;
-  const me = { uid, name: q.get('name') ?? uid, avatar: q.get('avatar') ?? '😎' };
-  const room = q.get('room')!;
-  const store = new LocalStore(uid);
-  if (q.get('create') === '1') {
-    await createRoom(store, room, me, {
-      groupId: q.get('group') ?? 'dev',
-      allowed: (q.get('allowed') ?? uid).split(','),
-      turnMs: num('turn'),
-      migrateAfterMs: num('migrate'),
-      previewMs: num('preview'),
-    });
+  let store: RoomStore;
+  let me: { uid: string; name: string; avatar: string };
+  let room: string;
+  let create: { groupId: string; allowed: string[] } | undefined;
+  if (app) {
+    const { BridgeStore } = await import('./net/bridgeStore');
+    me = { uid: app.uid, name: app.name, avatar: app.avatar };
+    room = app.room;
+    store = new BridgeStore(app.uid, app.clockOffset ?? 0);
+    create = app.create;
+  } else {
+    const { LocalStore } = await import('./net/store');
+    const uid = q.get('uid') ?? `u${Math.floor(Math.random() * 1e6)}`;
+    me = { uid, name: q.get('name') ?? uid, avatar: q.get('avatar') ?? '😎' };
+    room = q.get('room')!;
+    store = new LocalStore(uid);
+    if (q.get('create') === '1') create = { groupId: q.get('group') ?? 'dev', allowed: (q.get('allowed') ?? uid).split(',') };
+  }
+  if (create) {
+    try {
+      await createRoom(store, room, me, {
+        groupId: create.groupId,
+        allowed: create.allowed,
+        turnMs: num('turn'),
+        migrateAfterMs: num('migrate'),
+        previewMs: num('preview'),
+      });
+    } catch {
+      // Already created (the host reopened the page): just join it.
+    }
   }
   const game = new OnlineGame(store, room, me, root, { autopilot: q.get('autopilot') === '1', onExit: exitApp });
   (window as unknown as { __room: unknown }).__room = game;
@@ -109,19 +128,25 @@ async function launchOnline(): Promise<void> {
 startBridge();
 const humourParam = (q.get('humour') as Humour | null) ?? 'spicy';
 
+let launched = false;
 if (q.has('room') && !inApp()) {
   void launchOnline();
 } else if (inApp()) {
   onMessage((msg) => {
     if (msg.t !== 'init') return;
-    if (msg.practice || msg.isHost) {
-      // Multiplayer host mode arrives in Phase 3; until then the app only opens Practice.
-      launch({
-        players: msg.players.length || 4,
-        myName: msg.players[msg.mySeat]?.name ?? 'Player',
-        myAvatar: msg.players[msg.mySeat]?.avatar ?? '😎',
-        humour: msg.humour ?? 'spicy',
-      });
+    if (msg.online) {
+      if (!launched) void launchOnline(msg.online);
+      launched = true;
+      return;
+    }
+    if (msg.practice) {
+      // Practice vs bots: the first-time tutorial, then the setup sheet.
+      if (launched) return;
+      launched = true;
+      const myName = msg.players[msg.mySeat]?.name ?? 'Player';
+      const myAvatar = msg.players[msg.mySeat]?.avatar ?? '😎';
+      if (!tutorialDone()) launch({ players: 4, myName, myAvatar, humour: msg.humour ?? 'spicy' });
+      else setup({ myName, myAvatar });
     }
   });
 } else if (q.has('players') || q.get('tutorial') === '1' || !tutorialDone()) {
