@@ -13,6 +13,7 @@ class HomeTopBar extends StatelessWidget {
   final VoidCallback onToggleDownload;
   final VoidCallback onOpenProfile;
   final VoidCallback onOpenChat;
+  final bool chatHasUnread;
 
   const HomeTopBar({
     super.key,
@@ -23,6 +24,7 @@ class HomeTopBar extends StatelessWidget {
     required this.onToggleDownload,
     required this.onOpenProfile,
     required this.onOpenChat,
+    this.chatHasUnread = false,
   });
 
   @override
@@ -65,6 +67,7 @@ class HomeTopBar extends StatelessWidget {
           _IconBtn(
             icon: Icons.chat_bubble_outline_rounded,
             onTap: onOpenChat,
+            hasUnread: chatHasUnread,
           ),
         ],
       ),
@@ -130,21 +133,45 @@ class _MyAvatar extends StatelessWidget {
 class _IconBtn extends StatelessWidget {
   final IconData icon;
   final VoidCallback onTap;
+  final bool hasUnread;
 
-  const _IconBtn({required this.icon, required this.onTap});
+  const _IconBtn({
+    required this.icon,
+    required this.onTap,
+    this.hasUnread = false,
+  });
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
-      child: Container(
-        width: 38,
-        height: 38,
-        decoration: const BoxDecoration(
-          color: EfocColors.surface,
-          shape: BoxShape.circle,
-        ),
-        child: Icon(icon, size: 18, color: Colors.white),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: const BoxDecoration(
+              color: EfocColors.surface,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, size: 18, color: Colors.white),
+          ),
+          if (hasUnread)
+            Positioned(
+              top: -1,
+              right: -1,
+              child: Container(
+                width: 11,
+                height: 11,
+                decoration: BoxDecoration(
+                  color: EfocColors.danger,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: EfocColors.bg, width: 1.5),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }

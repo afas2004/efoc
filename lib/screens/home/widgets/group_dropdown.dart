@@ -176,7 +176,8 @@ class _GroupRow extends StatelessWidget {
                   ),
                   const SizedBox(height: 1),
                   Text(
-                    '${group.members.length} member${group.members.length != 1 ? "s" : ""}',
+                    '${group.members.length} member${group.members.length != 1 ? "s" : ""}'
+                    '${!isActive && state.hasUnviewedYesterday(group.id) ? ' · new' : ''}',
                     style: const TextStyle(
                       color: Colors.white38,
                       fontSize: 10,

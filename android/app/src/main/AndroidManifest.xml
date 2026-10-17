@@ -34,6 +34,17 @@
                     android:host="login-callback" />
             </intent-filter>
 
+            <!-- Group invite deep link: https://efoc.party/join?code=XXXXXX -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="https"
+                    android:host="efoc.party"
+                    android:pathPrefix="/join" />
+            </intent-filter>
+
             <!-- Disable Flutter's built-in deep linking so supabase_flutter handles it -->
             <meta-data
                 android:name="flutter_deeplinking_enabled"

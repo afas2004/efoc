@@ -1,19 +1,20 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'dart:typed_data';
 
 import 'package:image_picker/image_picker.dart';
-import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../../../state/app_state.dart';
-import 'profile/avatar_crop_sheet.dart';
+import '../../../services/update_service.dart';
 import '../../../state/app_state.dart';
 import '../../../services/auth_service.dart';
 import '../../../services/profile_service.dart';
 import '../../../theme/colors.dart';
+import '../../../version.dart';
 import 'profile/account_sheet.dart';
+import 'profile/avatar_crop_sheet.dart';
 import 'profile/avatar_source_sheet.dart';
 import 'profile/export_sheet.dart';
 import 'profile/qr_sheet.dart';
@@ -37,7 +38,9 @@ class _ProfileSheetState extends State<ProfileSheet> {
   String? _avatarUrl;
 
   bool _loadingProfile = true;
-  
+
+  bool _checkingUpdate = false;
+
   @override
   void initState() {
     super.initState();
@@ -87,7 +90,7 @@ class _ProfileSheetState extends State<ProfileSheet> {
     );
   }
 
-    Future<void> _openAccountSheet() async {
+  Future<void> _openAccountSheet() async {
     await showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -104,7 +107,7 @@ class _ProfileSheetState extends State<ProfileSheet> {
     context.read<AppState>().refresh();
   }
 
-    Future<void> _openAvatarPicker() async {
+  Future<void> _openAvatarPicker() async {
     // 1. Pick a source and let image_picker return an XFile.
     final XFile? file = await showModalBottomSheet<XFile>(
       context: context,
@@ -173,6 +176,39 @@ class _ProfileSheetState extends State<ProfileSheet> {
       isScrollControlled: true,
       builder: (_) => const QrSheet(),
     );
+  }
+
+  Future<void> _checkForUpdates() async {
+    if (_checkingUpdate) return;
+    setState(() => _checkingUpdate = true);
+
+    final result = await UpdateService.instance.check();
+
+    if (!mounted) return;
+    setState(() => _checkingUpdate = false);
+
+    switch (result.status) {
+      case UpdateStatus.upToDate:
+        _showSnack("You're on the latest version");
+        break;
+
+      case UpdateStatus.updateAvailable:
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Version ${result.latestVersion} is available'),
+            duration: const Duration(seconds: 6),
+            action: SnackBarAction(
+              label: 'UPDATE',
+              onPressed: () => UpdateService.instance.reload(),
+            ),
+          ),
+        );
+        break;
+
+      case UpdateStatus.failed:
+        _showSnack("Couldn't reach the update server");
+        break;
+    }
   }
 
   Future<void> _confirmLogout() async {
@@ -301,6 +337,27 @@ class _ProfileSheetState extends State<ProfileSheet> {
                       size: 18,
                     ),
                     onTap: _openAccountSheet,
+                  ),
+                  _SettingRow(
+                    icon: Icons.system_update_alt_rounded,
+                    label: 'Check for updates',
+                    trailing: _checkingUpdate
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: EfocColors.textMuted,
+                            ),
+                          )
+                        : Text(
+                            'v$kAppVersion ($kAppBuild)',
+                            style: const TextStyle(
+                              color: EfocColors.textMuted,
+                              fontSize: 12,
+                            ),
+                          ),
+                    onTap: kIsWeb ? _checkForUpdates : null,
                     isLast: true,
                   ),
                 ],
@@ -339,7 +396,7 @@ class _IdentityRow extends StatelessWidget {
   final String? avatarUrl;
   final VoidCallback onAvatarTap;
   final VoidCallback onQrTap;
-  
+
   const _IdentityRow({
     required this.loading,
     required this.displayName,

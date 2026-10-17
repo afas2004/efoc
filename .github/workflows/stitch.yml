@@ -1,0 +1,51 @@
+name: Stitch daily vlogs
+
+on:
+  schedule:
+    # 16:10 UTC = 00:10 in Asia/Kuala_Lumpur (UTC+8). If you change APP_TZ,
+    # move this so it fires just after that zone's midnight.
+    - cron: "10 16 * * *"
+  workflow_dispatch:
+    inputs:
+      date:
+        description: "Day to stitch (YYYY-MM-DD). Blank = yesterday."
+        required: false
+      group_id:
+        description: "Only this group id. Blank = all groups."
+        required: false
+      force:
+        description: "Re-stitch even if a vlog already exists"
+        type: boolean
+        default: false
+
+concurrency:
+  group: stitch
+  cancel-in-progress: false
+
+jobs:
+  stitch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ffmpeg
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg fonts-dejavu-core
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install -r worker/requirements.txt
+
+      - name: Stitch
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          APP_TZ: ${{ vars.APP_TZ || 'Asia/Kuala_Lumpur' }}
+        run: |
+          args=()
+          [ -n "${{ inputs.date }}" ] && args+=(--date "${{ inputs.date }}")
+          [ -n "${{ inputs.group_id }}" ] && args+=(--group "${{ inputs.group_id }}")
+          [ "${{ inputs.force }}" = "true" ] && args+=(--force)
+          python worker/stitch.py "${args[@]}"

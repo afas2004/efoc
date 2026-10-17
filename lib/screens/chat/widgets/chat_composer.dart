@@ -1,3 +1,5 @@
+import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
+import 'package:flutter/foundation.dart' as foundation;
 import 'package:flutter/material.dart';
 
 import '../../../theme/colors.dart';
@@ -25,6 +27,7 @@ class _ChatComposerState extends State<ChatComposer> {
   final _focus = FocusNode();
   bool _hasText = false;
   bool _sending = false;
+  bool _emojiOpen = false;
 
   @override
   void initState() {
@@ -53,9 +56,19 @@ class _ChatComposerState extends State<ChatComposer> {
       _controller.clear();
       if (mounted) _focus.requestFocus();
     } catch (_) {
-      // caller shows error
+      // caller handles error
     } finally {
       if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  void _toggleEmoji() {
+    if (_emojiOpen) {
+      setState(() => _emojiOpen = false);
+      _focus.requestFocus();
+    } else {
+      _focus.unfocus();
+      setState(() => _emojiOpen = true);
     }
   }
 
@@ -135,10 +148,25 @@ class _ChatComposerState extends State<ChatComposer> {
               ),
 
             Padding(
-              padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+              padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
+                  GestureDetector(
+                    onTap: _toggleEmoji,
+                    behavior: HitTestBehavior.opaque,
+                    child: Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: Icon(
+                        _emojiOpen
+                            ? Icons.keyboard_alt_outlined
+                            : Icons.emoji_emotions_outlined,
+                        color: Colors.white54,
+                        size: 24,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
                   Expanded(
                     child: Container(
                       decoration: BoxDecoration(
@@ -146,10 +174,10 @@ class _ChatComposerState extends State<ChatComposer> {
                         borderRadius: BorderRadius.circular(22),
                       ),
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 4,
+                        horizontal: 14,
+                        vertical: 2,
                       ),
-                      constraints: const BoxConstraints(minHeight: 44),
+                      constraints: const BoxConstraints(minHeight: 42),
                       child: TextField(
                         controller: _controller,
                         focusNode: _focus,
@@ -167,22 +195,21 @@ class _ChatComposerState extends State<ChatComposer> {
                             fontSize: 14,
                           ),
                           border: InputBorder.none,
-                          contentPadding: EdgeInsets.symmetric(
-                            vertical: 10,
-                          ),
+                          contentPadding:
+                              EdgeInsets.symmetric(vertical: 10),
                           isDense: true,
                         ),
                         onSubmitted: (_) => _send(),
                       ),
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 6),
                   GestureDetector(
                     onTap: _hasText && !_sending ? _send : null,
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 150),
-                      width: 44,
-                      height: 44,
+                      width: 42,
+                      height: 42,
                       decoration: BoxDecoration(
                         color: _hasText
                             ? EfocColors.accent
@@ -211,6 +238,49 @@ class _ChatComposerState extends State<ChatComposer> {
                 ],
               ),
             ),
+
+            if (_emojiOpen)
+              SizedBox(
+                height: 260,
+                child: EmojiPicker(
+                  onEmojiSelected: (category, emoji) {
+                    _controller.text = _controller.text + emoji.emoji;
+                    _controller.selection = TextSelection.fromPosition(
+                      TextPosition(offset: _controller.text.length),
+                    );
+                  },
+                  config: Config(
+                    height: 256,
+                    checkPlatformCompatibility: true,
+                    emojiViewConfig: EmojiViewConfig(
+                      backgroundColor: EfocColors.sheetBg,
+                      emojiSizeMax: 26 *
+                          (foundation.defaultTargetPlatform ==
+                                  TargetPlatform.iOS
+                              ? 1.20
+                              : 1.0),
+                    ),
+                    categoryViewConfig: const CategoryViewConfig(
+                      backgroundColor: EfocColors.sheetBg,
+                      iconColor: Colors.white54,
+                      iconColorSelected: EfocColors.accentBright,
+                      indicatorColor: EfocColors.accentBright,
+                      dividerColor: Colors.transparent,
+                    ),
+                    bottomActionBarConfig: const BottomActionBarConfig(
+                      backgroundColor: EfocColors.sheetBg,
+                      buttonColor: EfocColors.sheetBg,
+                      buttonIconColor: Colors.white70,
+                    ),
+                    searchViewConfig: const SearchViewConfig(
+                      backgroundColor: EfocColors.sheetBg,
+                      buttonIconColor: Colors.white70,
+                      hintText: 'Search emoji',
+                      hintTextStyle: TextStyle(color: Colors.white38),
+                    ),
+                  ),
+                ),
+              ),
           ],
         ),
       ),

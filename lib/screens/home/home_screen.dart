@@ -1,12 +1,20 @@
 import 'package:efoc/screens/capture/capture_screen.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
-import '../chat/chat_screen.dart';
+import '../../services/chat_service.dart';
+import '../../services/update_service.dart';
+import '../../services/vlog_service.dart';
 import '../../state/app_state.dart';
 import '../../theme/colors.dart';
+import '../../widgets/update_banner.dart';
+import '../chat/chat_screen.dart';
+import '../vlog/vlog_viewer_screen.dart';
 import 'widgets/clip_popup.dart';
 import 'widgets/create_join_sheet.dart';
+import 'widgets/day_dots.dart';
 import 'widgets/download_popover.dart';
 import 'widgets/group_dropdown.dart';
 import 'widgets/group_setting_sheet.dart';
@@ -22,13 +30,56 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final LayerLink _groupLink = LayerLink();
   final LayerLink _dlLink = LayerLink();
   final PageController _hourController = PageController();
 
   OverlayEntry? _groupOverlay;
   OverlayEntry? _dlOverlay;
+
+  /// In-memory tracker: group id -> last time we opened its chat.
+  final Map<String, DateTime> _lastOpened = {};
+
+  /// Group ids that currently have unread messages.
+  final Set<String> _unreadGroups = {};
+
+  bool _unreadChecked = false;
+
+  /// Guards the invite-link handling so it only fires once per HomeScreen.
+  bool _pendingInviteHandled = false;
+
+  // ---------- update check state ----------
+
+  /// Result of the most recent auto-check, non-null means the banner is up.
+  UpdateResult? _bannerResult;
+
+  /// Set when the user dismisses the banner. Prevents re-showing it this
+  /// session. Reset on page reload, which is fine.
+  bool _updateDismissed = false;
+
+  /// Guards against overlapping checks when the app resumes rapidly.
+  bool _updateCheckInFlight = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _maybeCheckUnread();
+      _maybeHandlePendingInvite();
+      _runAutoUpdateCheck();
+    });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _runAutoUpdateCheck();
+      // A new day may have rolled over (and been stitched) while away.
+      context.read<AppState>().reloadVlogs();
+    }
+  }
 
   void _closeAllOverlays() {
     _groupOverlay?.remove();
@@ -37,12 +88,133 @@ class _HomeScreenState extends State<HomeScreen> {
     _dlOverlay = null;
   }
 
-    void _openChat() {
+  // ---------- update check ----------
+
+  Future<void> _runAutoUpdateCheck() async {
+    // Web-only: native builds update via the store, not a page reload.
+    if (!kIsWeb) return;
+    if (_updateCheckInFlight) return;
+    if (_updateDismissed) return;
+    _updateCheckInFlight = true;
+
+    final result = await UpdateService.instance.check();
+    _updateCheckInFlight = false;
+
+    if (!mounted) return;
+
+    // Silent on up-to-date and on failure for auto checks. Only the manual
+    // button surfaces those outcomes.
+    if (result.status == UpdateStatus.updateAvailable) {
+      setState(() => _bannerResult = result);
+    }
+  }
+
+  void _dismissUpdateBanner() {
+    setState(() {
+      _updateDismissed = true;
+      _bannerResult = null;
+    });
+  }
+
+  void _applyUpdate() {
+    UpdateService.instance.reload();
+  }
+
+  /// Wraps any screen state with the floating update banner.
+  Widget _withUpdateBanner(Widget child) {
+    final result = _bannerResult;
+    if (result == null) return child;
+
+    return Stack(
+      children: [
+        child,
+        Positioned(
+          left: 0,
+          right: 0,
+          top: 0,
+          child: UpdateBanner(
+            latestVersion: result.latestVersion,
+            releaseNotes: result.releaseNotes,
+            onUpdate: _applyUpdate,
+            onDismiss: _dismissUpdateBanner,
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ---------- pending invite ----------
+
+  void _maybeHandlePendingInvite() {
+    if (_pendingInviteHandled) return;
+    if (!mounted) return;
+
+    final state = context.read<AppState>();
+    final code = state.pendingInviteCode;
+    if (code == null || code.isEmpty) return;
+
+    _pendingInviteHandled = true;
+    state.clearPendingInviteCode();
+    _stripInviteParamFromUrl();
+    _openCreateJoin(initialCode: code);
+  }
+
+  /// Removes ?code=... from the browser URL so a refresh doesn't re-trigger
+  /// the join sheet. No-op on non-web.
+  void _stripInviteParamFromUrl() {
+    if (!kIsWeb) return;
+    try {
+      final cleaned = Uri.base.replace(path: '/', query: '', fragment: '');
+      SystemNavigator.routeInformationUpdated(uri: cleaned, replace: true);
+    } catch (_) {
+      // Non-fatal — worst case a refresh re-opens the sheet.
+    }
+  }
+
+  // ---------- unread tracking ----------
+
+  void _maybeCheckUnread() {
+    final state = context.read<AppState>();
+    if (!state.hasGroups) return;
+    if (_unreadChecked) return;
+    _unreadChecked = true;
+    _checkUnreadForAllGroups();
+  }
+
+  Future<void> _checkUnreadForAllGroups() async {
+    final state = context.read<AppState>();
+    if (!state.hasGroups) return;
+
+    for (final g in state.groups) {
+      // Skip Personal — nobody messages there.
+      if (g.isPersonal) continue;
+      try {
+        final last = await ChatService.instance.getLatestMessageTime(g.id);
+        if (last == null) continue;
+        final opened = _lastOpened[g.id];
+        if (opened == null || last.isAfter(opened)) {
+          if (mounted) setState(() => _unreadGroups.add(g.id));
+        }
+      } catch (_) {
+        // Non-fatal — badge just doesn't show.
+      }
+    }
+  }
+
+  // ---------- navigation ----------
+
+  void _openChat() async {
     final state = context.read<AppState>();
     if (!state.hasGroups) return;
     final group = state.currentGroup;
 
-    Navigator.of(context).push(
+    // Mark read before navigating.
+    setState(() {
+      _lastOpened[group.id] = DateTime.now();
+      _unreadGroups.remove(group.id);
+    });
+
+    await Navigator.of(context).push(
       PageRouteBuilder(
         pageBuilder: (_, __, ___) => ChatScreen(
           groupId: group.id,
@@ -66,6 +238,10 @@ class _HomeScreenState extends State<HomeScreen> {
         reverseTransitionDuration: const Duration(milliseconds: 220),
       ),
     );
+
+    // Refresh unread state after returning.
+    _unreadChecked = false;
+    _maybeCheckUnread();
   }
 
   void _toggleGroupMenu() {
@@ -99,9 +275,35 @@ class _HomeScreenState extends State<HomeScreen> {
       builder: (_) => DownloadPopover(
         link: _dlLink,
         onDismiss: _closeAllOverlays,
+        onToday: () => openTodayPreview(context),
+        onYesterday: _downloadYesterday,
       ),
     );
     Overlay.of(context).insert(_dlOverlay!);
+  }
+
+  Future<void> _downloadYesterday() async {
+    final state = context.read<AppState>();
+    final group = state.currentGroup;
+    final vlog = state.yesterdayVlog(group.id);
+    final messenger = ScaffoldMessenger.of(context);
+    if (vlog == null) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('No yesterday vlog')),
+      );
+      return;
+    }
+    state.markVlogViewed(vlog);
+    messenger.showSnackBar(const SnackBar(content: Text('Downloading…')));
+    try {
+      await VlogService.instance.shareVlog(vlog, groupName: group.name);
+      messenger.showSnackBar(const SnackBar(content: Text('Saved ✓')));
+    } catch (e) {
+      debugPrint('Download yesterday error: $e');
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Download failed. Try again.')),
+      );
+    }
   }
 
   void _openProfile() {
@@ -113,12 +315,12 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  void _openCreateJoin() {
+  void _openCreateJoin({String? initialCode}) {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (_) => const CreateJoinSheet(),
+      builder: (_) => CreateJoinSheet(initialCode: initialCode),
     );
   }
 
@@ -169,6 +371,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _closeAllOverlays();
     _hourController.dispose();
     super.dispose();
@@ -178,19 +381,33 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
 
+    // Trigger unread check once groups become available.
+    if (state.hasGroups && !_unreadChecked) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _maybeCheckUnread());
+    }
+
+    // Handles the case where a deep link arrives while Home is already
+    // mounted (warm start on Android). Cold start is handled in initState.
+    if (state.hasPendingInvite && !_pendingInviteHandled) {
+      WidgetsBinding.instance
+          .addPostFrameCallback((_) => _maybeHandlePendingInvite());
+    }
+
     final needsInitialLoad = state.isLoadingGroups ||
         (state.hasGroups && !state.clipsLoadedOnce);
 
     if (needsInitialLoad) {
-      return const Scaffold(
-        backgroundColor: EfocColors.bg,
-        body: Center(
-          child: SizedBox(
-            width: 22,
-            height: 22,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              color: EfocColors.accent,
+      return _withUpdateBanner(
+        const Scaffold(
+          backgroundColor: EfocColors.bg,
+          body: Center(
+            child: SizedBox(
+              width: 22,
+              height: 22,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: EfocColors.accent,
+              ),
             ),
           ),
         ),
@@ -198,15 +415,17 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     if (state.groupsError != null) {
-      return Scaffold(
-        backgroundColor: EfocColors.bg,
-        body: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(32),
-            child: Text(
-              state.groupsError!,
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: Colors.white54, fontSize: 13),
+      return _withUpdateBanner(
+        Scaffold(
+          backgroundColor: EfocColors.bg,
+          body: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(32),
+              child: Text(
+                state.groupsError!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.white54, fontSize: 13),
+              ),
             ),
           ),
         ),
@@ -214,65 +433,67 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     if (!state.hasGroups) {
-      return Scaffold(
-        backgroundColor: EfocColors.bg,
-        body: SafeArea(
-          child: Center(
-            child: Padding(
-              padding: const EdgeInsets.all(32),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 64,
-                    height: 64,
-                    decoration: BoxDecoration(
-                      color: EfocColors.accent.withValues(alpha: 0.12),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.group_add_outlined,
-                      color: EfocColors.accentBright,
-                      size: 28,
-                    ),
-                  ),
-                  const SizedBox(height: 18),
-                  const Text(
-                    'No Logs yet',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 17,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  const Text(
-                    'Create a Log or join one with an invite code.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.white54, fontSize: 13),
-                  ),
-                  const SizedBox(height: 20),
-                  FilledButton(
-                    style: FilledButton.styleFrom(
-                      backgroundColor: EfocColors.accent,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 22,
-                        vertical: 12,
+      return _withUpdateBanner(
+        Scaffold(
+          backgroundColor: EfocColors.bg,
+          body: SafeArea(
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(32),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 64,
+                      height: 64,
+                      decoration: BoxDecoration(
+                        color: EfocColors.accent.withValues(alpha: 0.12),
+                        shape: BoxShape.circle,
                       ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(22),
+                      child: const Icon(
+                        Icons.group_add_outlined,
+                        color: EfocColors.accentBright,
+                        size: 28,
                       ),
                     ),
-                    onPressed: _openCreateJoin,
-                    child: const Text(
-                      'Create or join a Log',
+                    const SizedBox(height: 18),
+                    const Text(
+                      'No Logs yet',
                       style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 17,
                         fontWeight: FontWeight.w700,
-                        fontSize: 13,
                       ),
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 6),
+                    const Text(
+                      'Create a Log or join one with an invite code.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Colors.white54, fontSize: 13),
+                    ),
+                    const SizedBox(height: 20),
+                    FilledButton(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: EfocColors.accent,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 22,
+                          vertical: 12,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(22),
+                        ),
+                      ),
+                      onPressed: _openCreateJoin,
+                      child: const Text(
+                        'Create or join a Log',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -280,30 +501,37 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
 
-    return GestureDetector(
-      onTap: _closeAllOverlays,
-      child: Scaffold(
-        backgroundColor: EfocColors.bg,
-        body: SafeArea(
-          child: Column(
-            children: [
+    final currentGroupHasUnread =
+        _unreadGroups.contains(state.currentGroup.id);
+
+    return _withUpdateBanner(
+      GestureDetector(
+        onTap: _closeAllOverlays,
+        child: Scaffold(
+          backgroundColor: EfocColors.bg,
+          body: SafeArea(
+            child: Column(
+              children: [
                 HomeTopBar(
-                groupLink: _groupLink,
-                downloadLink: _dlLink,
-                onToggleGroup: _toggleGroupMenu,
-                onOpenGroupSettings: _openGroupSettings,
-                onToggleDownload: _toggleDownloadMenu,
-                onOpenProfile: _openProfile,
-                onOpenChat: _openChat,
-              ),
-              HourDots(controller: _hourController),
-              Expanded(
-                child: HourPager(
-                  controller: _hourController,
-                  onCellTap: _handleCellTap,
+                  groupLink: _groupLink,
+                  downloadLink: _dlLink,
+                  onToggleGroup: _toggleGroupMenu,
+                  onOpenGroupSettings: _openGroupSettings,
+                  onToggleDownload: _toggleDownloadMenu,
+                  onOpenProfile: _openProfile,
+                  onOpenChat: _openChat,
+                  chatHasUnread: currentGroupHasUnread,
                 ),
-              ),
-            ],
+                const DayDots(),
+                HourDots(controller: _hourController),
+                Expanded(
+                  child: HourPager(
+                    controller: _hourController,
+                    onCellTap: _handleCellTap,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
