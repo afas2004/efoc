@@ -8,6 +8,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'app.dart';
 import 'firebase_options.dart';
 import 'games/active_table.dart';
+import 'games/guest_pass.dart';
+import 'games/guest_play_screen.dart';
 import 'games/table_link.dart';
 import 'state/app_state.dart';
 import 'theme/theme_controller.dart';
@@ -26,6 +28,14 @@ Future<void> main() async {
 
   // Saved accent colour, before the first frame.
   await ThemeController.instance.load();
+
+  // A one-time guest link (efoc.party/play?pass=...): just that table,
+  // none of the app. Web only; Android doesn't claim /play links.
+  final guestCode = kIsWeb ? GuestPass.codeIn(Uri.base) : null;
+  if (guestCode != null) {
+    runApp(GuestPlayApp(code: guestCode));
+    return;
+  }
 
   final appState = AppState();
 

@@ -4,19 +4,24 @@ rules_version = '2';
 // the player's Supabase user id, signed in with a custom token (P2).
 service cloud.firestore {
   match /databases/{database}/documents {
+    // An EFOC member, not a one-time table guest (guest-token sets guest_room).
+    function player() {
+      return request.auth != null && !('guest_room' in request.auth.token);
+    }
+
     // The owner writes and any signed-in EFOC player reads. Firestore can't
     // see Supabase groups, so "friends read" means every signed-in player.
     match /users/{uid}/stats/{gameId} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null && request.auth.uid == uid;
+      allow read: if player();
+      allow write: if player() && request.auth.uid == uid;
     }
     match /users/{uid}/achievements/{id} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null && request.auth.uid == uid;
+      allow read: if player();
+      allow write: if player() && request.auth.uid == uid;
     }
     // Anyone signed in can file a report; nobody reads them from the app.
     match /reports/{id} {
-      allow create: if request.auth != null
+      allow create: if player()
         && request.resource.data.reporterUid == request.auth.uid;
       allow read, update, delete: if false;
     }
