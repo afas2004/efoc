@@ -11,6 +11,15 @@
         r.unregister();
       });
     });
+    // Register the push worker up front (same path and scope Firebase
+    // uses) so it's already active when someone turns reminders on.
+    // Registering it at that moment made the first token request fail
+    // with "no active Service Worker".
+    navigator.serviceWorker
+      .register('/firebase-messaging-sw.js', {
+        scope: '/firebase-cloud-messaging-push-scope'
+      })
+      .catch(function() {});
   }
 </script>
 <head>

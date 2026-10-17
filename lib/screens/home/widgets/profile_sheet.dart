@@ -108,9 +108,11 @@ class _ProfileSheetState extends State<ProfileSheet> {
           'The web push key is missing from this build.',
         );
       case ReminderResult.failed:
+        final detail = ReminderService.instance.lastError;
         _showNotice(
           "Couldn't turn reminders on",
-          'Check your connection and try again.',
+          'Please try again.'
+              '${detail == null ? '' : '\n\nDetails: $detail'}',
         );
     }
   }

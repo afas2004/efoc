@@ -35,6 +35,10 @@ class ReminderService {
   /// The token registered from this device, so sign-out can remove it.
   String? _currentToken;
 
+  /// What went wrong in the last [enable] that returned
+  /// [ReminderResult.failed], for the error popup.
+  String? lastError;
+
   Future<bool> fetchEnabled() async {
     final userId = _client.auth.currentUser?.id;
     if (userId == null) return false;
@@ -50,8 +54,12 @@ class ReminderService {
   /// reminders on. Call from a tap: browsers only show the permission
   /// prompt in response to a user gesture.
   Future<ReminderResult> enable() async {
+    lastError = null;
     final userId = _client.auth.currentUser?.id;
-    if (userId == null) return ReminderResult.failed;
+    if (userId == null) {
+      lastError = 'Not signed in';
+      return ReminderResult.failed;
+    }
     if (kIsWeb && kWebPushVapidKey.isEmpty) return ReminderResult.notConfigured;
 
     try {
@@ -64,9 +72,23 @@ class ReminderService {
         return ReminderResult.denied;
       }
 
-      final token = await _getToken();
-      if (token == null) return ReminderResult.failed;
-      await _saveToken(userId, token);
+      final String? token;
+      try {
+        token = await _getTokenWithRetry();
+      } catch (e) {
+        lastError = 'Push registration: $e';
+        rethrow;
+      }
+      if (token == null) {
+        lastError = 'Push registration returned no token';
+        return ReminderResult.failed;
+      }
+      try {
+        await _saveToken(userId, token);
+      } catch (e) {
+        lastError = 'Saving device: $e';
+        rethrow;
+      }
 
       await _client
           .from('profiles')
@@ -75,7 +97,22 @@ class ReminderService {
       return ReminderResult.enabled;
     } catch (e) {
       debugPrint('Enable reminders error: $e');
+      lastError ??= '$e';
       return ReminderResult.failed;
+    }
+  }
+
+  /// The push worker can still be starting up on the first try ("no active
+  /// Service Worker"), so give it a couple more chances.
+  Future<String?> _getTokenWithRetry() async {
+    for (var attempt = 1; ; attempt++) {
+      try {
+        return await _getToken();
+      } catch (e) {
+        if (attempt >= 3) rethrow;
+        debugPrint('getToken attempt $attempt failed: $e');
+        await Future.delayed(Duration(milliseconds: 1500 * attempt));
+      }
     }
   }
 
