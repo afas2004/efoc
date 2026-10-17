@@ -19,6 +19,11 @@ export interface BigTwoConfig {
    * count as 5-card hands, below a straight, as in poker.
    */
   pokerHands: boolean;
+  /**
+   * A play nothing can beat (single 2♠, a pair with 2♠, three or four 2s,
+   * the top straight flush) ends the trick at once: everyone auto-passes.
+   */
+  autoPassUnbeatable: boolean;
   /** Rounds in a match. When over 1, the last round counts double. */
   roundsToPlay: number;
 }
@@ -31,6 +36,7 @@ export const defaultConfig: BigTwoConfig = {
   fourOfAKindKicker: true,
   flushCompare: 'suitFirst',
   pokerHands: true,
+  autoPassUnbeatable: true,
   passLocksOut: false,
   roundsToPlay: 1,
 };

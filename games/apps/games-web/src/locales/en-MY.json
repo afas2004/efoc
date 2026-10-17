@@ -75,7 +75,9 @@
       "flush": "Flush",
       "fullhouse": "Full house",
       "fourkind": "Four of a kind",
-      "straightflush": "Straight flush"
+      "straightflush": "Straight flush",
+      "twopair": "Two pair",
+      "trips": "Three of a kind"
     },
     "describe": {
       "single": "a single {card}",
@@ -115,7 +117,22 @@
     "statBiggest": "Biggest play",
     "stampPass": "PASS",
     "stampOut": "OUT!",
-    "minutes": "{m}m {s}s"
+    "minutes": "{m}m {s}s",
+    "yourTurnBig": "YOUR TURN",
+    "turnLead": "YOUR TURN · lead anything",
+    "turnFollow": "YOUR TURN · beat it or pass",
+    "turnOpen": "YOUR TURN · start with {card}",
+    "waitingFor": "{name}'s turn…",
+    "previous": "Before",
+    "unbeatable": "UNBEATABLE!",
+    "unstoppable": "UNSTOPPABLE!",
+    "allPass": "ALL PASS",
+    "highlights": "Highlights",
+    "hlUnstoppable": "{name} played {combo} on their last two cards. Unstoppable.",
+    "hlUnbeatable": "{name} played {combo}. Nobody could answer.",
+    "hlBomb": "{name} dropped {combo}.",
+    "hlBig": "{name} played {combo}.",
+    "verdict": "The Jester says"
   },
   "tutorial": {
     "lead3d": "You hold 3♦, so you start. Tap the 3♦ (you can add cards that make a pair, triple or 5-card hand), then tap Play.",
@@ -308,6 +325,36 @@
       {
         "text": "{name}, you got this.",
         "tone": "cheer"
+      }
+    ],
+    "unbeatable": [
+      {
+        "text": "{name} played {combo}! Nothing beats that, so everyone passes. {name} leads again!",
+        "tone": "cheer"
+      },
+      {
+        "text": "Walao, {combo} from {name}! Table auto-pass. Bow down.",
+        "tone": "cheer"
+      },
+      {
+        "text": "{combo}?! {name} just told the whole table to sit down.",
+        "tone": "neutral",
+        "spicy": true
+      }
+    ],
+    "unstoppable": [
+      {
+        "text": "{name} played {combo} and has ONE card left with the lead. It's over, folks!",
+        "tone": "cheer"
+      },
+      {
+        "text": "GG already! {name} dropped {combo} and only has one card left. Nobody can stop it.",
+        "tone": "cheer"
+      },
+      {
+        "text": "{name} with {combo} and one card left. Pack up, go home!",
+        "tone": "neutral",
+        "spicy": true
       }
     ]
   }

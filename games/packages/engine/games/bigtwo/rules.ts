@@ -103,6 +103,31 @@ export function classify(cards: readonly Card[], config: BigTwoConfig): Combo | 
   return null;
 }
 
+/**
+ * The "throw cards" of a hand: the kicker in two pair and four of a kind,
+ * and the two odd cards in three of a kind. Other combos have none.
+ */
+export function kickers(cards: readonly Card[], kind: ComboKind): Card[] {
+  if (kind !== 'twopair' && kind !== 'trips' && kind !== 'fourkind') return [];
+  const counts = groupBy(cards, rankIndex);
+  return cards.filter((c) => counts.get(rankIndex(c))!.length === 1);
+}
+
+/** The strongest combo of each size; a play equal to it can't be beaten. */
+function topKey(size: number, config: BigTwoConfig): number[] | null {
+  if (size === 1) return [51]; // 2♠
+  if (size === 2) return [51]; // a pair with 2♠
+  if (size === 3) return config.allowTriples ? [12] : null; // three 2s
+  if (size === 4) return config.fourOfAKindKicker ? null : [12]; // four 2s
+  if (size === 5) return [FIVE_CARD_ORDER.straightflush!, 12, 3]; // J-Q-K-A-2 of spades
+  return null;
+}
+
+export function isUnbeatable(combo: Combo, config: BigTwoConfig): boolean {
+  const top = topKey(combo.size, config);
+  return top !== null && compareKeys(combo.key, top) >= 0;
+}
+
 /** True when `a` can be played on `b`: same card count and stronger. */
 export function beats(a: Combo, b: Combo): boolean {
   return a.size === b.size && compareKeys(a.key, b.key) > 0;
@@ -193,7 +218,9 @@ export function legalPlays(
   config: BigTwoConfig,
 ): Play[] {
   return allCombos(hand, config).filter(
-    (p) => (!mustInclude || p.cards.includes(mustInclude)) && (!lead || beats(p.combo, lead)),
+    (p) =>
+      (!mustInclude || (p.cards.includes(mustInclude) && !kickers(p.cards, p.combo.kind).includes(mustInclude))) &&
+      (!lead || beats(p.combo, lead)),
   );
 }
 
@@ -308,6 +335,9 @@ export function validate(state: BigTwoState, seat: SeatId, move: unknown): Valid
   if (state.mustInclude && !cards.includes(state.mustInclude)) {
     return { ok: false, reason: `The first play must include ${state.mustInclude}` };
   }
+  if (state.mustInclude && kickers(cards, combo.kind).includes(state.mustInclude)) {
+    return { ok: false, reason: `${state.mustInclude} can't be the throw card in the first play` };
+  }
   if (state.lead) {
     if (combo.size !== state.lead.combo.size) return { ok: false, reason: `Play ${state.lead.combo.size} card(s)` };
     if (!beats(combo, state.lead.combo)) return { ok: false, reason: "That doesn't beat the last play" };
@@ -416,6 +446,19 @@ export function apply(
       endRound(s, events);
       return { state: s, events };
     }
+  }
+  if (s.config.autoPassUnbeatable && isUnbeatable(combo, s.config)) {
+    // Nobody can beat it: everyone still in passes at once and the trick resets.
+    const others = s.hands.map((_, i) => i).filter((i) => i !== seat && isActive(s, i));
+    events.push({ type: 'unbeatable', seat, kind: combo.kind, cards, left: s.hands[seat]!.length, passed: others });
+    for (const o of others) s.passed[o] = true;
+    let leader = seat;
+    if (!isActive(s, seat)) {
+      do leader = (leader + 1) % s.players;
+      while (!isActive(s, leader));
+    }
+    resetTrick(s, leader, events);
+    return { state: s, events };
   }
   advance(s, events);
   return { state: s, events };

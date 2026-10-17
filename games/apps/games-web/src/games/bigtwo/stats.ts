@@ -2,6 +2,16 @@
 // every phone (and spectator) shows the same numbers.
 
 import { bigtwo, type Card, type GameEvent } from '@efoc/engine';
+import type { JesterEvent } from '../../feel/jester';
+
+/** A moment worth replaying on the results screen. */
+export interface Highlight {
+  kind: 'unstoppable' | 'unbeatable' | 'bomb' | 'big';
+  weight: number;
+  seat: number;
+  cards: Card[];
+  combo: string;
+}
 
 export interface SeatStats {
   cardsPlayed: number;
@@ -24,6 +34,10 @@ export class MatchStats {
   moves = 0;
   startedAt = Date.now();
   biggest: { seat: number; cards: Card[]; kind: string; rank: number } | null = null;
+  highlights: Highlight[] = [];
+  /** The Jester's line about the winner, shown on the results screen. */
+  verdict: JesterEvent | null = null;
+  private lastPlay: { seat: number; cards: Card[]; kind: string } | null = null;
 
   reset(players: number): void {
     this.seats = Array.from({ length: players }, () => ({
@@ -32,6 +46,14 @@ export class MatchStats {
     this.moves = 0;
     this.startedAt = Date.now();
     this.biggest = null;
+    this.highlights = [];
+    this.verdict = null;
+    this.lastPlay = null;
+  }
+
+  /** The three biggest moments, biggest first. */
+  top(n = 3): Highlight[] {
+    return [...this.highlights].sort((a, b) => b.weight - a.weight).slice(0, n);
   }
 
   feed(e: GameEvent, players: number): void {
@@ -51,6 +73,10 @@ export class MatchStats {
         const rank = (KIND_RANK[kind] ?? 0) * 100 + Math.max(...cards.map(bigtwo.cardValue));
         if (!s.best || rank > s.best.rank) s.best = { cards, kind, rank };
         if (!this.biggest || rank > this.biggest.rank) this.biggest = { seat, cards, kind, rank };
+        this.lastPlay = { seat, cards, kind };
+        if (cards.length === 5 && !bigtwo.isBomb(kind as bigtwo.ComboKind)) {
+          this.highlights.push({ kind: 'big', weight: 1 + (KIND_RANK[kind] ?? 0) / 20, seat, cards, combo: kind });
+        }
         break;
       }
       case 'passed':
@@ -61,11 +87,18 @@ export class MatchStats {
         break;
       case 'bomb':
         if (s) s.bombs++;
+        if (this.lastPlay) this.highlights.push({ kind: 'bomb', weight: 4, seat, cards: this.lastPlay.cards, combo: this.lastPlay.kind });
         break;
+      case 'unbeatable': {
+        const unstoppable = (e.left as number) === 1;
+        this.highlights.push({ kind: unstoppable ? 'unstoppable' : 'unbeatable', weight: unstoppable ? 5 : 3, seat, cards: e.cards as Card[], combo: e.kind as string });
+        break;
+      }
       case 'too_slow':
         if (s) s.tooSlow++;
         break;
       case 'jester': {
+        if (e.key === 'win') this.verdict = e as JesterEvent;
         const target = e.target as number | null;
         if (target !== null && this.seats[target] && (e.mood === 'laugh' || e.mood === 'sad')) this.seats[target]!.roasted++;
         break;

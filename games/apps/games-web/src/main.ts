@@ -79,7 +79,7 @@ function setup(base: Omit<Launch, 'players' | 'humour'> & Partial<Launch>): void
 }
 
 startBridge();
-const humourParam = (q.get('humour') as Humour | null) ?? 'mild';
+const humourParam = (q.get('humour') as Humour | null) ?? 'spicy';
 
 if (inApp()) {
   onMessage((msg) => {
@@ -88,15 +88,15 @@ if (inApp()) {
       // Multiplayer host mode arrives in Phase 3; until then the app only opens Practice.
       launch({
         players: msg.players.length || 4,
-        myName: msg.players[msg.mySeat]?.name ?? 'You',
+        myName: msg.players[msg.mySeat]?.name ?? 'Player',
         myAvatar: msg.players[msg.mySeat]?.avatar ?? '😎',
-        humour: msg.humour ?? 'mild',
+        humour: msg.humour ?? 'spicy',
       });
     }
   });
 } else if (q.has('players') || q.get('tutorial') === '1' || !tutorialDone()) {
   // Tests and the first-time tutorial start straight away.
-  launch({ players: num('players') ?? 4, myName: 'You', myAvatar: '😎', humour: humourParam });
+  launch({ players: num('players') ?? 4, myName: 'Player', myAvatar: '😎', humour: humourParam });
 } else {
-  setup({ myName: 'You', myAvatar: '😎' });
+  setup({ myName: 'Player', myAvatar: '😎' });
 }

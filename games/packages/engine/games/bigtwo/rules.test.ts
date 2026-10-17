@@ -116,6 +116,48 @@ describe('combo detection', () => {
   });
 });
 
+describe('opening play', () => {
+  it("3♦ can't be the throw card in two pair, three or four of a kind", () => {
+    const s0 = state(['3d 5c 5h 8s 8d 9c 9h 9s 4c 4d 4h 4s', '6d', '7d'], { mustInclude: '3d' });
+    expect(validate(s0, 0, play('5c 5h 8s 8d 3d')).ok).toBe(false); // two pair + 3♦ kicker
+    expect(validate(s0, 0, play('9c 9h 9s 3d 5c')).ok).toBe(false); // trips + 3♦ kicker
+    expect(validate(s0, 0, play('4c 4d 4h 4s 3d')).ok).toBe(false); // quads + 3♦ kicker
+    expect(validate(s0, 0, play('3d')).ok).toBe(true);
+    const plays = legalMoves(s0, 0).filter((m) => m.type === 'play') as { cards: string[] }[];
+    for (const p of plays) {
+      const k = classify(p.cards, cfg())!;
+      expect(['twopair', 'trips', 'fourkind'].includes(k.kind) && p.cards.includes('3d')).toBe(false);
+    }
+  });
+});
+
+describe('unbeatable plays', () => {
+  it('a single 2♠ makes everyone pass at once and gives the lead back', () => {
+    const s0 = state(['2s 4d', '5d 6d', '7d 8d'], { turn: 0 });
+    const { s, events } = run(s0, [[0, play('2s')]]);
+    expect(events.map((e) => e.type)).toEqual(['card_played', 'unbeatable', 'all_passed']);
+    expect(s.turn).toBe(0);
+    expect(s.lead).toBeNull();
+  });
+  it('also for a pair with 2♠, and the top straight flush; not for a lone 2♥', () => {
+    const t = (hand: string, p: string) => run(state([hand, '5d', '6d'], { turn: 0 }), [[0, play(p)]]).events.some((e) => e.type === 'unbeatable');
+    expect(t('2s 2h 4d', '2s 2h')).toBe(true);
+    expect(t('Js Qs Ks As 2s 4d', 'Js Qs Ks As 2s')).toBe(true);
+    expect(t('2h 4d', '2h')).toBe(false);
+  });
+  it('can be switched off', () => {
+    const s0 = state(['2s 4d', '5d 6d', '7d 8d'], { turn: 0 }, cfg({ autoPassUnbeatable: false }));
+    const { s } = run(s0, [[0, play('2s')]]);
+    expect(s.turn).toBe(1);
+  });
+  it('finishing with it in Fight Till The End passes the lead on', () => {
+    const s0 = state(['2s', '5d 6d', '7d 8d'], { turn: 0 }, cfg({ mode: 'fightTillTheEnd' }));
+    const { s } = run(s0, [[0, play('2s')]]);
+    expect(s.turn).toBe(1);
+    expect(s.lead).toBeNull();
+  });
+});
+
 describe('poker hands', () => {
   const b = (a: string, x: string) => beats(combo(a), combo(x));
   it('are on by default: two pair and three of a kind as 5-card hands', () => {

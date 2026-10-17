@@ -21,6 +21,8 @@ interface Problem {
 async function check(page: Page): Promise<Problem> {
   return page.evaluate((MIN) => {
     const problems: string[] = [];
+    // Screen shake moves the whole table on purpose; measure between shakes.
+    if ((document.querySelector('.table') as HTMLElement).getAnimations().length > 0) return { problems };
     const vw = window.innerWidth;
     const vh = window.innerHeight;
     const box = (el: Element) => el.getBoundingClientRect();
@@ -46,6 +48,13 @@ async function check(page: Page): Promise<Problem> {
       handBoxes.forEach((h, k) => hit(s, h) && problems.push(`seat ${i} overlaps hand card ${k}`));
       table.forEach((c) => hit(s, box(c)) && problems.push(`seat ${i} overlaps table card ${(c as HTMLElement).dataset.card}`));
     });
+    const chip = document.querySelector('.turn-chip:not(.hidden)');
+    if (chip) {
+      const cb = box(chip);
+      seats.forEach((s, i) => hit(s, cb) && problems.push(`seat ${i} overlaps the turn chip`));
+      if (hit(cb, barBox)) problems.push('turn chip overlaps the action bar');
+      if (!inside(cb)) problems.push('turn chip is off screen');
+    }
     handBoxes.forEach((h, k) => {
       if (!inside(h)) problems.push(`hand card ${k} is off screen`);
       if (hit(h, barBox)) problems.push(`hand card ${k} overlaps the action bar`);

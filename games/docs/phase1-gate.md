@@ -29,3 +29,7 @@ The simulator caught each one within 3 games.
 After poker hands became the default, `npm run sim` ran again: 140,000 games
 at 2–8 players in both modes, **0 failures**. The random-flags sweep (now
 including `pokerHands`) ran 14,000 games, **0 failures**.
+
+## Rerun after playtest 2 (17 Oct)
+
+With the 3♦ throw-card rule and unbeatable auto-pass: 140,000 games, **0 failures**; random-flags sweep (now including `autoPassUnbeatable`) 14,000 games, **0 failures**.

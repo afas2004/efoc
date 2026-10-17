@@ -36,7 +36,9 @@ function straightTopRank(cards: readonly Card[]): string {
   return cards.find((c) => bigtwo.rankIndex(c) === idx[4])![0]!;
 }
 
-const MAJOR = new Set(['bomb', 'one_card', 'player_out', 'win', 'double_it', 'round_start']);
+const MAJOR = new Set(['unstoppable', 'unbeatable', 'bomb', 'one_card', 'player_out', 'win', 'double_it', 'round_start']);
+/** When several big things happen at once, the rarest wins the line. */
+const PRIORITY = ['unstoppable', 'unbeatable', 'bomb', 'win', 'double_it', 'player_out', 'one_card', 'round_start'];
 
 export class BigTwoCommentator {
   readonly director: JesterDirector;
@@ -77,6 +79,12 @@ export class BigTwoCommentator {
           else if (cards.length === 5 && !bigtwo.isBomb(e.kind as bigtwo.ComboKind)) candidates.push(['big_play', seat, { name: name(seat!), combo }]);
           break;
         }
+        case 'unbeatable': {
+          const combo = describeCombo(e.cards as Card[], e.kind as string);
+          // With one card left and the lead, the win is certain.
+          candidates.push([(e.left as number) === 1 ? 'unstoppable' : 'unbeatable', seat, { name: name(seat!), combo }]);
+          break;
+        }
         case 'bomb':
           if (this.lastPlay) candidates.push(['bomb', seat, { name: name(seat!), combo: describeCombo(this.lastPlay.cards, this.lastPlay.kind) }]);
           break;
@@ -110,7 +118,8 @@ export class BigTwoCommentator {
       }
     }
     // Most important first: big moments beat chatter.
-    candidates.sort((a, b) => Number(MAJOR.has(b[0])) - Number(MAJOR.has(a[0])));
+    const rank = (k: string): number => (PRIORITY.includes(k) ? PRIORITY.indexOf(k) : MAJOR.has(k) ? 50 : 100);
+    candidates.sort((a, b) => rank(a[0]) - rank(b[0]));
     for (const [key, target, vars] of candidates) {
       const line = this.director.pick(key, target, vars, MAJOR.has(key));
       if (line) return [line];
@@ -123,7 +132,8 @@ export class BigTwoCommentator {
 export function dwellMs(events: GameEvent[]): number {
   let ms = 0;
   for (const e of events) {
-    if (e.type === 'bomb' || e.type === 'double_it') ms = Math.max(ms, 1800);
+    if (e.type === 'unbeatable') ms = Math.max(ms, (e.left as number) === 1 ? 3200 : 2400);
+    else if (e.type === 'bomb' || e.type === 'double_it') ms = Math.max(ms, 1800);
     else if (e.type === 'all_passed' || e.type === 'player_out') ms = Math.max(ms, 1200);
     else if (e.type === 'jester') ms = Math.max(ms, 900);
     else if (e.type === 'card_played') ms = Math.max(ms, 500);

@@ -51,7 +51,10 @@ export function banner(layer: HTMLElement, text: string, role: ColourRole, size:
           { opacity: 1, transform: 'translate(-50%, -20px) scale(1)', offset: 0.75 },
           { opacity: 0, transform: 'translate(-50%, -28px) scale(1)' },
         ];
-  el.animate(frames, { duration: ctx.ms, easing: 'cubic-bezier(.2,.9,.3,1.2)', fill: 'forwards' });
+  // The bounce belongs to the entrance only. Easing the whole timeline with
+  // an overshoot curve would rush into the fade-out and hide the word early.
+  frames[0]!.easing = 'cubic-bezier(.2,.9,.3,1.2)';
+  el.animate(frames, { duration: ctx.ms, easing: 'linear', fill: 'forwards' });
   ctx.onEnd(() => el.remove());
   return el;
 }

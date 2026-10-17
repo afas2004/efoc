@@ -11,6 +11,7 @@ import { sound, unlockAudio, setMuted } from '../../feel/sound';
 import { FeelQueue, type Tier } from '../../feel/tiers';
 import { L, fmt } from '../../strings';
 import { cardLabel, cardsText, makeBack, makeCard } from '../../table/cardFace';
+import { TURN_CHIP_H } from '../../table/layout';
 import { describeCombo } from './commentary';
 import { MatchStats } from './stats';
 import { computeLayout, handPlaces, RAISE_PX, type Box, type TableLayout } from '../../table/layout';
@@ -70,6 +71,8 @@ export class BigTwoTable {
   private selected = new Set<Card>();
   private pending: Card[] | null = null;
   private trick: TrickPlay[] = [];
+  /** Every play this round, for the "before" strip. */
+  private history: TrickPlay[] = [];
   private sortMode: SortMode = 'rank';
   private customOrder: Card[] = [];
   private outSeats = new Map<SeatId, number>();
@@ -83,6 +86,9 @@ export class BigTwoTable {
   private cardLayer: HTMLElement;
   private seatEls: HTMLElement[] = [];
   private centreLabel: HTMLElement;
+  private historyEl: HTMLElement;
+  private turnChip: HTMLElement;
+  private handGlow: HTMLElement;
   private timerBar: HTMLElement;
   private timerFill: HTMLElement;
   private actionBar: HTMLElement;
@@ -113,6 +119,10 @@ export class BigTwoTable {
     this.table = el('div', 'table', root);
     this.cardLayer = el('div', 'card-layer', this.table);
     this.centreLabel = el('div', 'centre-label', this.table);
+    this.historyEl = el('div', 'history', this.table);
+    this.handGlow = el('div', 'hand-glow', this.table);
+    this.turnChip = el('div', 'turn-chip hidden', this.table);
+    this.turnChip.setAttribute('aria-live', 'polite');
     this.timerBar = el('div', 'timer-bar', this.table);
     this.timerFill = el('div', 'timer-fill', this.timerBar);
     this.actionBar = el('div', 'action-bar', this.table);
@@ -173,6 +183,20 @@ export class BigTwoTable {
     }
     this.render(prev, events);
     for (const e of events) this.moment(e, view);
+    const myTurnNow = view.phase === 'play' && view.turn === this.me;
+    const myTurnBefore = !!prev && prev.phase === 'play' && prev.turn === this.me && !events.some((e) => e.type === 'round_started');
+    if (myTurnNow && !myTurnBefore && !this.meta.afk[this.me]) this.yourTurn();
+  }
+
+  /** The cue that it's my turn: banner over the table, glowing hand, chime, haptic. */
+  private yourTurn(): void {
+    this.myTurnCue();
+    this.feel.play(2, 'your_turn', (ctx) => {
+      const c = this.layout.stage;
+      banner(this.fx, L().ui.yourTurnBig, 'turn', 'pop', ctx, { x: c.x + c.w / 2, y: this.layout.hand.y - TURN_CHIP_H - 48 });
+      sound.chime();
+      haptic('medium');
+    });
   }
 
   /** The host rejected my move: snap back with the reason. */
@@ -190,13 +214,17 @@ export class BigTwoTable {
   private trackTrick(e: GameEvent): void {
     if (e.type === 'round_started') {
       this.trick = [];
+      this.history = [];
       this.outSeats.clear();
       this.customOrder = [];
       this.resultsOpen = false;
       this.closeOverlay();
       this.initialHand = this.view?.hand.length || 13;
     } else if (e.type === 'card_played') {
-      this.trick.push({ seat: e.seat as number, cards: e.cards as Card[], kind: e.kind as string });
+      const play = { seat: e.seat as number, cards: e.cards as Card[], kind: e.kind as string };
+      this.trick.push(play);
+      this.history.push(play);
+      if (this.history.length > 3) this.history.shift();
     } else if (e.type === 'all_passed') {
       this.trick = [];
     } else if (e.type === 'player_out') {
@@ -265,7 +293,10 @@ export class BigTwoTable {
     const shown = plays.slice(-2);
     const c = lay.stage;
     // Centre cards shrink to fit the play area: five cards across, current play plus the one under it.
-    const tableScale = Math.min(1.25, (lay.cardW * 1.6) / lay.handW, c.w / (3.5 * lay.handW), Math.max(0.3, (c.h - 34) / (lay.handH * 1.38)));
+    const HIST_H = 46;
+    const LABEL_H = 34;
+    const tableScale = Math.min(1.25, (lay.cardW * 1.6) / lay.handW, c.w / (3.5 * lay.handW), Math.max(0.3, (c.h - LABEL_H - HIST_H) / (lay.handH * 1.38)));
+    const midY = c.y + HIST_H + (c.h - HIST_H - LABEL_H) * 0.55;
     shown.forEach((play, idx) => {
       const current = idx === shown.length - 1;
       const s = current ? tableScale : tableScale * 0.8;
@@ -273,7 +304,7 @@ export class BigTwoTable {
       const step = w * 0.62;
       const total = w + step * (play.cards.length - 1);
       const x0 = c.x + (c.w - total) / 2;
-      const y = c.y + c.h * 0.42 - (lay.handH * s) / 2 - (current ? 0 : lay.handH * s * 0.35);
+      const y = midY - (lay.handH * s) / 2 - (current ? 0 : lay.handH * s * 0.35);
       play.cards.forEach((card, i) => {
         wanted.set(card, { x: x0 + i * step, y, rot: current ? (i - (play.cards.length - 1) / 2) * 2 : -4, scale: s, z: (current ? 300 : 200) + i, opacity: current ? 1 : 0.55 });
       });
@@ -326,13 +357,63 @@ export class BigTwoTable {
     const top = this.trick[this.trick.length - 1];
     this.centreLabel.textContent = top
       ? `${this.nameOf(top.seat)}: ${describeCombo(top.cards, top.kind)}`
-      : v.turn === this.me && v.phase === 'play'
-        ? L().ui.yourTurn
-        : '';
-    place(this.centreLabel, { x: c.x, y: c.y + c.h * 0.42 + lay.handH * tableScale * 0.56, w: c.w, h: 30 });
+      : '';
+    place(this.centreLabel, { x: c.x, y: midY + lay.handH * tableScale * 0.56, w: c.w, h: 30 });
+    this.renderHistory(c);
+    this.renderTurn(v);
 
     this.renderButtons();
     void prev;
+  }
+
+  /** The two plays before the current one, so a fast table can be followed. */
+  private renderHistory(c: Box): void {
+    const before = this.history.slice(0, -1).slice(-2);
+    const h = this.historyEl;
+    h.innerHTML = '';
+    if (before.length === 0) {
+      h.classList.add('hidden');
+      return;
+    }
+    h.classList.remove('hidden');
+    el('span', 'history-label', h).textContent = L().ui.previous;
+    for (const p of before) {
+      const row = el('span', 'history-item', h);
+      el('span', 'history-who', row).textContent = `${this.seatMeta[p.seat]!.avatar} ${this.nameOf(p.seat)}`;
+      const cards = el('span', 'history-cards', row);
+      for (const card of p.cards) {
+        const chip = el('span', `history-card suit-${card[1]}`, cards);
+        chip.textContent = cardsText([card]);
+      }
+    }
+    h.style.left = `${c.x}px`;
+    h.style.top = `${c.y}px`;
+    h.style.width = `${c.w}px`;
+  }
+
+  /** Whose turn it is, always visible just above my hand. */
+  private renderTurn(v: View): void {
+    const chip = this.turnChip;
+    const lay = this.layout;
+    if (v.phase !== 'play' || this.resultsOpen) {
+      chip.className = 'turn-chip hidden';
+      this.handGlow.className = 'hand-glow';
+      return;
+    }
+    const mine = v.turn === this.me;
+    const u = L().ui;
+    chip.textContent = mine
+      ? v.mustInclude
+        ? fmt(u.turnOpen, { card: cardsText([v.mustInclude]) })
+        : v.lead
+          ? u.turnFollow
+          : u.turnLead
+      : fmt(u.waitingFor, { name: this.seatMeta[v.turn]?.name ?? '' });
+    chip.className = `turn-chip${mine ? ' mine' : ''}`;
+    const w = Math.min(lay.hand.w, 340);
+    place(chip, { x: lay.hand.x + (lay.hand.w - w) / 2, y: lay.hand.y - TURN_CHIP_H - 2, w, h: TURN_CHIP_H });
+    this.handGlow.className = `hand-glow${mine ? ' on' : ''}`;
+    place(this.handGlow, lay.hand);
   }
 
   private renderSeats(v: View): void {
@@ -571,7 +652,7 @@ export class BigTwoTable {
     j.style.width = `${w}px`;
     j.style.left = `${(lay.vw - w) / 2}px`;
     const jh = 116;
-    j.style.top = `${lay.portrait ? Math.max(lay.centre.y, lay.hand.y - jh - 6) : Math.max(4, lay.centre.y - 20)}px`;
+    j.style.top = `${lay.portrait ? Math.max(lay.centre.y, lay.hand.y - TURN_CHIP_H - jh - 10) : Math.max(4, lay.centre.y - 20)}px`;
     // Restart the entrance animation.
     void j.offsetWidth;
     j.classList.add('show');
@@ -648,6 +729,9 @@ export class BigTwoTable {
       case 'bomb':
         this.big('bomb', L().ui.bomb, 'danger', true);
         break;
+      case 'unbeatable':
+        this.unbeatable(seat!, (e.left as number) === 1, e.passed as number[]);
+        break;
       case 'passed': {
         this.feel.play(1, 'passed', () => sound.pass());
         if (seat !== null) this.stamp(seat, L().ui.stampPass, 'pass');
@@ -655,6 +739,10 @@ export class BigTwoTable {
         break;
       }
       case 'all_passed': {
+        if (this.skipAllPassed) {
+          this.skipAllPassed = false;
+          break;
+        }
         const winner = seat!;
         this.feel.play(2, 'all_passed', (ctx) => {
           sound.whoosh();
@@ -691,6 +779,38 @@ export class BigTwoTable {
       default:
         break;
     }
+  }
+
+  private skipAllPassed = false;
+
+  /**
+   * Nothing can beat this play: boom, then every other seat stamps PASS at
+   * the same moment. With one card left after it, the win is certain, so it
+   * gets the biggest moment in the game.
+   */
+  private unbeatable(seat: SeatId, unstoppable: boolean, passed: number[]): void {
+    this.skipAllPassed = true;
+    const text = unstoppable ? L().ui.unstoppable : L().ui.unbeatable;
+    this.feel.play(3, unstoppable ? 'unstoppable' : 'unbeatable', (ctx) => {
+      dim(this.fx, ctx);
+      banner(this.fx, text, unstoppable ? 'good' : 'danger', 'banner', ctx);
+      shake(this.table, 'big', ctx);
+      const c = this.layout.stage;
+      const cx = c.x + c.w / 2;
+      const cy = c.y + c.h * 0.5;
+      burst(this.fx, cx, cy, unstoppable ? 44 : 30, 'danger', ctx, unstoppable ? 220 : 170);
+      if (unstoppable) burst(this.fx, cx, cy, 30, 'good', ctx, 140);
+      sound.bass();
+      if (unstoppable) window.setTimeout(() => sound.bass(), 260);
+      haptic('strong');
+      this.root.classList.add(unstoppable ? 'flash-gold' : 'flash-red');
+      ctx.onEnd(() => this.root.classList.remove('flash-gold', 'flash-red'));
+      // Everyone else passes at once, in sync.
+      window.setTimeout(() => {
+        for (const s of passed) this.stamp(s, L().ui.stampPass, 'pass');
+        sound.pass();
+      }, ctx.reduced ? 0 : 450);
+    });
   }
 
   /** A T3: table dims, banner, big shake, burst, bass hit, strong haptic. */
@@ -748,6 +868,21 @@ export class BigTwoTable {
       li.querySelector('.pts')!.textContent =
         `+${points[seat]}${doubled[seat] ? ` (${u.doubled})` : ''}` + (matchOver && v.round > 1 ? ` · ${totals[seat]}` : '') + (left ? ` · ${left === 1 ? u.oneCard : fmt(u.cardsLeft, { n: left })}` : '');
     });
+
+    if (this.stats.verdict) {
+      const r = el('div', 'roast', card);
+      el('span', 'roast-face', r).textContent = '🃏';
+      el('span', '', r).textContent = jesterText(this.stats.verdict);
+    }
+    const hl = this.stats.top(3);
+    if (hl.length > 0) {
+      el('h3', 'stats-title', card).textContent = u.highlights;
+      const list = el('ol', 'highlights', card);
+      const key = { unstoppable: u.hlUnstoppable, unbeatable: u.hlUnbeatable, bomb: u.hlBomb, big: u.hlBig };
+      for (const h of hl) {
+        el('li', `hl-${h.kind}`, list).textContent = fmt(key[h.kind], { name: this.nameOf(h.seat), combo: describeCombo(h.cards, h.combo) });
+      }
+    }
 
     // Stats: per player, then the match as a whole.
     el('h3', 'stats-title', card).textContent = u.stats;
@@ -808,33 +943,48 @@ export class BigTwoTable {
       b.lastElementChild!.textContent = value;
       b.addEventListener('click', onClick);
     };
+    /** An on/off setting as a switch. */
+    const toggle = (label: string, on: boolean, flip: () => void): void => {
+      const b = button(sheet, 'menu-row', '', '');
+      b.setAttribute('role', 'switch');
+      b.setAttribute('aria-checked', String(on));
+      b.setAttribute('aria-label', label);
+      b.innerHTML = `<span></span><span class="switch${on ? ' on' : ''}"><span class="knob"></span></span>`;
+      b.firstElementChild!.textContent = label;
+      b.addEventListener('click', () => {
+        flip();
+        sound.toggle();
+        this.applySettings();
+        const sw = b.querySelector('.switch')!;
+        const now = !sw.classList.contains('on');
+        sw.classList.toggle('on', now);
+        b.setAttribute('aria-checked', String(now));
+      });
+    };
     row(L().ui.rules, '›', () => this.openRules());
     if (this.isHost) {
-      const h = this.settings.humour;
-      const label = { off: L().ui.humourOff, mild: L().ui.humourMild, spicy: L().ui.humourSpicy }[h];
-      row(L().ui.humour, label, () => {
-        this.settings.humour = h === 'off' ? 'mild' : h === 'mild' ? 'spicy' : 'off';
-        this.hooks.setHumour?.(this.settings.humour);
-        this.applySettings();
-        this.openMenu();
-      });
+      const g = el('div', 'menu-row menu-seg', sheet);
+      el('span', '', g).textContent = L().ui.humour;
+      const segs = el('span', 'segmented small', g);
+      for (const h of ['off', 'mild', 'spicy'] as Humour[]) {
+        const label = { off: L().ui.humourOff, mild: L().ui.humourMild, spicy: L().ui.humourSpicy }[h];
+        const b = button(segs, `seg${this.settings.humour === h ? ' on' : ''}`, label, `${L().ui.humour}: ${label}`);
+        b.setAttribute('aria-pressed', String(this.settings.humour === h));
+        b.addEventListener('click', () => {
+          this.settings.humour = h;
+          this.hooks.setHumour?.(h);
+          sound.click();
+          this.applySettings();
+          for (const o of segs.querySelectorAll('.seg')) {
+            o.classList.toggle('on', o === b);
+            o.setAttribute('aria-pressed', String(o === b));
+          }
+        });
+      }
     }
-    row(L().ui.sound, this.settings.sound ? L().ui.on : L().ui.off, () => {
-      this.settings.sound = !this.settings.sound;
-      sound.toggle();
-      this.applySettings();
-      this.openMenu();
-    });
-    row(L().ui.reducedMotion, this.settings.reducedMotion ? L().ui.on : L().ui.off, () => {
-      this.settings.reducedMotion = !this.settings.reducedMotion;
-      this.applySettings();
-      this.openMenu();
-    });
-    row(L().ui.fourColour, this.settings.fourColour ? L().ui.on : L().ui.off, () => {
-      this.settings.fourColour = !this.settings.fourColour;
-      this.applySettings();
-      this.openMenu();
-    });
+    toggle(L().ui.sound, this.settings.sound, () => (this.settings.sound = !this.settings.sound));
+    toggle(L().ui.reducedMotion, this.settings.reducedMotion, () => (this.settings.reducedMotion = !this.settings.reducedMotion));
+    toggle(L().ui.fourColour, this.settings.fourColour, () => (this.settings.fourColour = !this.settings.fourColour));
     const actions = el('div', 'sheet-actions', sheet);
     button(actions, 'btn btn-secondary', L().ui.leave, L().ui.leave).addEventListener('click', () => this.hooks.exit());
     button(actions, 'btn btn-primary', L().ui.close, L().ui.close).addEventListener('click', () => this.closeOverlay());

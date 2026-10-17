@@ -15,7 +15,7 @@ export interface SetupChoice {
 const KEY = 'efoc.bigtwo.setup';
 
 export function loadChoice(): SetupChoice {
-  const fallback: SetupChoice = { players: 4, mode: 'standard', pokerHands: true, humour: 'mild' };
+  const fallback: SetupChoice = { players: 4, mode: 'standard', pokerHands: true, humour: 'spicy' };
   try {
     return { ...fallback, ...(JSON.parse(localStorage.getItem(KEY) ?? '{}') as Partial<SetupChoice>) };
   } catch {

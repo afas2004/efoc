@@ -41,6 +41,8 @@ export const JESTER_GAP_MS = 15_000;
 /** Mood and reaction per event key. */
 const STYLE: Record<string, { mood: Mood; emoji: string | null }> = {
   round_start: { mood: 'talk', emoji: 'cool' },
+  unbeatable: { mood: 'shock', emoji: 'explode' },
+  unstoppable: { mood: 'shock', emoji: 'scream' },
   bomb: { mood: 'shock', emoji: 'explode' },
   all_passed: { mood: 'smug', emoji: 'cool' },
   two_early: { mood: 'shock', emoji: 'fire' },
@@ -56,7 +58,7 @@ const STYLE: Record<string, { mood: Mood; emoji: string | null }> = {
 };
 
 export class JesterDirector {
-  humour: Humour = 'mild';
+  humour: Humour = 'spicy';
   private lastAt = -Infinity;
   private lastTarget: number | null = null;
   private lastKey = '';

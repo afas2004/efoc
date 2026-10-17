@@ -50,7 +50,9 @@ const GUTTER = 8;
 const ACTION_H = 60;
 const RAISE = 18;
 /** Room kept above the hand for the Jester in portrait. */
-export const JESTER_BAND = 120;
+export const JESTER_BAND = 156;
+/** Height of the turn status chip that sits just above the hand. */
+export const TURN_CHIP_H = 30;
 
 const clamp = (v: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, v));
 

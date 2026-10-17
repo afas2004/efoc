@@ -42,12 +42,16 @@ efoc/                         (this repo)
 | Poker hands (playtest, 17 Oct) | **On by default.** Two pair (2+2+1) and three of a kind (3+1+1) are also 5-card hands. Order: two pair < three of a kind < straight < flush < full house < four of a kind < straight flush. Two pair compares the higher pair, then the lower pair, then the best suit in the higher pair; three of a kind compares the triple. | `pokerHands: true` |
 | Triples, four of a kind | Spec defaults: triples allowed, four of a kind is played as 4 + 1 kicker. | `allowTriples: true`, `fourOfAKindKicker: true` |
 
+| Opening play (playtest 2) | **3♦ can't be the throw card.** In two pair, three of a kind or four of a kind + 1, the 3♦ (or the burned-3♦ fallback card) must be in the main group, not the kicker. | — |
+| Unbeatable plays (playtest 2) | **Auto-pass.** A play nothing can beat (single 2♠, a pair with 2♠, three or four 2s, J-Q-K-A-2 of spades) makes everyone else pass at once, and the player leads again. In Fight Till The End, if they went out with it, the lead goes to the next player still in. | `autoPassUnbeatable: true` |
+
 ## Playtest changes (17 Oct)
 
 - **The Jester is host-driven.** The host picks every line and sends it in the log as a `jester` event, so every player and spectator sees the same line at the same time. Lines describe what happened ("Mei played a pair of Ks…"). Big moments (bomb, last card, going out, win, round start) always speak; smaller ones keep the 15 s gap. He is a large animated original mascot with Noto animated emoji reactions.
 - **Slower pacing.** Bots wait 0.9 to 4.2 s, plus a pause after big moments, so people can follow the table.
 - **Seats show small card backs** with the count, and every action stamps the seat (PASS, PAIR, …).
 - **Stats on every results screen**, plus a setup screen (players, mode, poker hands, humour) and "Change rules".
+- **Playtest 2:** a turn chip above the hand ("YOUR TURN · beat it or pass" / "Speedy's turn…") with a glowing hand and a YOUR TURN pop; a "Before" strip with the two previous plays; humour defaults to **Spicy**; menu settings are switches; 2♠-style plays get an UNBEATABLE / UNSTOPPABLE moment with synced PASS stamps; results add the Jester's verdict and top-3 highlights.
 
 ## Left for later (as the spec says)
 
