@@ -38,8 +38,16 @@ efoc/                         (this repo)
 | Straight flush vs straight flush | Top card, rank then suit (as for straights). | — |
 | Who leads round 2 onward? | **Whoever has 3♦**, every round (or the lowest card if 3♦ is burned). | — |
 | Rounds per match | **1 by default.** The host gets a "Play again" button on the results screen. "Final round doubles" only applies when `roundsToPlay` > 1. | `roundsToPlay: 1` |
-| Default mode | Standard. The host can pick Fight Till The End. | `mode: 'standard'` |
+| Default mode | Standard. The host picks Fight Till The End on the setup screen. | `mode: 'standard'` |
+| Poker hands (playtest, 17 Oct) | **On by default.** Two pair (2+2+1) and three of a kind (3+1+1) are also 5-card hands. Order: two pair < three of a kind < straight < flush < full house < four of a kind < straight flush. Two pair compares the higher pair, then the lower pair, then the best suit in the higher pair; three of a kind compares the triple. | `pokerHands: true` |
 | Triples, four of a kind | Spec defaults: triples allowed, four of a kind is played as 4 + 1 kicker. | `allowTriples: true`, `fourOfAKindKicker: true` |
+
+## Playtest changes (17 Oct)
+
+- **The Jester is host-driven.** The host picks every line and sends it in the log as a `jester` event, so every player and spectator sees the same line at the same time. Lines describe what happened ("Mei played a pair of Ks…"). Big moments (bomb, last card, going out, win, round start) always speak; smaller ones keep the 15 s gap. He is a large animated original mascot with Noto animated emoji reactions.
+- **Slower pacing.** Bots wait 0.9 to 4.2 s, plus a pause after big moments, so people can follow the table.
+- **Seats show small card backs** with the count, and every action stamps the seat (PASS, PAIR, …).
+- **Stats on every results screen**, plus a setup screen (players, mode, poker hands, humour) and "Change rules".
 
 ## Left for later (as the spec says)
 

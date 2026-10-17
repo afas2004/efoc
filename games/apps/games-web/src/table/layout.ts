@@ -38,6 +38,8 @@ export interface TableLayout {
   /** Opponent seats, in clockwise order starting from the player after you. */
   seats: Box[];
   centre: Box;
+  /** Where played cards go: the widest free band, below the side seats when it is tall enough. */
+  stage: Box;
   hand: Box;
   timerBar: Box;
   actionBar: Box;
@@ -47,6 +49,8 @@ export const MIN_TARGET = 44;
 const GUTTER = 8;
 const ACTION_H = 60;
 const RAISE = 18;
+/** Room kept above the hand for the Jester in portrait. */
+export const JESTER_BAND = 120;
 
 const clamp = (v: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, v));
 
@@ -57,7 +61,7 @@ export function seatSize(compact: boolean): { w: number; h: number } {
 /** Hand card size for a viewport. */
 function handCardSize(vw: number, vh: number, portrait: boolean): { w: number; h: number } {
   const w = portrait ? clamp(Math.min(vw / 6.2, vh / 9), 46, 84) : clamp(Math.min(vw / 12, vh / 7), 46, 84);
-  return { w: Math.round(w), h: Math.round(w * 1.4) };
+  return { w: Math.round(w), h: Math.round(w * 1.36) }; // Kenney cards are 140 × 190
 }
 
 /** How the hand fits: one row if every card keeps a 44 px strip, else two rows. */
@@ -65,7 +69,7 @@ export function handRows(count: number, width: number, cardW: number): 1 | 2 {
   if (count <= 1) return 1;
   if (count > 13) return 2;
   const step = (width - cardW) / (count - 1);
-  return step >= MIN_TARGET + 4 ? 1 : 2;
+  return step >= MIN_TARGET ? 1 : 2;
 }
 
 function handHeight(rows: 1 | 2, cardH: number): number {
@@ -90,7 +94,7 @@ const PORTRAIT_SLOTS: Record<number, Slot[]> = {
 export function computeLayout(vw: number, vh: number, players: number, insets: Insets = { top: 0, right: 0, bottom: 0, left: 0 }, handCount = 13): TableLayout {
   const portrait = vh >= vw;
   const cardW = Math.round(Math.min(vw / 8.5, vh / 6));
-  const cardH = Math.round(cardW * 1.4);
+  const cardH = Math.round(cardW * 1.36);
   const { w: handW, h: handH } = handCardSize(vw, vh, portrait);
   const left = insets.left + GUTTER;
   const right = vw - insets.right - GUTTER;
@@ -163,7 +167,16 @@ export function computeLayout(vw: number, vh: number, players: number, insets: I
     const cy0 = Math.max(top, ...inner.map((b) => b.y + b.h)) + GUTTER;
     centre = { x: cx0, y: cy0, w: cx1 - cx0, h: Math.max(0, playBottom - cy0) };
   }
-  return { vw, vh, portrait, cardW, cardH, handW, handH, compact, seats, centre, hand, timerBar, actionBar };
+  // Portrait: the band under the lowest side seat and above the Jester spot
+  // is the full width of the table, so played cards can be big there.
+  let stage = centre;
+  if (portrait) {
+    const sideBottom = Math.max(top, ...seats.filter((b) => b.y > top + 1).map((b) => b.y + b.h), ...seats.map((b) => b.y + b.h));
+    const y0 = sideBottom + GUTTER;
+    const y1 = hand.y - JESTER_BAND;
+    if (y1 - y0 >= Math.max(150, handH * 1.5)) stage = { x: left, y: y0, w: innerW, h: y1 - y0 };
+  }
+  return { vw, vh, portrait, cardW, cardH, handW, handH, compact, seats, centre, stage, hand, timerBar, actionBar };
 }
 
 /** Where each hand card sits: a shallow fan when it fits, else a flat overlap, else two rows. */

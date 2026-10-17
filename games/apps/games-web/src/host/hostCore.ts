@@ -33,6 +33,10 @@ export interface HostOptions {
   /** Fixed seed for the whole match (tests, tutorial). Otherwise crypto. */
   seed?: number;
   now?: () => number;
+  /** Extra events for an entry (the Jester line), chosen once by the host. */
+  commentate?: (events: GameEvent[], state: unknown) => GameEvent[];
+  /** How long the table pauses after an entry before the next bot moves. */
+  dwell?: (events: GameEvent[]) => number;
 }
 
 export interface Clock {
@@ -51,11 +55,12 @@ function freshSeed(): number {
   return buf[0]!;
 }
 
+// Bots think long enough for people to follow what they did.
 const BOT_DELAY: Record<Personality, [number, number]> = {
-  speedy: [250, 500],
-  grandmaster: [900, 1500],
-  bluffer: [600, 1300],
-  slowpoke: [2200, 3800],
+  speedy: [900, 1300],
+  grandmaster: [1600, 2400],
+  bluffer: [1300, 2100],
+  slowpoke: [2800, 4200],
 };
 
 /** Auto-selects in a row before a seat is marked AFK. */
@@ -80,6 +85,7 @@ export class HostCore<Config, State, Move, View> {
   private round = 0;
   private listeners: ((e: LogEntry<Move>) => void)[] = [];
   private stopped = false;
+  private lastDwell = 0;
 
   constructor(
     readonly game: GameModule<Config, State, Move, View> & { nextRound?: (s: State, rng: Rng) => State },
@@ -110,6 +116,8 @@ export class HostCore<Config, State, Move, View> {
   }
 
   private emit(seat: SeatId | null, move: Move | null, events: GameEvent[]): void {
+    if (this.opts.commentate) events = [...events, ...this.opts.commentate(events, this.state)];
+    this.lastDwell = this.opts.dwell ? this.opts.dwell(events) : 0;
     const entry: LogEntry<Move> = { n: this.n++, seat, move, events, deadline: this.deadline };
     for (const l of this.listeners) l(entry);
   }
@@ -235,7 +243,7 @@ export class HostCore<Config, State, Move, View> {
     if (seat === undefined) return;
     const info = this.seats[seat]!.bot;
     const [lo, hi] = BOT_DELAY[info?.personality ?? 'grandmaster'];
-    const delay = (lo + this.rng.next() * (hi - lo)) * (this.opts.botSpeed ?? 1);
+    const delay = (this.lastDwell + lo + this.rng.next() * (hi - lo)) * (this.opts.botSpeed ?? 1);
     this.botTimer = this.clock.set(() => {
       this.botTimer = null;
       if (!this.waiting().includes(seat)) return;

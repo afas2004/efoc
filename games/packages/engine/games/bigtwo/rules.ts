@@ -29,7 +29,7 @@ export function sortCards(cards: readonly Card[]): Card[] {
 
 export type ComboKind =
   | 'single' | 'pair' | 'triple' | 'quad'
-  | 'straight' | 'flush' | 'fullhouse' | 'fourkind' | 'straightflush';
+  | 'twopair' | 'trips' | 'straight' | 'flush' | 'fullhouse' | 'fourkind' | 'straightflush';
 
 export interface Combo {
   kind: ComboKind;
@@ -38,8 +38,9 @@ export interface Combo {
   key: number[];
 }
 
+// Poker hands (two pair, trips) sit below a straight.
 const FIVE_CARD_ORDER: Partial<Record<ComboKind, number>> = {
-  straight: 0, flush: 1, fullhouse: 2, fourkind: 3, straightflush: 4,
+  twopair: 0, trips: 1, straight: 2, flush: 3, fullhouse: 4, fourkind: 5, straightflush: 6,
 };
 
 export const isBomb = (kind: ComboKind): boolean =>
@@ -88,6 +89,16 @@ export function classify(cards: readonly Card[], config: BigTwoConfig): Combo | 
   }
   if (counts.length === 2 && big![1].length === 4 && config.fourOfAKindKicker) {
     return { kind: 'fourkind', size: 5, key: [FIVE_CARD_ORDER.fourkind!, big![0]] };
+  }
+  if (config.pokerHands && counts.length === 3 && big![1].length === 3) {
+    return { kind: 'trips', size: 5, key: [FIVE_CARD_ORDER.trips!, big![0]] };
+  }
+  if (config.pokerHands && counts.length === 3 && big![1].length === 2) {
+    // Higher pair, then lower pair, then the best suit in the higher pair.
+    const hi = Math.max(big![0], small![0]);
+    const lo = Math.min(big![0], small![0]);
+    const hiSuit = Math.max(...cards.filter((c) => rankIndex(c) === hi).map(suitIndex));
+    return { kind: 'twopair', size: 5, key: [FIVE_CARD_ORDER.twopair!, hi, lo, hiSuit] };
   }
   return null;
 }
@@ -148,6 +159,27 @@ export function allCombos(hand: readonly Card[], config: BigTwoConfig): Play[] {
     }
     if (g3.length === 4 && config.fourOfAKindKicker) {
       for (const k of sorted) if (rankIndex(k) !== r3) add([...g3, k]);
+    }
+  }
+  if (config.pokerHands) {
+    const ranks = [...byRank.keys()];
+    // Three of a kind + two odd cards (a pair of kickers would be a full house).
+    for (const [r3, g3] of byRank) {
+      if (g3.length < 3) continue;
+      const others = sorted.filter((c) => rankIndex(c) !== r3);
+      for (const t of combinations(g3, 3)) {
+        for (const k of combinations(others, 2)) if (rankIndex(k[0]!) !== rankIndex(k[1]!)) add([...t, ...k]);
+      }
+    }
+    // Two pair + a kicker of a third rank.
+    for (let i = 0; i < ranks.length; i++) {
+      for (let j = i + 1; j < ranks.length; j++) {
+        const a = byRank.get(ranks[i]!)!;
+        const b = byRank.get(ranks[j]!)!;
+        if (a.length < 2 || b.length < 2) continue;
+        const kickers = sorted.filter((c) => rankIndex(c) !== ranks[i] && rankIndex(c) !== ranks[j]);
+        for (const pa of combinations(a, 2)) for (const pb of combinations(b, 2)) for (const k of kickers) add([...pa, ...pb, k]);
+      }
     }
   }
   return out;

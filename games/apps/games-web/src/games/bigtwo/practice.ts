@@ -5,6 +5,7 @@ import { bigtwo, createRng } from '@efoc/engine';
 import { HostCore, type Personality, type SeatInfo } from '../../host/hostCore';
 import type { Humour } from '../../feel/jester';
 import { L } from '../../strings';
+import { BigTwoCommentator, dwellMs } from './commentary';
 import { BigTwoTable, type TableSettings } from './table';
 
 export interface PracticeOptions {
@@ -24,6 +25,8 @@ export interface PracticeOptions {
   settings?: Partial<TableSettings>;
   onExit(): void;
   onTutorialDone(): void;
+  /** Back to the setup sheet (results screen "Change rules"). */
+  onChangeRules?: () => void;
 }
 
 const BOTS: { name: string; avatar: string; personality: Personality; level: 'easy' | 'normal' }[] = [
@@ -51,11 +54,25 @@ export function startPractice(root: HTMLElement, o: PracticeOptions): { host: Ho
     ...BOTS.slice(0, players - 1).map((b) => ({ name: b.name, avatar: b.avatar, bot: { level: b.level, personality: b.personality } })),
   ];
   const turnMs = o.tutorial ? 60_000 : o.turnMs ?? 20_000;
+  // The host's Jester: seeded per match, so a replay picks the same lines.
+  let jesterSeed = (o.seed ?? Math.floor(Math.random() * 2 ** 31)) ^ 0x5eed;
+  const commentator = new BigTwoCommentator(seats.map((s) => s.name), () => {
+    jesterSeed = (Math.imul(jesterSeed, 1103515245) + 12345) >>> 0;
+    return jesterSeed / 2 ** 32;
+  });
+  commentator.director.humour = o.humour;
   const host = new HostCore(
     { ...bigtwo.bigTwo, nextRound: bigtwo.nextRound },
     seats,
     o.config,
-    { turnMs, fast: o.fast, botSpeed: o.tutorial ? 1.4 : o.botSpeed, seed: o.tutorial ? tutorialSeed(players, o.config) : o.seed },
+    {
+      turnMs,
+      fast: o.fast,
+      botSpeed: o.tutorial ? 1.4 : o.botSpeed,
+      seed: o.tutorial ? tutorialSeed(players, o.config) : o.seed,
+      commentate: (events, state) => commentator.comment(events, state as bigtwo.BigTwoState),
+      dwell: dwellMs,
+    },
   );
   const settings: TableSettings = { humour: o.humour, sound: true, reducedMotion: false, fourColour: false, ...o.settings };
   const me = 0;
@@ -71,6 +88,13 @@ export function startPractice(root: HTMLElement, o: PracticeOptions): { host: Ho
       },
       playAgain: () => host.playAgain(),
       nextRound: () => host.nextRound(),
+      changeRules: o.onChangeRules
+        ? () => {
+            host.stop();
+            o.onChangeRules!();
+          }
+        : undefined,
+      setHumour: (h) => (commentator.director.humour = h),
       back: () => host.back(me),
       exit: () => {
         host.stop();

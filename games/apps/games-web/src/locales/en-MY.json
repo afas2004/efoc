@@ -43,8 +43,27 @@
     "finalRound": "Final round counts double!",
     "nobody": "Nobody? Nobody.",
     "practice": "Practice vs bots",
-    "suitNames": { "d": "diamonds", "c": "clubs", "h": "hearts", "s": "spades" },
-    "rankNames": { "3": "Three", "4": "Four", "5": "Five", "6": "Six", "7": "Seven", "8": "Eight", "9": "Nine", "T": "Ten", "J": "Jack", "Q": "Queen", "K": "King", "A": "Ace", "2": "Two" },
+    "suitNames": {
+      "d": "diamonds",
+      "c": "clubs",
+      "h": "hearts",
+      "s": "spades"
+    },
+    "rankNames": {
+      "3": "Three",
+      "4": "Four",
+      "5": "Five",
+      "6": "Six",
+      "7": "Seven",
+      "8": "Eight",
+      "9": "Nine",
+      "T": "Ten",
+      "J": "Jack",
+      "Q": "Queen",
+      "K": "King",
+      "A": "Ace",
+      "2": "Two"
+    },
     "cardLabel": "{rank} of {suit}",
     "selected": "selected",
     "combo": {
@@ -57,7 +76,46 @@
       "fullhouse": "Full house",
       "fourkind": "Four of a kind",
       "straightflush": "Straight flush"
-    }
+    },
+    "describe": {
+      "single": "a single {card}",
+      "pair": "a pair of {rank}s",
+      "triple": "three {rank}s",
+      "quad": "four {rank}s",
+      "twopair": "two pair, {rank}s and {rank2}s",
+      "trips": "three {rank}s",
+      "straight": "a straight up to {rank}",
+      "flush": "a {suit} flush",
+      "fullhouse": "a full house of {rank}s",
+      "fourkind": "four {rank}s",
+      "straightflush": "a straight flush up to {rank}"
+    },
+    "setupTitle": "Big Two",
+    "players": "Players",
+    "mode": "Mode",
+    "modeStandard": "Standard",
+    "modeStandardHint": "First to empty their hand wins. Everyone else counts cards left.",
+    "modeFtte": "Fight Till The End",
+    "modeFtteHint": "Keep playing until only one player still has cards.",
+    "pokerHands": "Poker hands",
+    "pokerHandsHint": "Two pair and three of a kind count as 5-card hands.",
+    "start": "Start",
+    "changeRules": "Change rules",
+    "stats": "Stats",
+    "statPlayed": "Cards played",
+    "statPlays": "Plays",
+    "statPasses": "Passes",
+    "statTwos": "2s played",
+    "statBombs": "Bombs",
+    "statBest": "Best play",
+    "statSlow": "Too slow",
+    "statRoasts": "Roasted",
+    "statDuration": "Game time",
+    "statMoves": "Moves",
+    "statBiggest": "Biggest play",
+    "stampPass": "PASS",
+    "stampOut": "OUT!",
+    "minutes": "{m}m {s}s"
   },
   "tutorial": {
     "lead3d": "You hold 3♦, so you start. Tap the 3♦ (you can add cards that make a pair, triple or 5-card hand), then tap Play.",
@@ -82,63 +140,175 @@
   },
   "jester": {
     "round_start": [
-      { "text": "Shuffle up. Who's crying first?", "tone": "neutral" },
-      { "text": "New round, new chance to embarrass yourselves.", "tone": "neutral", "spicy": true },
-      { "text": "Okay okay, fresh cards. Focus, everyone.", "tone": "neutral" }
+      {
+        "text": "New round! {name} has {card}, so {name} starts.",
+        "tone": "neutral"
+      },
+      {
+        "text": "Cards dealt. {name} holds {card} and goes first. Focus, everyone!",
+        "tone": "neutral"
+      },
+      {
+        "text": "Shuffle done. {name} starts with {card}. Who's crying first?",
+        "tone": "neutral",
+        "spicy": true
+      }
     ],
     "bomb": [
-      { "text": "BOOM! Who ordered that?", "tone": "neutral" },
-      { "text": "{name} brought a bomb to a card game. Respect.", "tone": "cheer" },
-      { "text": "Walao eh, {name} not playing around.", "tone": "cheer" }
+      {
+        "text": "BOOM! {name} dropped {combo}! Only a bigger 5-card hand can beat that.",
+        "tone": "cheer"
+      },
+      {
+        "text": "Walao eh! {name} played {combo}. Table shaking!",
+        "tone": "cheer"
+      },
+      {
+        "text": "{name} brought {combo} to a card game. Respect.",
+        "tone": "neutral"
+      }
     ],
     "all_passed": [
-      { "text": "Nobody? Nobody.", "tone": "neutral" },
-      { "text": "Pass, pass, pass. Riveting.", "tone": "tease" },
-      { "text": "{name} runs this table now.", "tone": "cheer" }
+      {
+        "text": "Nobody could beat {name}'s {combo}. {name} leads again, any cards!",
+        "tone": "cheer"
+      },
+      {
+        "text": "Pass, pass, pass. {name} wins the trick and starts fresh.",
+        "tone": "neutral"
+      },
+      {
+        "text": "{name} runs this table now. Free lead!",
+        "tone": "cheer"
+      }
     ],
     "two_early": [
-      { "text": "Spending your 2 already? Bold.", "tone": "tease" },
-      { "text": "Alamak, spend your 2 so early ah?", "tone": "tease" },
-      { "text": "A 2 this early? {name} has a plan. Probably.", "tone": "neutral" }
+      {
+        "text": "{name} slapped down {combo} already! Spending the big cards early, bold.",
+        "tone": "tease"
+      },
+      {
+        "text": "Alamak, {name} uses a 2 so early ah? Still {n} cards left!",
+        "tone": "tease"
+      },
+      {
+        "text": "{name} played {combo}. That's the top single, hard to beat!",
+        "tone": "neutral"
+      }
+    ],
+    "big_play": [
+      {
+        "text": "{name} played {combo}! Five cards gone in one go.",
+        "tone": "cheer"
+      },
+      {
+        "text": "Ooh, {combo} from {name}. Can anyone top that?",
+        "tone": "neutral"
+      }
     ],
     "pass_streak": [
-      { "text": "Walao, pass again?", "tone": "tease" },
-      { "text": "{name} is saving cards for retirement.", "tone": "tease", "spicy": true },
-      { "text": "Patience, {name}. Your moment is coming.", "tone": "cheer" }
+      {
+        "text": "Walao, {name} passed {n} times in a row. Saving cards for CNY?",
+        "tone": "tease"
+      },
+      {
+        "text": "{name} keeps passing. Patience, your moment is coming.",
+        "tone": "cheer"
+      },
+      {
+        "text": "{name} passing again. Riveting.",
+        "tone": "tease",
+        "spicy": true
+      }
     ],
     "too_slow": [
-      { "text": "Too slow! The bot played for you.", "tone": "tease" },
-      { "text": "{name} went to makan, is it?", "tone": "tease" },
-      { "text": "No rush, {name}. Except there is.", "tone": "neutral" }
+      {
+        "text": "Too slow, {name}! The bot played for you.",
+        "tone": "tease"
+      },
+      {
+        "text": "{name} went to makan, is it? Auto-played.",
+        "tone": "tease"
+      },
+      {
+        "text": "{name}'s timer ran out, so the bot moved. Next time faster!",
+        "tone": "neutral"
+      }
     ],
     "double_it": [
-      { "text": "Third time too slow. {name}'s penalty is doubled!", "tone": "tease" },
-      { "text": "Slowpoke tax! {name} pays double.", "tone": "tease" }
-    ],
-    "player_out": [
-      { "text": "{name} is out! Very clean.", "tone": "cheer" },
-      { "text": "{name} escapes. The rest of you, keep suffering.", "tone": "cheer", "spicy": true }
+      {
+        "text": "{name} was too slow 3 times. Penalty points this round are DOUBLED!",
+        "tone": "tease"
+      },
+      {
+        "text": "Slowpoke tax! {name} pays double this round.",
+        "tone": "tease"
+      }
     ],
     "one_card": [
-      { "text": "{name} on one card. Panic now.", "tone": "neutral" },
-      { "text": "Last card for {name}! Somebody do something.", "tone": "neutral" }
+      {
+        "text": "{name} has ONE card left! Play high or they win!",
+        "tone": "neutral"
+      },
+      {
+        "text": "Last card for {name}! Don't lead a small single!",
+        "tone": "neutral"
+      }
+    ],
+    "player_out": [
+      {
+        "text": "{name} is out! Finished #{place}.",
+        "tone": "cheer"
+      },
+      {
+        "text": "{name} escapes in place #{place}. The rest of you, keep fighting!",
+        "tone": "cheer"
+      }
     ],
     "win": [
-      { "text": "{name} wins! Steady lah.", "tone": "cheer" },
-      { "text": "Champion {name}. Take a bow.", "tone": "cheer" }
+      {
+        "text": "{name} wins! Steady lah.",
+        "tone": "cheer"
+      },
+      {
+        "text": "Champion {name}! Everyone else counts their leftover cards.",
+        "tone": "cheer"
+      }
     ],
     "last_place": [
-      { "text": "{name}, next round is yours. Confirm.", "tone": "cheer" },
-      { "text": "{name} lost, but with style. Sort of.", "tone": "tease" },
-      { "text": "Comeback arc loading… {name}.", "tone": "cheer" },
-      { "text": "{name} holding cards like souvenirs.", "tone": "tease", "spicy": true }
+      {
+        "text": "{name}, next round is yours. Confirm.",
+        "tone": "cheer"
+      },
+      {
+        "text": "{name} lost, but with style. Sort of.",
+        "tone": "tease"
+      },
+      {
+        "text": "Comeback arc loading… {name}.",
+        "tone": "cheer"
+      },
+      {
+        "text": "{name} holding {n} cards like souvenirs.",
+        "tone": "tease",
+        "spicy": true
+      }
     ],
     "comeback": [
-      { "text": "Comeback! Nobody saw that coming.", "tone": "cheer" }
+      {
+        "text": "Comeback! Nobody saw that coming.",
+        "tone": "cheer"
+      }
     ],
     "cheer": [
-      { "text": "Chin up, {name}. Still got time.", "tone": "cheer" },
-      { "text": "{name}, you got this.", "tone": "cheer" }
+      {
+        "text": "Chin up, {name}. Still got time.",
+        "tone": "cheer"
+      },
+      {
+        "text": "{name}, you got this.",
+        "tone": "cheer"
+      }
     ]
   }
 }

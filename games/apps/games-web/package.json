@@ -10,7 +10,8 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
-    "@efoc/engine": "*"
+    "@efoc/engine": "*",
+    "lottie-web": "^5.12.2"
   },
   "devDependencies": {
     "@playwright/test": "^1.64.1",

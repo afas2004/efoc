@@ -1,7 +1,7 @@
-// One card design for every game. Placeholder faces drawn with text and
-// suit symbols in the flat Kenney style until the Kenney Boardgame Pack art
-// is added (assets/LICENSES.md). Suits never rely on colour alone: each
-// face shows its symbol, and the four-colour deck is optional.
+// One card design for every game: Kenney Boardgame Pack faces (CC0, see
+// assets/LICENSES.md) with our own large corner index on top, so a card
+// stays readable when only its left strip shows. Suits never rely on colour
+// alone: each index shows its symbol, and the four-colour deck is optional.
 
 import type { Card } from '@efoc/engine';
 import { L, fmt } from '../strings';
@@ -31,16 +31,24 @@ export function cardsText(cards: readonly Card[]): string {
   return cards.map((c) => rankText(c) + suitSymbol(c)).join(' ');
 }
 
+export const cardImage = (id: string): string => new URL(`../cards/${id}.png`, location.href).href;
+
 export function makeCard(card: Card): HTMLElement {
   const el = document.createElement('div');
   el.className = `card suit-${card[1]}`;
   el.dataset.card = card;
+  el.style.backgroundImage = `url("${cardImage(card)}")`;
   const r = rankText(card);
   const s = suitSymbol(card);
-  el.innerHTML =
-    `<span class="corner tl"><b>${r}</b><i>${s}</i></span>` +
-    `<span class="pip">${s}</span>` +
-    `<span class="corner br"><b>${r}</b><i>${s}</i></span>`;
+  el.innerHTML = `<span class="idx"><b>${r}</b><i>${s}</i></span>`;
   el.setAttribute('aria-label', cardLabel(card));
+  return el;
+}
+
+/** A face-down card back, e.g. for the small fans on opponents' seats. */
+export function makeBack(): HTMLElement {
+  const el = document.createElement('span');
+  el.className = 'back';
+  el.style.backgroundImage = `url("${cardImage('back')}")`;
   return el;
 }

@@ -5,11 +5,14 @@
 import { bigtwo, type Card, type GameEvent, type SeatId } from '@efoc/engine';
 import { haptic } from '../../bridge';
 import { banner, burst, confetti, dim, shake, type ColourRole } from '../../feel/effects';
-import { Jester, type Humour } from '../../feel/jester';
+import { jesterText, type Humour, type JesterEvent } from '../../feel/jester';
+import { EYES, JESTER_SVG, playEmoji, preloadEmoji } from '../../feel/jesterArt';
 import { sound, unlockAudio, setMuted } from '../../feel/sound';
 import { FeelQueue, type Tier } from '../../feel/tiers';
 import { L, fmt } from '../../strings';
-import { cardLabel, cardsText, makeCard } from '../../table/cardFace';
+import { cardLabel, cardsText, makeBack, makeCard } from '../../table/cardFace';
+import { describeCombo } from './commentary';
+import { MatchStats } from './stats';
 import { computeLayout, handPlaces, RAISE_PX, type Box, type TableLayout } from '../../table/layout';
 
 type View = bigtwo.BigTwoView;
@@ -32,6 +35,9 @@ export interface TableHooks {
   move(move: Move): void;
   playAgain?: () => void;
   nextRound?: () => void;
+  changeRules?: () => void;
+  /** Humour is a room setting the host owns. */
+  setHumour?: (h: Humour) => void;
   back(): void;
   exit(): void;
 }
@@ -52,10 +58,11 @@ type SortMode = 'rank' | 'suit' | 'custom';
 
 const TWO = 12;
 const LONG_PRESS_MS = 350;
+const RESULTS_DELAY_MS = 1400;
 
 export class BigTwoTable {
   readonly feel = new FeelQueue();
-  readonly jester = new Jester();
+  readonly stats = new MatchStats();
   private layout!: TableLayout;
   private view: View | null = null;
   private meta: UpdateMeta = { deadline: null, afk: [] };
@@ -65,7 +72,6 @@ export class BigTwoTable {
   private trick: TrickPlay[] = [];
   private sortMode: SortMode = 'rank';
   private customOrder: Card[] = [];
-  private passStreak: number[] = [];
   private outSeats = new Map<SeatId, number>();
   private initialHand = 13;
   private lastTickSecond = -1;
@@ -86,6 +92,10 @@ export class BigTwoTable {
   private backBtn: HTMLButtonElement;
   private fx: HTMLElement;
   private jesterEl: HTMLElement;
+  private jesterBubble: HTMLElement;
+  private jesterEmoji: HTMLElement;
+  private stopEmoji: (() => void) | null = null;
+  private jesterTimer = 0;
   private overlay: HTMLElement;
   private live: HTMLElement;
   private tipEl: HTMLElement;
@@ -114,6 +124,11 @@ export class BigTwoTable {
     this.fx = el('div', 'fx-layer', root);
     this.jesterEl = el('div', 'jester hidden', root);
     this.jesterEl.setAttribute('aria-live', 'polite');
+    const figure = el('div', 'jester-figure', this.jesterEl);
+    figure.innerHTML = JESTER_SVG;
+    this.jesterEmoji = el('div', 'jester-emoji', figure);
+    this.jesterBubble = el('div', 'jester-bubble', this.jesterEl);
+    preloadEmoji(['laugh', 'explode', 'party', 'scream', 'cool', 'fire', 'grimace', 'eyeroll']);
     this.tipEl = el('div', 'tip hidden', root);
     this.overlay = el('div', 'overlay hidden', root);
     this.live = el('div', 'sr-only', root);
@@ -137,7 +152,6 @@ export class BigTwoTable {
     this.feel.reduced = reduced;
     this.root.classList.toggle('reduced-motion', reduced);
     this.root.classList.toggle('four-colour', this.settings.fourColour);
-    this.jester.humour = this.settings.humour;
     setMuted(!this.settings.sound);
   }
 
@@ -148,12 +162,15 @@ export class BigTwoTable {
     const prev = this.view;
     this.view = view;
     this.meta = meta;
-    if (this.passStreak.length !== view.players) this.passStreak = new Array<number>(view.players).fill(0);
     // A confirmed play replaces the optimistic one.
     if (this.pending && events.some((e) => e.type === 'card_played' && e.seat === this.me)) this.pending = null;
     if (this.pending && view.turn !== this.me) this.pending = null;
     for (const c of [...this.selected]) if (!view.hand.includes(c)) this.selected.delete(c);
-    for (const e of events) this.trackTrick(e);
+    for (const e of events) {
+      if (e.type === 'round_started' && e.round === 1) this.stats.reset(view.players);
+      this.stats.feed(e, view.players);
+      this.trackTrick(e);
+    }
     this.render(prev, events);
     for (const e of events) this.moment(e, view);
   }
@@ -178,16 +195,12 @@ export class BigTwoTable {
       this.resultsOpen = false;
       this.closeOverlay();
       this.initialHand = this.view?.hand.length || 13;
-      this.passStreak.fill(0);
     } else if (e.type === 'card_played') {
       this.trick.push({ seat: e.seat as number, cards: e.cards as Card[], kind: e.kind as string });
-      this.passStreak[e.seat as number] = 0;
     } else if (e.type === 'all_passed') {
       this.trick = [];
     } else if (e.type === 'player_out') {
       this.outSeats.set(e.seat as number, e.place as number);
-    } else if (e.type === 'passed') {
-      this.passStreak[e.seat as number] = (this.passStreak[e.seat as number] ?? 0) + 1;
     }
   }
 
@@ -250,9 +263,9 @@ export class BigTwoTable {
     const plays: TrickPlay[] = [...this.trick];
     if (this.pending) plays.push({ seat: this.me, cards: this.pending, kind: '' });
     const shown = plays.slice(-2);
-    const c = lay.centre;
+    const c = lay.stage;
     // Centre cards shrink to fit the play area: five cards across, current play plus the one under it.
-    const tableScale = Math.min(1, (lay.cardW * 1.25) / lay.handW, c.w / (3.5 * lay.handW), Math.max(0.3, (c.h - 24) / (lay.handH * 1.4)));
+    const tableScale = Math.min(1.25, (lay.cardW * 1.6) / lay.handW, c.w / (3.5 * lay.handW), Math.max(0.3, (c.h - 34) / (lay.handH * 1.38)));
     shown.forEach((play, idx) => {
       const current = idx === shown.length - 1;
       const s = current ? tableScale : tableScale * 0.8;
@@ -312,11 +325,11 @@ export class BigTwoTable {
     // Centre label: what is on the table and who played it.
     const top = this.trick[this.trick.length - 1];
     this.centreLabel.textContent = top
-      ? `${(L().ui.combo as Record<string, string>)[top.kind] ?? ''} · ${this.nameOf(top.seat)}`
+      ? `${this.nameOf(top.seat)}: ${describeCombo(top.cards, top.kind)}`
       : v.turn === this.me && v.phase === 'play'
         ? L().ui.yourTurn
         : '';
-    place(this.centreLabel, { x: c.x, y: c.y + c.h * 0.42 + lay.handH * tableScale * 0.6, w: c.w, h: 22 });
+    place(this.centreLabel, { x: c.x, y: c.y + c.h * 0.42 + lay.handH * tableScale * 0.56, w: c.w, h: 30 });
 
     this.renderButtons();
     void prev;
@@ -328,7 +341,7 @@ export class BigTwoTable {
       const s = el('div', 'seat', this.table);
       s.innerHTML =
         '<div class="avatar"><svg class="ring" viewBox="0 0 36 36"><circle class="ring-bg" cx="18" cy="18" r="16"/><circle class="ring-fg" cx="18" cy="18" r="16"/></svg><span class="face"></span><span class="dot"></span></div>' +
-        '<div class="name"></div><div class="info"><span class="count"></span><span class="score"></span></div><div class="chip hidden"></div>';
+        '<div class="name"></div><div class="info"><span class="count"></span><span class="score"></span></div><div class="chip hidden"></div><div class="fan"></div><div class="stamp"></div>';
       this.seatEls.push(s);
     }
     for (let r = 1; r < v.players; r++) {
@@ -341,6 +354,13 @@ export class BigTwoTable {
       s.querySelector('.face')!.textContent = meta.avatar;
       s.querySelector('.name')!.textContent = meta.name.slice(0, 8);
       const count = v.handCounts[seat]!;
+      const fan = s.querySelector('.fan') as HTMLElement;
+      const backs = Math.min(count, 5);
+      if (fan.childElementCount !== backs) {
+        fan.innerHTML = '';
+        for (let i = 0; i < backs; i++) fan.appendChild(makeBack());
+      }
+      fan.dataset.count = String(count);
       s.querySelector('.count')!.textContent = count === 1 ? L().ui.oneCard : fmt(L().ui.cardsLeft, { n: count });
       const total = this.meta.totals?.[seat] ?? v.scores[seat] ?? 0;
       s.querySelector('.score')!.textContent = v.round > 1 || total ? fmt(L().ui.points, { n: total }) : '';
@@ -505,7 +525,7 @@ export class BigTwoTable {
 
   private toggleSort(): void {
     this.sortMode = this.sortMode === 'suit' ? 'rank' : 'suit';
-    sound.click();
+    sound.sort();
     this.feel.play(0, 'sort', () => {});
     this.render();
   }
@@ -535,20 +555,55 @@ export class BigTwoTable {
     return seat === this.me ? L().ui.you : this.seatMeta[seat]?.name ?? '';
   }
 
-  private say(event: string, seat: SeatId | null, force = false): void {
-    const line = this.jester.say(event, seat, seat === null ? '' : this.seatMeta[seat]?.name ?? '', force);
-    if (!line) return;
+  /** The Jester speaks: big figure, mood, reaction emoji and a speech bubble everyone sees. */
+  private showJester(e: JesterEvent): void {
+    const text = jesterText(e);
+    if (!text) return;
     const j = this.jesterEl;
-    j.innerHTML = `<span class="jester-face" aria-hidden="true">🃏</span><span class="jester-text"></span>`;
-    j.querySelector('.jester-text')!.textContent = line.text;
-    j.classList.remove('hidden');
-    j.classList.toggle('laugh', line.tone === 'tease');
     const lay = this.layout;
-    j.style.left = `${lay.centre.x + 4}px`;
-    j.style.top = `${lay.centre.y + 4}px`;
-    j.style.maxWidth = `${Math.max(160, lay.centre.w - 8)}px`;
-    clearTimeout((j as unknown as { _t?: number })._t);
-    (j as unknown as { _t?: number })._t = window.setTimeout(() => j.classList.add('hidden'), 3200);
+    this.stopEmoji?.();
+    this.stopEmoji = e.emoji ? playEmoji(this.jesterEmoji, e.emoji) : null;
+    j.className = `jester mood-${e.mood} eyes-${EYES[e.mood]}`;
+    this.jesterBubble.textContent = text;
+    // Portrait: in the empty band between the centre cards and my hand, below
+    // the side seats. Landscape: over the top of the play area.
+    const w = Math.min(lay.vw - 24, 520);
+    j.style.width = `${w}px`;
+    j.style.left = `${(lay.vw - w) / 2}px`;
+    const jh = 116;
+    j.style.top = `${lay.portrait ? Math.max(lay.centre.y, lay.hand.y - jh - 6) : Math.max(4, lay.centre.y - 20)}px`;
+    // Restart the entrance animation.
+    void j.offsetWidth;
+    j.classList.add('show');
+    window.clearTimeout(this.jesterTimer);
+    const ms = Math.min(6000, 2600 + text.length * 35);
+    this.jesterTimer = window.setTimeout(() => {
+      j.classList.remove('show');
+      j.classList.add('leaving');
+      window.setTimeout(() => {
+        if (!j.classList.contains('show')) {
+          j.className = 'jester hidden';
+          this.stopEmoji?.();
+          this.stopEmoji = null;
+        }
+      }, 350);
+    }, ms);
+    if (e.mood === 'laugh' || e.mood === 'shock') haptic('medium');
+  }
+
+  /** A big word that fades in and out over a seat (or my hand): PASS, PAIR, OUT! */
+  private stamp(seat: SeatId, text: string, role: ColourRole | 'pass'): void {
+    const target = seat === this.me ? null : this.seatEls[this.relSeat(seat) - 1];
+    const el = target?.querySelector('.stamp') as HTMLElement | null;
+    if (el) {
+      el.textContent = text;
+      el.className = `stamp stamp-${role}`;
+      void el.offsetWidth;
+      el.classList.add('show');
+      return;
+    }
+    // My own action: stamp above my hand.
+    this.feel.play(1, 'stamp', (ctx) => banner(this.fx, text, role === 'pass' ? 'neutral' : role, 'pop', ctx, this.handTop()));
   }
 
   private pop(tier: Tier, name: string, text: string, role: ColourRole, at: { x: number; y: number }): void {
@@ -558,44 +613,44 @@ export class BigTwoTable {
   private moment(e: GameEvent, v: View): void {
     const seat = typeof e.seat === 'number' ? e.seat : null;
     switch (e.type) {
+      case 'jester':
+        this.showJester(e as JesterEvent);
+        break;
       case 'round_started': {
-        this.feel.play(1, 'deal', () => {
-          for (let i = 0; i < 4; i++) setTimeout(() => sound.thud(i), i * 60);
-        });
-        this.say('round_start', null);
-        if (v.config.roundsToPlay > 1 && v.round === v.config.roundsToPlay) {
-          this.big('final_round', L().ui.finalRound, 'danger');
-        }
+        this.feel.play(1, 'deal', () => sound.deal());
+        if (v.config.roundsToPlay > 1 && v.round === v.config.roundsToPlay) this.big('final_round', L().ui.finalRound, 'danger');
         if (v.turn === this.me) this.myTurnCue();
         break;
       }
       case 'card_played': {
         const cards = e.cards as Card[];
-        this.feel.play(1, 'card_played', () => cards.forEach((_, i) => setTimeout(() => sound.thud(i), i * 45)));
+        this.feel.play(1, 'card_played', () => {
+          if (seat !== this.me) sound.slide();
+          cards.forEach((_, i) => setTimeout(() => sound.thud(i), 120 + i * 55));
+        });
         if (seat === this.me) haptic('light');
-        const at = seat === null ? this.handTop() : this.seatCentre(seat);
-        const isTwoSingle = cards.length === 1 && bigtwo.rankIndex(cards[0]!) === TWO;
-        if (isTwoSingle && seat !== null) {
-          this.pop(2, 'two', '2!', 'danger', { x: this.layout.centre.x + this.layout.centre.w / 2, y: this.layout.centre.y + 20 });
-          sound.whoosh();
-          if ((e.left as number) >= this.initialHand / 2) this.say('two_early', seat);
-        }
-        if ((e.left as number) === 1 && seat !== null) {
-          this.pop(2, 'one_card', '1!', 'danger', at);
-          haptic('medium');
-          this.say('one_card', seat);
+        if (seat !== null) {
+          const kind = (L().ui.combo as Record<string, string>)[e.kind as string] ?? '';
+          this.stamp(seat, kind.toUpperCase(), 'turn');
+          const isTwo = cards.length === 1 && bigtwo.rankIndex(cards[0]!) === TWO;
+          if (isTwo) {
+            this.pop(2, 'two', '2!', 'danger', { x: this.layout.stage.x + this.layout.stage.w / 2, y: this.layout.stage.y + 20 });
+            sound.whoosh();
+          }
+          if ((e.left as number) === 1) {
+            this.pop(2, 'one_card', L().ui.oneCard.toUpperCase() + '!', 'danger', this.seatCentre(seat));
+            haptic('medium');
+          }
         }
         if (v.phase === 'play' && v.turn === this.me) this.myTurnCue();
         break;
       }
-      case 'bomb': {
+      case 'bomb':
         this.big('bomb', L().ui.bomb, 'danger', true);
-        this.say('bomb', seat, true);
         break;
-      }
       case 'passed': {
         this.feel.play(1, 'passed', () => sound.pass());
-        if (seat !== null && (this.passStreak[seat] ?? 0) >= 3) this.say('pass_streak', seat);
+        if (seat !== null) this.stamp(seat, L().ui.stampPass, 'pass');
         if (v.phase === 'play' && v.turn === this.me) this.myTurnCue();
         break;
       }
@@ -607,7 +662,6 @@ export class BigTwoTable {
           if (winner === this.me) haptic('medium');
           banner(this.fx, L().ui.nobody, 'good', 'pop', ctx, this.seatCentre(winner));
         });
-        this.say('all_passed', winner);
         break;
       }
       case 'player_out': {
@@ -618,24 +672,21 @@ export class BigTwoTable {
           banner(this.fx, fmt(L().ui.place, { n: e.place as number }), 'good', 'pop', ctx, at);
           burst(this.fx, at.x, at.y, 14, 'good', ctx, 70);
         });
-        if (v.phase === 'play') this.say('player_out', seat);
         break;
       }
-      case 'too_slow': {
+      case 'too_slow':
         this.pop(1, 'too_slow', L().ui.tooSlow, 'danger', this.seatCentre(seat!));
-        this.say('too_slow', seat);
         break;
-      }
       case 'afk':
         if (seat === this.me) haptic('error');
         break;
-      case 'double_it': {
+      case 'double_it':
         this.big('double_it', L().ui.doubleIt, 'danger');
-        this.say('double_it', seat, true);
         break;
-      }
       case 'match_points':
-        this.results(v, e);
+        // Let the last play land before the results cover the table.
+        this.resultsOpen = true;
+        window.setTimeout(() => this.results(this.view ?? v, e), RESULTS_DELAY_MS);
         break;
       default:
         break;
@@ -648,7 +699,7 @@ export class BigTwoTable {
       dim(this.fx, ctx);
       banner(this.fx, text, role, 'banner', ctx);
       shake(this.table, 'big', ctx);
-      const c = this.layout.centre;
+      const c = this.layout.stage;
       if (explode) burst(this.fx, c.x + c.w / 2, c.y + c.h * 0.42, 28, role, ctx, 160);
       sound.bass();
       haptic('strong');
@@ -664,6 +715,7 @@ export class BigTwoTable {
   // ------------------------------------------------------------- results
 
   private results(v: View, e: GameEvent): void {
+    if (!this.resultsOpen) return; // a new round started meanwhile
     const placings = e.placings as number[];
     const points = e.points as number[];
     const totals = e.totals as number[];
@@ -671,7 +723,6 @@ export class BigTwoTable {
     const winner = placings[0]!;
     const last = placings[placings.length - 1]!;
     const matchOver = v.phase === 'matchOver';
-    this.resultsOpen = true;
     this.feel.play(4, 'results', (ctx) => {
       if (winner === this.me) sound.fanfare();
       else if (last === this.me) sound.trombone();
@@ -679,12 +730,13 @@ export class BigTwoTable {
       haptic(winner === this.me ? 'strong' : 'medium');
       confetti(this.fx, this.layout.vw, ctx);
     });
-    const roast = this.jester.say('last_place', last, this.seatMeta[last]?.name ?? '', true);
     const o = this.overlay;
     o.innerHTML = '';
     o.className = 'overlay results';
     const card = el('div', 'sheet results-sheet', o);
-    el('h2', '', card).textContent = matchOver ? L().ui.results : fmt(L().ui.round, { n: v.round });
+    const u = L().ui;
+    const mode = v.config.mode === 'fightTillTheEnd' ? u.modeFtte : u.modeStandard;
+    el('h2', '', card).textContent = `${matchOver ? u.results : fmt(u.round, { n: v.round })} · ${mode}`;
     const podium = el('ol', 'standings', card);
     placings.forEach((seat, place) => {
       const li = el('li', `standing place-${place + 1}${seat === winner ? ' winner' : ''}${seat === last ? ' last' : ''}`, podium);
@@ -694,22 +746,46 @@ export class BigTwoTable {
       li.querySelector('.who')!.textContent = `${this.seatMeta[seat]!.avatar} ${this.nameOf(seat)}`;
       const left = v.handCounts[seat]!;
       li.querySelector('.pts')!.textContent =
-        `+${points[seat]}${doubled[seat] ? ` (${L().ui.doubled})` : ''}` + (matchOver && v.round > 1 ? ` · ${totals[seat]}` : '') + (left ? ` · ${fmt(L().ui.cardsLeft, { n: left })}` : '');
+        `+${points[seat]}${doubled[seat] ? ` (${u.doubled})` : ''}` + (matchOver && v.round > 1 ? ` · ${totals[seat]}` : '') + (left ? ` · ${left === 1 ? u.oneCard : fmt(u.cardsLeft, { n: left })}` : '');
     });
-    if (roast) {
-      const r = el('div', 'roast', card);
-      r.innerHTML = `<span aria-hidden="true">🃏</span> <span></span>`;
-      r.lastElementChild!.textContent = roast.text;
+
+    // Stats: per player, then the match as a whole.
+    el('h3', 'stats-title', card).textContent = u.stats;
+    const table = el('table', 'stats', card);
+    const head = el('tr', '', el('thead', '', table));
+    for (const h of ['', u.statPlayed, u.statPasses, u.statTwos, u.statBombs, u.statSlow]) el('th', '', head).textContent = h;
+    const body = el('tbody', '', table);
+    for (const seat of placings) {
+      const st = this.stats.seats[seat];
+      if (!st) continue;
+      const tr = el('tr', seat === this.me ? 'me' : '', body);
+      el('th', '', tr).textContent = `${this.seatMeta[seat]!.avatar} ${this.nameOf(seat)}`;
+      for (const n of [st.cardsPlayed, st.passes, st.twos, st.bombs, st.tooSlow]) el('td', '', tr).textContent = String(n);
     }
+    const facts = el('div', 'stat-facts', card);
+    const dur = Math.round(this.stats.durationMs / 1000);
+    const fact = (label: string, value: string): void => {
+      const f = el('div', 'stat-fact', facts);
+      el('span', '', f).textContent = label;
+      el('b', '', f).textContent = value;
+    };
+    fact(u.statDuration, fmt(u.minutes, { m: Math.floor(dur / 60), s: dur % 60 }));
+    fact(u.statMoves, String(this.stats.moves));
+    const big = this.stats.biggest;
+    if (big) fact(u.statBiggest, `${this.nameOf(big.seat)}: ${describeCombo(big.cards, big.kind)}`);
+    const mine = this.stats.seats[this.me];
+    if (mine?.best) fact(u.statBest, describeCombo(mine.best.cards, mine.best.kind));
+
     const actions = el('div', 'sheet-actions', card);
     if (this.isHost) {
       if (!matchOver && this.hooks.nextRound) {
-        button(actions, 'btn btn-primary', L().ui.round.replace('{n}', String(v.round + 1)), '').addEventListener('click', () => this.hooks.nextRound!());
+        button(actions, 'btn btn-primary', fmt(u.round, { n: v.round + 1 }), '').addEventListener('click', () => this.hooks.nextRound!());
       } else if (this.hooks.playAgain) {
-        button(actions, 'btn btn-primary', L().ui.playAgain, L().ui.playAgain).addEventListener('click', () => this.hooks.playAgain!());
+        button(actions, 'btn btn-primary', u.playAgain, u.playAgain).addEventListener('click', () => this.hooks.playAgain!());
       }
+      if (this.hooks.changeRules) button(actions, 'btn btn-secondary', u.changeRules, u.changeRules).addEventListener('click', () => this.hooks.changeRules!());
     }
-    button(actions, 'btn btn-secondary', L().ui.leave, L().ui.leave).addEventListener('click', () => this.hooks.exit());
+    button(actions, 'btn btn-secondary', u.leave, u.leave).addEventListener('click', () => this.hooks.exit());
   }
 
   private closeOverlay(): void {
@@ -738,12 +814,14 @@ export class BigTwoTable {
       const label = { off: L().ui.humourOff, mild: L().ui.humourMild, spicy: L().ui.humourSpicy }[h];
       row(L().ui.humour, label, () => {
         this.settings.humour = h === 'off' ? 'mild' : h === 'mild' ? 'spicy' : 'off';
+        this.hooks.setHumour?.(this.settings.humour);
         this.applySettings();
         this.openMenu();
       });
     }
     row(L().ui.sound, this.settings.sound ? L().ui.on : L().ui.off, () => {
       this.settings.sound = !this.settings.sound;
+      sound.toggle();
       this.applySettings();
       this.openMenu();
     });

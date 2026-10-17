@@ -1,6 +1,7 @@
-// Placeholder sounds synthesised with Web Audio, so the table has a voice
-// before the Kenney packs land (see assets/LICENSES.md). Each function is
-// one named slot; swapping in a sample later changes only this file.
+// Table sounds. Card and UI sounds are Kenney samples (CC0, see
+// assets/LICENSES.md); the big moments (bass hit, fanfare, sad trombone,
+// chime) are still synthesised. If a sample can't load or decode (for
+// example Ogg on an older iPhone), its slot falls back to the synth.
 // Audio starts after the first tap, as browsers and the WebView require.
 
 let ctx: AudioContext | null = null;
@@ -19,6 +20,39 @@ export function unlockAudio(): void {
   master = ctx.createGain();
   master.gain.value = 0.5;
   master.connect(ctx.destination);
+  void loadSamples(ctx);
+}
+
+const SAMPLE_NAMES = ['place-1', 'place-2', 'place-3', 'place-4', 'slide-1', 'slide-2', 'shuffle', 'fan', 'click', 'switch', 'rollover'];
+const samples = new Map<string, AudioBuffer>();
+
+async function loadSamples(ac: AudioContext): Promise<void> {
+  await Promise.all(
+    SAMPLE_NAMES.map(async (n) => {
+      try {
+        const res = await fetch(new URL(`../sounds/${n}.ogg`, location.href));
+        if (!res.ok) return;
+        samples.set(n, await ac.decodeAudioData(await res.arrayBuffer()));
+      } catch {
+        /* keep the synth fallback */
+      }
+    }),
+  );
+}
+
+/** Plays a sample; returns false if it isn't available. */
+function sample(name: string, gain = 0.8, rate = 1, delay = 0): boolean {
+  const r = ready();
+  const buf = samples.get(name);
+  if (!r || !buf) return false;
+  const src = r.ac.createBufferSource();
+  src.buffer = buf;
+  src.playbackRate.value = rate;
+  const g = r.ac.createGain();
+  g.gain.value = gain;
+  src.connect(g).connect(r.out);
+  src.start(r.ac.currentTime + delay / 1000);
+  return true;
 }
 
 export function setMuted(m: boolean): void {
@@ -69,13 +103,19 @@ function noise(ms: number, gain: number, from: number, to: number, delay = 0): v
 
 export const sound = {
   /** T0: select, sort. */
-  click: () => tone(1800, 40, 'square', 0.05),
+  click: () => sample('click', 0.6) || tone(1800, 40, 'square', 0.05),
   /** T1: a card lands. `step` raises the pitch for each card in a multi-card play. */
   thud: (step = 0) => {
+    if (sample(`place-${(step % 4) + 1}`, 0.9, Math.pow(1.06, step))) return;
     noise(90, 0.5, 900, 300);
     tone(140 * Math.pow(1.12, step), 120, 'sine', 0.35);
   },
-  pass: () => tone(420, 90, 'triangle', 0.12, 300),
+  /** A card flying in from another seat. */
+  slide: () => sample('slide-1', 0.7) || noise(160, 0.25, 600, 1800),
+  deal: () => sample('shuffle', 0.8) || [0, 1, 2, 3].forEach((i) => noise(80, 0.3, 900, 300, i * 70)),
+  sort: () => sample('fan', 0.7) || tone(900, 60, 'triangle', 0.06),
+  toggle: () => sample('switch', 0.6) || tone(1400, 40, 'square', 0.04),
+  pass: () => sample('rollover', 0.7, 0.8) || tone(420, 90, 'triangle', 0.12, 300),
   /** T2 */
   whoosh: () => noise(320, 0.35, 400, 3200),
   chime: () => {

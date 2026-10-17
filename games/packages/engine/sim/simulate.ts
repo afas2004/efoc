@@ -95,6 +95,7 @@ function randomConfig(base: BigTwoConfig, rng: Rng): BigTwoConfig {
     fourOfAKindKicker: coin(),
     flushCompare: coin() ? 'suitFirst' : 'highCardFirst',
     passLocksOut: coin(),
+    pokerHands: coin(),
     roundsToPlay: 1 + rng.int(3),
   };
 }

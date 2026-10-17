@@ -8,6 +8,7 @@ import { bigtwo } from '@efoc/engine';
 import { inApp, onMessage, send, startBridge } from './bridge';
 import type { Humour } from './feel/jester';
 import { startPractice } from './games/bigtwo/practice';
+import { showSetup, type SetupChoice } from './games/bigtwo/setup';
 
 const TUTORIAL_KEY = 'efoc.tutorial.bigtwo';
 
@@ -40,16 +41,20 @@ interface Launch {
   myName: string;
   myAvatar: string;
   humour: Humour;
+  mode?: SetupChoice['mode'];
+  pokerHands?: boolean;
+  tutorial?: boolean;
 }
 
 function launch(l: Launch): void {
-  const mode = q.get('mode') === 'fightTillTheEnd' ? 'fightTillTheEnd' : 'standard';
-  const tutorial = q.get('tutorial') === '0' ? false : q.get('tutorial') === '1' || !tutorialDone();
+  const mode = l.mode ?? (q.get('mode') === 'fightTillTheEnd' ? 'fightTillTheEnd' : 'standard');
+  const pokerHands = l.pokerHands ?? q.get('poker') !== '0';
+  const tutorial = l.tutorial ?? (q.get('tutorial') === '0' ? false : q.get('tutorial') === '1' || !tutorialDone());
   const session = startPractice(root, {
     players: Math.max(2, Math.min(8, l.players)),
     myName: l.myName,
     myAvatar: l.myAvatar,
-    config: { ...bigtwo.defaultConfig, mode, roundsToPlay: num('rounds') ?? 1 },
+    config: { ...bigtwo.defaultConfig, mode, pokerHands, roundsToPlay: num('rounds') ?? 1 },
     seed: num('seed'),
     fast: q.get('fast') === '1',
     botSpeed: num('speed'),
@@ -59,12 +64,18 @@ function launch(l: Launch): void {
     humour: l.humour,
     settings: { reducedMotion: q.get('reduced') === '1', sound: q.get('mute') !== '1' },
     onTutorialDone: markTutorialDone,
+    onChangeRules: () => setup(l),
     onExit: () => {
       if (inApp()) send({ t: 'exit' });
       else location.reload();
     },
   });
   (window as unknown as { __efoc: unknown }).__efoc = { ...session, feel: session.table.feel };
+}
+
+/** The setup sheet, then the game. */
+function setup(base: Omit<Launch, 'players' | 'humour'> & Partial<Launch>): void {
+  showSetup(root, (c) => launch({ myName: base.myName, myAvatar: base.myAvatar, players: c.players, humour: c.humour, mode: c.mode, pokerHands: c.pokerHands, tutorial: false }));
 }
 
 startBridge();
@@ -83,6 +94,9 @@ if (inApp()) {
       });
     }
   });
-} else {
+} else if (q.has('players') || q.get('tutorial') === '1' || !tutorialDone()) {
+  // Tests and the first-time tutorial start straight away.
   launch({ players: num('players') ?? 4, myName: 'You', myAvatar: '😎', humour: humourParam });
+} else {
+  setup({ myName: 'You', myAvatar: '😎' });
 }

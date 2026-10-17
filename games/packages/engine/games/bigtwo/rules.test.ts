@@ -83,7 +83,9 @@ describe('combo detection', () => {
     expect(kind('7h 7s 8d')).toBeNull();
     expect(kind('7h 7s 7d 7c')).toBeNull(); // four alone needs fourOfAKindKicker off
     expect(kind('3d 4c 5h 6s 8d')).toBeNull();
-    expect(kind('9d 9c 4h 4s 5d')).toBeNull();
+    expect(kind('9d 9c 4h 4s 5d', { pokerHands: false })).toBeNull();
+    expect(kind('9d 9c 9h 4s 5d', { pokerHands: false })).toBeNull();
+    expect(kind('9d 9c 4h 4s 4d 5d')).toBeNull();
     expect(kind('3d 3c 4h 4s 5d 5c')).toBeNull();
   });
 
@@ -114,6 +116,42 @@ describe('combo detection', () => {
   });
 });
 
+describe('poker hands', () => {
+  const b = (a: string, x: string) => beats(combo(a), combo(x));
+  it('are on by default: two pair and three of a kind as 5-card hands', () => {
+    expect(kind('9d 9c 4h 4s 5d')).toBe('twopair');
+    expect(kind('9d 9c 9h 4s 5d')).toBe('trips');
+    expect(kind('9d 9c 9h 4s 4d')).toBe('fullhouse');
+    expect(kind('9d 9c 4h 4s')).toBeNull(); // two pair needs its kicker
+  });
+  it('rank two pair < trips < straight', () => {
+    expect(b('3d 3c 3h 4s 5d', 'Ad Ac 2h 2s 5d')).toBe(true);
+    expect(b('3d 4c 5h 6s 7d', '2d 2c 2h 4s 5d')).toBe(true);
+    expect(b('Ad Ac 2h 2s 5d', '3d 4c 5h 6s 7d')).toBe(false);
+  });
+  it('two pair: higher pair, then lower pair, then the best suit in the higher pair', () => {
+    expect(b('9d 9c 4h 4s 5d', '8d 8c 7h 7s Ad')).toBe(true);
+    expect(b('9d 9c 5h 5s 3d', '9h 9s 4d 4c Ad')).toBe(true);
+    expect(b('9h 9s 4d 4c 3d', '9d 9c 4h 4s Ad')).toBe(true);
+  });
+  it('trips by the triple rank', () => {
+    expect(b('Td Tc Th 3s 4d', '9d 9c 9h As 2d')).toBe(true);
+  });
+  it('enumeration agrees with brute force with poker hands off', () => {
+    for (let seed = 0; seed < 10; seed++) {
+      const hand = createRng(seed).shuffle(fullDeck()).slice(0, 13);
+      const off = cfg({ pokerHands: false });
+      const fast = new Set(allCombos(hand, off).map((p) => p.cards.join(' ')));
+      let brute = 0;
+      for (let mask = 1; mask < 1 << 13; mask++) {
+        const pick = hand.filter((_, i) => mask & (1 << i));
+        if (pick.length <= 5 && classify(pick, off)) brute++;
+      }
+      expect(fast.size).toBe(brute);
+    }
+  });
+});
+
 describe('combo comparison', () => {
   const b = (a: string, x: string, over: Partial<BigTwoConfig> = {}) => beats(combo(a, over), combo(x, over));
 
@@ -139,7 +177,7 @@ describe('combo comparison', () => {
   });
 
   it('five-card order: straight < flush < full house < four of a kind < straight flush', () => {
-    const order = ['3d 4c 5h 6s 7d', '3h 8h Th Qh Kh', '4d 4c 4h 3s 3d', '5d 5c 5h 5s 3c', '3s 4s 5s 6s 7s'];
+    const order = ['Ad Ac 2h 2s 5d', '2d 2c 2h 4s 5d', '3d 4c 5h 6s 7d', '3h 8h Th Qh Kh', '4d 4c 4h 3s 3d', '5d 5c 5h 5s 3c', '3s 4s 5s 6s 7s'];
     for (let i = 1; i < order.length; i++) {
       expect(b(order[i]!, order[i - 1]!)).toBe(true);
       expect(b(order[i - 1]!, order[i]!)).toBe(false);
@@ -198,7 +236,9 @@ describe('combo enumeration', () => {
   it('agrees with brute force over a random 13-card hand', () => {
     for (let seed = 0; seed < 20; seed++) {
       const hand = createRng(seed).shuffle(fullDeck()).slice(0, 13);
-      const fast = new Set(allCombos(hand, cfg()).map((p) => p.cards.join(' ')));
+      const plays = allCombos(hand, cfg());
+      const fast = new Set(plays.map((p) => p.cards.join(' ')));
+      expect(fast.size, 'no duplicates').toBe(plays.length);
       let brute = 0;
       for (let mask = 1; mask < 1 << 13; mask++) {
         const pick = hand.filter((_, i) => mask & (1 << i));

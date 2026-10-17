@@ -23,3 +23,9 @@ replaying the move log from the seed reproduces the exact final state.
 Sanity check: three bugs were planted on purpose (a hand leaked to the
 public view, a played card left in the hand, a trick that never resets).
 The simulator caught each one within 3 games.
+
+## Rerun with poker hands on (17 Oct)
+
+After poker hands became the default, `npm run sim` ran again: 140,000 games
+at 2–8 players in both modes, **0 failures**. The random-flags sweep (now
+including `pokerHands`) ran 14,000 games, **0 failures**.

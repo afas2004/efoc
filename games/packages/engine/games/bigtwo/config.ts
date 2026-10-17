@@ -14,6 +14,11 @@ export interface BigTwoConfig {
   flushCompare: 'suitFirst' | 'highCardFirst';
   /** On: a pass sits you out until the trick resets. Off: a pass only skips that turn. */
   passLocksOut: boolean;
+  /**
+   * Poker hands: two pair (2 + 2 + 1) and three of a kind (3 + 1 + 1) also
+   * count as 5-card hands, below a straight, as in poker.
+   */
+  pokerHands: boolean;
   /** Rounds in a match. When over 1, the last round counts double. */
   roundsToPlay: number;
 }
@@ -25,6 +30,7 @@ export const defaultConfig: BigTwoConfig = {
   allowTriples: true,
   fourOfAKindKicker: true,
   flushCompare: 'suitFirst',
+  pokerHands: true,
   passLocksOut: false,
   roundsToPlay: 1,
 };
