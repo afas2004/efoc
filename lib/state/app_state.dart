@@ -10,6 +10,7 @@ import '../models/vlog.dart';
 import '../services/chat_service.dart';
 import '../services/clip_service.dart';
 import '../services/group_service.dart';
+import '../services/reminder_service.dart';
 import '../services/vlog_service.dart';
 
 class AppState extends ChangeNotifier {
@@ -370,6 +371,7 @@ class AppState extends ChangeNotifier {
       _loadVlogs();
       _loadUnreadChat();
     }
+    ReminderService.instance.syncOnLaunch();
   }
 
   // ---------- setters ----------

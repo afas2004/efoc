@@ -1,11 +1,15 @@
 <!DOCTYPE html>
 <html>
   <script>
-  // Dev-phase kill switch: force-unregister any existing service worker.
-  // Remove this once you're ready to ship real PWA offline support.
+  // Dev-phase kill switch: unregister Flutter's caching service worker.
+  // Keep firebase-messaging-sw.js: it delivers hourly reminders.
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.getRegistrations().then(function(regs) {
-      regs.forEach(function(r) { r.unregister(); });
+      regs.forEach(function(r) {
+        var w = r.active || r.waiting || r.installing;
+        if (w && w.scriptURL.indexOf('firebase-messaging-sw.js') !== -1) return;
+        r.unregister();
+      });
     });
   }
 </script>

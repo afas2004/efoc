@@ -51,6 +51,7 @@ dependencies:
   share_plus: ^10.1.2
   emoji_picker_flutter: ^4.2.0
   app_links: ^7.0.0
+  firebase_messaging: ^16.7.0
 
 dev_dependencies:
   flutter_test:

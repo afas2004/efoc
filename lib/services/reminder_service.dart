@@ -1,0 +1,146 @@
+import 'dart:async';
+
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../config/push_config.dart';
+
+enum ReminderResult {
+  enabled,
+
+  /// The user (or browser) said no to notifications.
+  denied,
+
+  /// No push support here, e.g. iPhone Safari outside a Home Screen app.
+  unsupported,
+
+  /// The web push key hasn't been filled in (see push_config.dart).
+  notConfigured,
+
+  failed,
+}
+
+/// Hourly reminder opt-in. The reminders themselves are sent by
+/// worker/remind.py; this registers the device and stores the preference.
+class ReminderService {
+  ReminderService._();
+  static final ReminderService instance = ReminderService._();
+
+  SupabaseClient get _client => Supabase.instance.client;
+  FirebaseMessaging get _messaging => FirebaseMessaging.instance;
+
+  StreamSubscription<String>? _refreshSub;
+
+  /// The token registered from this device, so sign-out can remove it.
+  String? _currentToken;
+
+  Future<bool> fetchEnabled() async {
+    final userId = _client.auth.currentUser?.id;
+    if (userId == null) return false;
+    final row = await _client
+        .from('profiles')
+        .select('reminders_enabled')
+        .eq('id', userId)
+        .maybeSingle();
+    return (row?['reminders_enabled'] as bool?) ?? false;
+  }
+
+  /// Asks for notification permission, registers this device and turns
+  /// reminders on. Call from a tap: browsers only show the permission
+  /// prompt in response to a user gesture.
+  Future<ReminderResult> enable() async {
+    final userId = _client.auth.currentUser?.id;
+    if (userId == null) return ReminderResult.failed;
+    if (kIsWeb && kWebPushVapidKey.isEmpty) return ReminderResult.notConfigured;
+
+    try {
+      if (!await _messaging.isSupported()) return ReminderResult.unsupported;
+
+      final settings = await _messaging.requestPermission();
+      final status = settings.authorizationStatus;
+      if (status != AuthorizationStatus.authorized &&
+          status != AuthorizationStatus.provisional) {
+        return ReminderResult.denied;
+      }
+
+      final token = await _getToken();
+      if (token == null) return ReminderResult.failed;
+      await _saveToken(userId, token);
+
+      await _client
+          .from('profiles')
+          .update({'reminders_enabled': true}).eq('id', userId);
+      _listenForRefresh(userId);
+      return ReminderResult.enabled;
+    } catch (e) {
+      debugPrint('Enable reminders error: $e');
+      return ReminderResult.failed;
+    }
+  }
+
+  Future<void> disable() async {
+    final userId = _client.auth.currentUser?.id;
+    if (userId == null) return;
+    await _client
+        .from('profiles')
+        .update({'reminders_enabled': false}).eq('id', userId);
+  }
+
+  /// On app start: tokens rotate, so re-register quietly if reminders are
+  /// on and permission is still granted. Never prompts.
+  Future<void> syncOnLaunch() async {
+    final userId = _client.auth.currentUser?.id;
+    if (userId == null) return;
+    if (kIsWeb && kWebPushVapidKey.isEmpty) return;
+    try {
+      if (!await _messaging.isSupported()) return;
+      if (!await fetchEnabled()) return;
+      final settings = await _messaging.getNotificationSettings();
+      if (settings.authorizationStatus != AuthorizationStatus.authorized &&
+          settings.authorizationStatus != AuthorizationStatus.provisional) {
+        return;
+      }
+      final token = await _getToken();
+      if (token != null) await _saveToken(userId, token);
+      _listenForRefresh(userId);
+    } catch (e) {
+      debugPrint('Reminder sync error: $e');
+    }
+  }
+
+  /// Before sign-out: stop sending this account's reminders to this device.
+  Future<void> forgetThisDevice() async {
+    _refreshSub?.cancel();
+    _refreshSub = null;
+    final token = _currentToken;
+    _currentToken = null;
+    if (token == null) return;
+    try {
+      await _client.from('push_tokens').delete().eq('token', token);
+    } catch (e) {
+      debugPrint('Forget push token error: $e');
+    }
+  }
+
+  Future<String?> _getToken() =>
+      _messaging.getToken(vapidKey: kIsWeb ? kWebPushVapidKey : null);
+
+  Future<void> _saveToken(String userId, String token) async {
+    _currentToken = token;
+    await _client.from('push_tokens').upsert({
+      'token': token,
+      'user_id': userId,
+      'platform': kIsWeb ? 'web' : 'android',
+      'updated_at': DateTime.now().toUtc().toIso8601String(),
+    }, onConflict: 'token');
+  }
+
+  void _listenForRefresh(String userId) {
+    _refreshSub ??= _messaging.onTokenRefresh.listen((token) {
+      _saveToken(userId, token).catchError(
+        (Object e) => debugPrint('Save refreshed token error: $e'),
+      );
+    });
+  }
+}

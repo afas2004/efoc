@@ -1,0 +1,45 @@
+name: Hourly reminders
+
+on:
+  schedule:
+    # Every hour. GitHub's scheduler often runs a few minutes late, and
+    # minute 0 is its busiest slot, so aim just after it.
+    - cron: "2 * * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Only print who would be reminded"
+        type: boolean
+        default: true
+
+concurrency:
+  group: remind
+  cancel-in-progress: true
+
+jobs:
+  remind:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install requests google-auth
+
+      - name: Remind
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          APP_TZ: ${{ vars.APP_TZ || 'Asia/Kuala_Lumpur' }}
+          REMIND_FIRST_HOUR: ${{ vars.REMIND_FIRST_HOUR || '8' }}
+          REMIND_LAST_HOUR: ${{ vars.REMIND_LAST_HOUR || '22' }}
+        run: |
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            python worker/remind.py --dry-run
+          else
+            python worker/remind.py
+          fi

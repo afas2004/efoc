@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'reminder_service.dart';
+
 class AuthService {
   AuthService._();
   static final AuthService instance = AuthService._();
@@ -35,6 +37,8 @@ class AuthService {
   }
 
   Future<void> signOut() async {
+    // While still signed in, so RLS lets us delete our own token row.
+    await ReminderService.instance.forgetThisDevice();
     await _client.auth.signOut();
   }
 

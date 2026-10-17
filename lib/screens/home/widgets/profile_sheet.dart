@@ -10,6 +10,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../state/app_state.dart';
 import '../../../services/auth_service.dart';
 import '../../../services/profile_service.dart';
+import '../../../services/reminder_service.dart';
 import '../../../theme/colors.dart';
 import '../../../version.dart';
 import '../../../widgets/update_check_dialog.dart';
@@ -28,8 +29,11 @@ class ProfileSheet extends StatefulWidget {
 }
 
 class _ProfileSheetState extends State<ProfileSheet> {
-  // ---------- local state (mocked for now) ----------
-  bool _reminders = true;
+  // ---------- preferences ----------
+  bool _reminders = false;
+  bool _remindersBusy = false;
+
+  // Still local only, not saved anywhere yet.
   String _theme = 'Purple';
   bool _autoStitch = true;
 
@@ -44,6 +48,71 @@ class _ProfileSheetState extends State<ProfileSheet> {
   void initState() {
     super.initState();
     _loadProfile();
+    _loadReminders();
+  }
+
+  Future<void> _loadReminders() async {
+    try {
+      final on = await ReminderService.instance.fetchEnabled();
+      if (mounted) setState(() => _reminders = on);
+    } catch (_) {
+      // Leave it off; flipping it will retry.
+    }
+  }
+
+  Future<void> _toggleReminders(bool on) async {
+    if (_remindersBusy) return;
+    setState(() {
+      _remindersBusy = true;
+      _reminders = on; // optimistic
+    });
+
+    if (!on) {
+      try {
+        await ReminderService.instance.disable();
+      } catch (_) {
+        if (mounted) {
+          setState(() => _reminders = true);
+          _showNotice("Couldn't turn reminders off", 'Please try again.');
+        }
+      }
+      if (mounted) setState(() => _remindersBusy = false);
+      return;
+    }
+
+    final result = await ReminderService.instance.enable();
+    if (!mounted) return;
+    setState(() {
+      _remindersBusy = false;
+      _reminders = result == ReminderResult.enabled;
+    });
+
+    switch (result) {
+      case ReminderResult.enabled:
+        break;
+      case ReminderResult.denied:
+        _showNotice(
+          'Notifications are blocked',
+          'Allow notifications for efoc.party in your browser settings, '
+              'then turn this on again.',
+        );
+      case ReminderResult.unsupported:
+        _showNotice(
+          "Reminders don't work here",
+          'On iPhone, add efoc to your Home Screen (Share → Add to Home '
+              'Screen) and open it from there. On other devices, try Chrome.',
+        );
+      case ReminderResult.notConfigured:
+        _showNotice(
+          'Reminders aren\'t set up yet',
+          'The web push key is missing from this build.',
+        );
+      case ReminderResult.failed:
+        _showNotice(
+          "Couldn't turn reminders on",
+          'Check your connection and try again.',
+        );
+    }
   }
 
   Future<void> _loadProfile() async {
@@ -274,10 +343,25 @@ class _ProfileSheetState extends State<ProfileSheet> {
                   _SettingRow(
                     icon: Icons.notifications_outlined,
                     label: 'Hourly reminders',
-                    trailing: _EfocToggle(
-                      value: _reminders,
-                      onChanged: (v) => setState(() => _reminders = v),
-                    ),
+                    trailing: _remindersBusy
+                        ? const SizedBox(
+                            width: 44,
+                            height: 26,
+                            child: Center(
+                              child: SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: EfocColors.textMuted,
+                                ),
+                              ),
+                            ),
+                          )
+                        : _EfocToggle(
+                            value: _reminders,
+                            onChanged: _toggleReminders,
+                          ),
                   ),
                   _SettingRow(
                     icon: Icons.palette_outlined,
