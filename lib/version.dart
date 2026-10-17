@@ -5,9 +5,9 @@
 ///   - web/update.json  (latest_build: N)
 ///
 /// Bump all three together on every release. There is no build-time
-/// substitution here on purpose ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â a hardcoded const keeps the update
+/// substitution here on purpose ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â a hardcoded const keeps the update
 /// check dependency-free and trivially debuggable.
-const int kAppBuild = 4;
+const int kAppBuild = 5;
 
 /// Human-readable version, used only for display.
-const String kAppVersion = '1.2.0';
+const String kAppVersion = '1.3.0';
