@@ -44,5 +44,5 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
-# Supabase CLI local state
+# Supabase CLI cache
 supabase/.temp/

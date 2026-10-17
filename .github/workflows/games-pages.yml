@@ -1,0 +1,53 @@
+name: Publish card games
+
+# Run by hand. Builds games/apps/games-web and publishes it as this repo's
+# GitHub Pages project site. The user site afas2004.github.io has the
+# custom domain games.efoc.party, so this lands at games.efoc.party/efoc/
+# (e.g. /efoc/bigtwo/). No CNAME here: that would clash with the user site.
+# Needs the repo's Pages source set to "GitHub Actions".
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: games-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: games
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: games/package-lock.json
+
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build:web
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: games/apps/games-web/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,0 +1,17 @@
+{
+  "name": "efoc-games",
+  "private": true,
+  "description": "EFOC card games: shared engine and HTML table client. See docs/spec.md and docs/decisions.md.",
+  "workspaces": [
+    "packages/*",
+    "apps/*",
+    "firebase"
+  ],
+  "scripts": {
+    "test": "npm run test -w @efoc/engine",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "sim": "npm run sim -w @efoc/engine",
+    "build:web": "npm run build -w @efoc/games-web",
+    "test:rules": "npm test -w @efoc/firebase-rules"
+  }
+}

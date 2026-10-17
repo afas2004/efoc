@@ -1,0 +1,401 @@
+{
+  "ui": {
+    "play": "Play",
+    "pass": "Pass",
+    "sort": "Sort",
+    "sortRank": "Sort: rank",
+    "sortSuit": "Sort: suit",
+    "menu": "Menu",
+    "rules": "Rules",
+    "leave": "Leave",
+    "close": "Close",
+    "you": "You",
+    "yourTurn": "Your turn",
+    "waiting": "Waiting for players",
+    "tooSlow": "Too slow!",
+    "afk": "AFK",
+    "imBack": "I'm back",
+    "playAgain": "Play again",
+    "results": "Results",
+    "round": "Round {n}",
+    "points": "{n} pts",
+    "cardsLeft": "{n} cards",
+    "oneCard": "1 card",
+    "pass_chip": "Pass",
+    "out": "Out",
+    "place": "#{n}",
+    "unfinished": "Unfinished",
+    "humour": "Humour",
+    "humourOff": "Off",
+    "humourMild": "Mild",
+    "humourSpicy": "Spicy",
+    "sound": "Sound",
+    "on": "On",
+    "off": "Off",
+    "reducedMotion": "Reduced motion",
+    "fourColour": "Four-colour deck",
+    "skipTutorial": "Skip tutorial",
+    "gotIt": "Got it",
+    "secondsLeft": "{n} seconds left",
+    "doubled": "Doubled",
+    "bomb": "BOMB!",
+    "doubleIt": "Double it!",
+    "finalRound": "Final round counts double!",
+    "nobody": "Nobody? Nobody.",
+    "practice": "Practice vs bots",
+    "suitNames": {
+      "d": "diamonds",
+      "c": "clubs",
+      "h": "hearts",
+      "s": "spades"
+    },
+    "rankNames": {
+      "3": "Three",
+      "4": "Four",
+      "5": "Five",
+      "6": "Six",
+      "7": "Seven",
+      "8": "Eight",
+      "9": "Nine",
+      "T": "Ten",
+      "J": "Jack",
+      "Q": "Queen",
+      "K": "King",
+      "A": "Ace",
+      "2": "Two"
+    },
+    "cardLabel": "{rank} of {suit}",
+    "selected": "selected",
+    "combo": {
+      "single": "Single",
+      "pair": "Pair",
+      "triple": "Triple",
+      "quad": "Four of a kind",
+      "straight": "Straight",
+      "flush": "Flush",
+      "fullhouse": "Full house",
+      "fourkind": "Four of a kind",
+      "straightflush": "Straight flush",
+      "twopair": "Two pair",
+      "trips": "Three of a kind"
+    },
+    "describe": {
+      "single": "a single {card}",
+      "pair": "a pair of {rank}s",
+      "triple": "three {rank}s",
+      "quad": "four {rank}s",
+      "twopair": "two pair, {rank}s and {rank2}s",
+      "trips": "three {rank}s",
+      "straight": "a straight up to {rank}",
+      "flush": "a {suit} flush",
+      "fullhouse": "a full house of {rank}s",
+      "fourkind": "four {rank}s",
+      "straightflush": "a straight flush up to {rank}"
+    },
+    "setupTitle": "Big Two",
+    "players": "Players",
+    "mode": "Mode",
+    "modeStandard": "Standard",
+    "modeStandardHint": "First to empty their hand wins. Everyone else counts cards left.",
+    "modeFtte": "Fight Till The End",
+    "modeFtteHint": "Keep playing until only one player still has cards.",
+    "pokerHands": "Poker hands",
+    "pokerHandsHint": "Two pair and three of a kind count as 5-card hands.",
+    "start": "Start",
+    "changeRules": "Change rules",
+    "stats": "Stats",
+    "statPlayed": "Cards played",
+    "statPlays": "Plays",
+    "statPasses": "Passes",
+    "statTwos": "2s played",
+    "statBombs": "Bombs",
+    "statBest": "Best play",
+    "statSlow": "Too slow",
+    "statRoasts": "Roasted",
+    "statDuration": "Game time",
+    "statMoves": "Moves",
+    "statBiggest": "Biggest play",
+    "stampPass": "PASS",
+    "stampOut": "OUT!",
+    "minutes": "{m}m {s}s",
+    "yourTurnBig": "YOUR TURN",
+    "turnLead": "YOUR TURN · lead anything",
+    "turnFollow": "YOUR TURN · beat it or pass",
+    "turnOpen": "YOUR TURN · start with {card}",
+    "waitingFor": "{name}'s turn…",
+    "previous": "Before",
+    "unbeatable": "UNBEATABLE!",
+    "unstoppable": "UNSTOPPABLE!",
+    "allPass": "ALL PASS",
+    "highlights": "Highlights",
+    "hlUnstoppable": "{name} played {combo} on their last two cards. Unstoppable.",
+    "hlUnbeatable": "{name} played {combo}. Nobody could answer.",
+    "hlBomb": "{name} dropped {combo}.",
+    "hlBig": "{name} played {combo}.",
+    "verdict": "The Jester says",
+    "legend2s": "THE 2♠ HAS ARRIVED!",
+    "legend2sSub": "{name} slams the highest card. Everyone passes!",
+    "legend2sWin": "{name} slams it with one card left. It's over!",
+    "royalFlush": "ROYAL FLUSH!",
+    "straightFlush": "STRAIGHT FLUSH!",
+    "flushSub": "{name}: {combo}",
+    "bigSpender": "BIG SPENDER!",
+    "lookAtCards": "Look at your cards",
+    "startingIn": "Starting in {n}…",
+    "go": "GO!",
+    "getReady": "Get ready…",
+    "imReady": "I'm ready",
+    "waitingOthers": "Waiting for others…",
+    "waitingRoom": "Waiting room",
+    "readyQ": "Ready?",
+    "isReady": "Ready",
+    "notReady": "Not ready",
+    "addBot": "+ Add bot",
+    "invite": "📨 Invite",
+    "removeBot": "Remove",
+    "removePlayer": "Remove",
+    "sure": "Sure?",
+    "leaveTable": "Leave table",
+    "closeTable": "Close table",
+    "tableClosed": "The host closed this table.",
+    "removedFromTable": "The host took you off this table.",
+    "back": "Back",
+    "startGame": "Start",
+    "needPlayers": "Need at least 2 players",
+    "needReady": "Waiting for everyone to be ready",
+    "hostTag": "Host",
+    "youTag": "You",
+    "botTag": "Bot",
+    "spectating": "Watching",
+    "hostChanged": "{name} is now the host",
+    "tableFull": "Table full (8 seats)",
+    "onlineCount": "{n} at the table",
+    "offline": "Offline",
+    "waitingHost": "Waiting for the host to start…",
+    "waitingForTable": "Waiting for the host to open this table…"
+  },
+  "tutorial": {
+    "lead3d": "You hold 3♦, so you start. Tap the 3♦ (you can add cards that make a pair, triple or 5-card hand), then tap Play.",
+    "beatIt": "Someone played. Beat it with the same number of cards but higher, or tap Pass.",
+    "freeLead": "Everyone passed, so you lead! Play anything: a single, pair, triple or 5-card hand.",
+    "order": "Order: 3 is lowest, then up to K, A, and 2 is highest. Suits: ♦ < ♣ < ♥ < ♠.",
+    "goal": "Empty your hand first. Everyone else takes a point for each card left."
+  },
+  "rules": {
+    "bigtwo": [
+      "Get rid of all your cards first.",
+      "Ranks: 3 lowest, then 4 to K, A, and 2 highest. Suits: ♦ < ♣ < ♥ < ♠.",
+      "Whoever holds 3♦ starts, and the first play must include it.",
+      "Play a single, pair, triple or a 5-card hand. You must play the same number of cards as the last play, and beat it.",
+      "5-card hands, low to high: straight, flush, full house, four of a kind + 1, straight flush.",
+      "A straight is 5 in a row from 3 up to 2 (J-Q-K-A-2 is the highest). No wrapping.",
+      "A better suit wins between flushes; within a suit, the highest card wins.",
+      "When everyone else passes, the last player to play leads anything.",
+      "Standard: the round ends when someone goes out. Others score a point per card left; 10 to 12 cards count double, 13 triple.",
+      "Fight Till The End: play on until one player still holds cards. 1st scores 0, each later place +1, and last also adds cards left."
+    ]
+  },
+  "jester": {
+    "round_start": [
+      {
+        "text": "New round! {name} has {card}, so {name} starts.",
+        "tone": "neutral"
+      },
+      {
+        "text": "Cards dealt. {name} holds {card} and goes first. Focus, everyone!",
+        "tone": "neutral"
+      },
+      {
+        "text": "Shuffle done. {name} starts with {card}. Who's crying first?",
+        "tone": "neutral",
+        "spicy": true
+      }
+    ],
+    "bomb": [
+      {
+        "text": "BOOM! {name} dropped {combo}! Only a bigger 5-card hand can beat that.",
+        "tone": "cheer"
+      },
+      {
+        "text": "Walao eh! {name} played {combo}. Table shaking!",
+        "tone": "cheer"
+      },
+      {
+        "text": "{name} brought {combo} to a card game. Respect.",
+        "tone": "neutral"
+      }
+    ],
+    "all_passed": [
+      {
+        "text": "Nobody could beat {name}'s {combo}. {name} leads again, any cards!",
+        "tone": "cheer"
+      },
+      {
+        "text": "Pass, pass, pass. {name} wins the trick and starts fresh.",
+        "tone": "neutral"
+      },
+      {
+        "text": "{name} runs this table now. Free lead!",
+        "tone": "cheer"
+      }
+    ],
+    "two_early": [
+      {
+        "text": "{name} slapped down {combo} already! Spending the big cards early, bold.",
+        "tone": "tease"
+      },
+      {
+        "text": "Alamak, {name} uses a 2 so early ah? Still {n} cards left!",
+        "tone": "tease"
+      },
+      {
+        "text": "{name} played {combo}. That's the top single, hard to beat!",
+        "tone": "neutral"
+      }
+    ],
+    "big_play": [
+      {
+        "text": "{name} played {combo}! Five cards gone in one go.",
+        "tone": "cheer"
+      },
+      {
+        "text": "Ooh, {combo} from {name}. Can anyone top that?",
+        "tone": "neutral"
+      }
+    ],
+    "pass_streak": [
+      {
+        "text": "Walao, {name} passed {n} times in a row. Saving cards for CNY?",
+        "tone": "tease"
+      },
+      {
+        "text": "{name} keeps passing. Patience, your moment is coming.",
+        "tone": "cheer"
+      },
+      {
+        "text": "{name} passing again. Riveting.",
+        "tone": "tease",
+        "spicy": true
+      }
+    ],
+    "too_slow": [
+      {
+        "text": "Too slow, {name}! The bot played for you.",
+        "tone": "tease"
+      },
+      {
+        "text": "{name} went to makan, is it? Auto-played.",
+        "tone": "tease"
+      },
+      {
+        "text": "{name}'s timer ran out, so the bot moved. Next time faster!",
+        "tone": "neutral"
+      }
+    ],
+    "double_it": [
+      {
+        "text": "{name} was too slow 3 times. Penalty points this round are DOUBLED!",
+        "tone": "tease"
+      },
+      {
+        "text": "Slowpoke tax! {name} pays double this round.",
+        "tone": "tease"
+      }
+    ],
+    "one_card": [
+      {
+        "text": "{name} has ONE card left! Play high or they win!",
+        "tone": "neutral"
+      },
+      {
+        "text": "Last card for {name}! Don't lead a small single!",
+        "tone": "neutral"
+      }
+    ],
+    "player_out": [
+      {
+        "text": "{name} is out! Finished #{place}.",
+        "tone": "cheer"
+      },
+      {
+        "text": "{name} escapes in place #{place}. The rest of you, keep fighting!",
+        "tone": "cheer"
+      }
+    ],
+    "win": [
+      {
+        "text": "{name} wins! Steady lah.",
+        "tone": "cheer"
+      },
+      {
+        "text": "Champion {name}! Everyone else counts their leftover cards.",
+        "tone": "cheer"
+      }
+    ],
+    "last_place": [
+      {
+        "text": "{name}, next round is yours. Confirm.",
+        "tone": "cheer"
+      },
+      {
+        "text": "{name} lost, but with style. Sort of.",
+        "tone": "tease"
+      },
+      {
+        "text": "Comeback arc loading… {name}.",
+        "tone": "cheer"
+      },
+      {
+        "text": "{name} holding {n} cards like souvenirs.",
+        "tone": "tease",
+        "spicy": true
+      }
+    ],
+    "comeback": [
+      {
+        "text": "Comeback! Nobody saw that coming.",
+        "tone": "cheer"
+      }
+    ],
+    "cheer": [
+      {
+        "text": "Chin up, {name}. Still got time.",
+        "tone": "cheer"
+      },
+      {
+        "text": "{name}, you got this.",
+        "tone": "cheer"
+      }
+    ],
+    "unbeatable": [
+      {
+        "text": "{name} played {combo}! Nothing beats that, so everyone passes. {name} leads again!",
+        "tone": "cheer"
+      },
+      {
+        "text": "Walao, {combo} from {name}! Table auto-pass. Bow down.",
+        "tone": "cheer"
+      },
+      {
+        "text": "{combo}?! {name} just told the whole table to sit down.",
+        "tone": "neutral",
+        "spicy": true
+      }
+    ],
+    "unstoppable": [
+      {
+        "text": "{name} played {combo} and has ONE card left with the lead. It's over, folks!",
+        "tone": "cheer"
+      },
+      {
+        "text": "GG already! {name} dropped {combo} and only has one card left. Nobody can stop it.",
+        "tone": "cheer"
+      },
+      {
+        "text": "{name} with {combo} and one card left. Pack up, go home!",
+        "tone": "neutral",
+        "spicy": true
+      }
+    ]
+  }
+}

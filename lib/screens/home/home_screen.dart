@@ -7,6 +7,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../../games/games_screen.dart';
+import '../../games/open_table_link.dart';
 import '../../services/export_service.dart';
 import '../../services/reminder_service.dart';
 import '../../services/update_service.dart';
@@ -209,6 +211,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _openCreateJoin(initialCode: code);
   }
 
+  void _openPendingTable() {
+    if (!mounted) return;
+    final state = context.read<AppState>();
+    final link = state.pendingTable;
+    if (link == null) return;
+    state.clearPendingTable();
+    _stripInviteParamFromUrl();
+    final i = state.groups.indexWhere((g) => g.id == link.groupId);
+    if (i >= 0) state.setGroup(i);
+    openTableLink(context, link);
+  }
+
   /// Removes ?code=... from the browser URL so a refresh doesn't re-trigger
   /// the join sheet. No-op on non-web.
   void _stripInviteParamFromUrl() {
@@ -257,6 +271,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     // Messages that arrived while the chat was open were seen there.
     state.markChatRead(group.id);
+  }
+
+  void _openGames() {
+    final state = context.read<AppState>();
+    if (!state.hasGroups) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => GamesScreen(group: state.currentGroup),
+      ),
+    );
   }
 
   void _toggleGroupMenu() {
@@ -426,6 +450,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       WidgetsBinding.instance
           .addPostFrameCallback((_) => _maybeHandlePendingInvite());
     }
+    // A card-game table link: open it once the groups have loaded.
+    if (state.pendingTable != null && !state.isLoadingGroups) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _openPendingTable());
+    }
 
     final needsInitialLoad = state.isLoadingGroups ||
         (state.hasGroups && !state.clipsLoadedOnce);
@@ -553,6 +581,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   onToggleDownload: _toggleDownloadMenu,
                   onOpenProfile: _openProfile,
                   onOpenChat: _openChat,
+                  onOpenGames: _openGames,
                   chatHasUnread: currentGroupHasUnread,
                 ),
                 HourDots(controller: _hourController),

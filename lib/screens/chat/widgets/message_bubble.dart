@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
+import '../../../games/open_table_link.dart';
+import '../../../games/table_link.dart';
 import '../../../models/message.dart';
 import '../../../services/clip_service.dart';
 import '../../../theme/colors.dart';
@@ -109,6 +111,7 @@ class _Bubble extends StatelessWidget {
     final bg = isMe ? const Color(0xFF7C3AED) : const Color(0xFF262629);
 
     final hasText = message.text != null && message.text!.isNotEmpty;
+    final table = hasText ? TableLink.inText(message.text!) : null;
     final hasClip = message.clipStoragePath != null;
     final hasReply = message.replySenderName != null;
 
@@ -138,7 +141,12 @@ class _Bubble extends StatelessWidget {
                 child: _ClipPreview(storagePath: message.clipStoragePath!),
               ),
 
-            if (hasText)
+            if (table != null)
+              _TableCard(
+                text: TableLink.withoutLink(message.text!),
+                link: table,
+              )
+            else if (hasText)
               Padding(
                 padding: const EdgeInsets.fromLTRB(11, 8, 11, 3),
                 child: Text(
@@ -436,6 +444,52 @@ class _ReactionPill extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// A game table someone opened: their line plus a big Join button.
+class _TableCard extends StatelessWidget {
+  final String text;
+  final TableLink link;
+
+  const _TableCard({required this.text, required this.link});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(11, 9, 11, 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            text.isEmpty ? '🃏 ${link.gameName()} table' : text,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+              height: 1.3,
+            ),
+          ),
+          const SizedBox(height: 8),
+          FilledButton.icon(
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.white,
+              foregroundColor: const Color(0xFF6D28D9),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+            ),
+            onPressed: () => openTableLink(context, link),
+            icon: const Icon(Icons.style_rounded, size: 18),
+            label: Text(
+              'Join ${link.gameName()}',
+              style: const TextStyle(fontWeight: FontWeight.w800),
+            ),
+          ),
+        ],
       ),
     );
   }
