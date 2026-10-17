@@ -1,9 +1,17 @@
-// The Lucky 7 table: opponents' seats with three mini slots each, the centre
-// deck, Discard and Used piles, the card in play, your three face-down slots,
-// and a step-by-step action bar (draw, then swap / throw away / use). Power
-// cards pick their targets on the table or in a seat focus sheet. Your own
-// cards stay face down; a J shows them for a few seconds, only to you.
-// State renders at once; effects play on top (spec "Moment tiers").
+// The Lucky 7 table (docs/table-feel.md). Every player's three face-down
+// cards sit on the felt in front of their seat; the deck, Discard and Used
+// piles and the card in play sit in the middle. Holding a card, your own
+// cards and the Discard pile light up: tap a card to swap into it, tap
+// Discard to throw it away. Powers pick their targets on the table (or in a
+// focus sheet when cards are small).
+//
+// Tracking cards is the game, so every move is animated step by step from
+// where the card was to where it lands: a swap flies the new card into the
+// slot and the old one, flipping face up, onto Discard; a Q's swap crosses
+// two cards between players; a K drops onto its card; a 10 gathers and
+// re-deals (never showing the real new order); a peek lifts the card being
+// looked at. Destinations keep their old look until the flight lands. The
+// reveal flips the seats one by one, lowest total last.
 
 import { lucky7, type Card, type GameEvent, type SeatId } from '@efoc/engine';
 import { haptic } from '../../bridge';
@@ -13,8 +21,7 @@ import { EYES, JESTER_SVG, playEmoji, preloadEmoji } from '../../feel/jesterArt'
 import { setMuted, sound, unlockAudio } from '../../feel/sound';
 import { FeelQueue } from '../../feel/tiers';
 import { L, fmt } from '../../strings';
-import { cardLabel, makeBack, makeCard } from '../../table/cardFace';
-import { computeLayout, TURN_CHIP_H, type Box, type TableLayout } from '../../table/layout';
+import { cardImage, cardLabel, makeBack, makeCard } from '../../table/cardFace';
 import { renderRematch, type RematchInfo } from '../../table/rematch';
 
 type View = lucky7.LuckyView;
@@ -50,15 +57,126 @@ export interface UpdateMeta {
 export type Conn = 'online' | 'away' | 'left' | 'bot';
 
 /** What a tap on a card or seat means right now. */
-type Mode = 'none' | 'swap' | 'qMine' | 'qTheirs' | 'lock' | 'unlock' | 'shuffle' | 'peek';
+type Mode = 'none' | 'qMine' | 'qTheirs' | 'lock' | 'unlock' | 'shuffle' | 'peek';
 
-const RESULTS_DELAY_MS = 1600;
+interface Box {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+interface Geo {
+  vw: number;
+  vh: number;
+  /** My cards. */
+  cw: number;
+  mine: Box;
+  /** Opponents: badge and three card boxes, by seat (mine is empty). */
+  opp: { chip: Box; cards: Box[] }[];
+  /** Opponents' card width; under 40 px a tap opens the focus sheet. */
+  ocw: number;
+  piles: Box;
+  pw: number;
+  play: Box;
+  prompt: Box;
+  timer: Box;
+  bar: Box;
+}
+
+const SLOTS = lucky7.SLOTS;
 const PEEK_RESULT_MS = 3500;
+const FLY_MS = 460;
+const RATIO = 1.4;
+const key = (seat: SeatId, slot: number): string => `${seat}:${slot}`;
+const wait = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+const clamp = (v: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, v));
+
+/** Where opponents sit around the felt, by how many there are (as computeLayout). */
+const SPOTS: Record<number, string[]> = {
+  1: ['T'],
+  2: ['TL', 'TR'],
+  3: ['L', 'T', 'R'],
+  4: ['L', 'TL', 'TR', 'R'],
+  5: ['L', 'TL', 'T', 'TR', 'R'],
+  6: ['LD', 'LU', 'TL', 'TR', 'RU', 'RD'],
+  7: ['LD', 'LU', 'TL', 'T', 'TR', 'RU', 'RD'],
+};
+
+/** The whole table's geometry. Pure: viewport in, boxes out. */
+export function luckyGeo(vw: number, vh: number, players: number, inset: { top: number; right: number; bottom: number; left: number }): Geo {
+  const left = inset.left + 8;
+  const right = vw - inset.right - 8;
+  const innerW = right - left;
+  const top = inset.top + 8;
+  const bar: Box = { x: left, y: vh - inset.bottom - 64, w: innerW, h: 60 };
+  const timer: Box = { x: left, y: bar.y - 8, w: innerW, h: 5 };
+  const cw = Math.round(clamp(Math.min(innerW / 4.6, vh / 8.5), 52, 104));
+  const ch = Math.round(cw * RATIO);
+  const mine: Box = { x: left, y: timer.y - 22 - ch, w: innerW, h: ch };
+  const prompt: Box = { x: left, y: mine.y - 40, w: innerW, h: 34 };
+  const R: Box = { x: left, y: top, w: innerW, h: prompt.y - 6 - top };
+
+  const n = players - 1;
+  const spots = SPOTS[n] ?? [];
+  const topRow = spots.filter((s) => s[0] === 'T').length;
+  const gap = 4;
+  let ocw = cw * (n === 1 ? 0.85 : n === 2 ? 0.72 : n <= 4 ? 0.6 : 0.45);
+  ocw = Math.min(ocw, ((innerW - (topRow - 1) * 12) / Math.max(1, topRow) - 2 * gap) / 3);
+  ocw = Math.round(clamp(ocw, 28, 76));
+  const och = Math.round(ocw * RATIO);
+  const chipH = 26;
+  const gw = Math.max(3 * ocw + 2 * gap, 76);
+  const gh = chipH + 3 + och;
+  const centreOf = (spot: string): { x: number; y: number } => {
+    const topX = (): number => {
+      const tops = spots.filter((s) => s[0] === 'T');
+      const i = tops.indexOf(spot);
+      // Evenly spread, so neighbours never touch.
+      return clamp(left + (innerW / tops.length) * (i + 0.5), left + gw / 2, right - gw / 2);
+    };
+    if (spot[0] === 'T') return { x: topX(), y: R.y + gh / 2 };
+    const x = spot[0] === 'L' ? left + gw / 2 : right - gw / 2;
+    const y = spot.length === 1 ? sideY(0.62) : spot[1] === 'U' ? R.y + R.h * 0.42 : sideY(0.8);
+    return { x, y: Math.min(y, R.y + R.h - gh / 2) };
+  };
+  // Piles in the middle; smaller when side seats share their height.
+  const sidesBeside = n >= 6;
+  let pw = Math.min(64, cw * 0.66);
+  if (sidesBeside) pw = Math.min(pw, (innerW - 2 * gw - 36) / 3);
+  pw = Math.round(clamp(pw, 30, 64));
+  const ph = Math.round(pw * RATIO);
+  const pilesW = 3 * pw + 2 * 12;
+  const pilesY = R.y + R.h * (n >= 3 ? 0.36 : 0.4) - ph / 2;
+  const piles: Box = { x: Math.round(vw / 2 - pilesW / 2), y: Math.round(Math.max(pilesY, n === 0 ? R.y : R.y + gh + 22)), w: pilesW, h: ph };
+  const hw = Math.round(clamp(pw * 1.3, 44, 86));
+  const play: Box = { x: Math.round(vw / 2 - hw / 2), y: piles.y + ph + 40, w: hw, h: Math.round(hw * RATIO) };
+  // Seats level with the middle sit below the card in play when they'd reach it.
+  const sideY = (frac: number): number => {
+    const y = R.y + R.h * frac;
+    const reaches = gw * 2 + hw + 16 > innerW;
+    return reaches ? Math.max(y, play.y + play.h + 22 + gh / 2) : y;
+  };
+
+  const opp: Geo['opp'] = Array.from({ length: players }, () => ({ chip: { x: 0, y: 0, w: 0, h: 0 }, cards: [] }));
+  spots.forEach((spot, r) => {
+    const seatRel = r + 1;
+    const c = centreOf(spot);
+    const x0 = c.x - gw / 2;
+    const y0 = c.y - gh / 2;
+    const rowW = 3 * ocw + 2 * gap;
+    const cards: Box[] = [];
+    for (let i = 0; i < SLOTS; i++) cards.push({ x: Math.round(c.x - rowW / 2 + i * (ocw + gap)), y: Math.round(y0 + chipH + 3), w: ocw, h: och });
+    opp[seatRel] = { chip: { x: Math.round(x0), y: Math.round(y0), w: Math.round(gw), h: chipH }, cards };
+  });
+  return { vw, vh, cw, mine, opp, ocw, piles, pw, play, prompt, timer, bar };
+}
 
 export class LuckySevenTable {
   readonly feel = new FeelQueue();
-  private layout!: TableLayout;
+  private geo!: Geo;
   private view: View | null = null;
+  private prev: View | null = null;
   private meta: UpdateMeta = { deadline: null, afk: [] };
   private mode: Mode = 'none';
   private qMine: number | null = null;
@@ -66,7 +184,7 @@ export class LuckySevenTable {
   private sent = false;
   /** My own cards, face up, during a J (null where locked). */
   private ownPeek: { cards: (Card | null)[]; until: number } | null = null;
-  /** A card I peeked at, shown over its slot for a moment. */
+  /** A card I peeked at, shown face up in its slot for a moment. */
   private peekShown: { target: Target; card: Card; until: number } | null = null;
   private turnTotal = 20000;
   private lastTickSecond = -1;
@@ -76,20 +194,33 @@ export class LuckySevenTable {
   private rematch: RematchInfo | null = null;
   private rematchEl: HTMLElement | null = null;
 
+  // Animation: what hasn't landed yet keeps its old look.
+  private anim: Promise<void> = Promise.resolve();
+  private hideSlots = new Set<string>();
+  private hideLocks = new Set<string>();
+  private hidePlay = false;
+  private discardLag = 0;
+  private usedLag = 0;
+  private lifted = new Set<string>();
+  /** Seats flipped face up in the final reveal. */
+  private revealedSeats = new Set<SeatId>();
+
   // DOM
   private table: HTMLElement;
-  private seatEls: HTMLElement[] = [];
-  private centre: HTMLElement;
+  private chips: HTMLElement[] = [];
+  private cardEls = new Map<string, HTMLElement>();
+  private pilesEl: HTMLElement;
   private deckEl: HTMLElement;
   private discardEl: HTMLElement;
   private usedEl: HTMLElement;
-  private drawnEl: HTMLElement;
+  private playEl: HTMLElement;
   private mineEl: HTMLElement;
   private slotEls: HTMLElement[] = [];
   private turnChip: HTMLElement;
   private timerBar: HTMLElement;
   private timerFill: HTMLElement;
   private actionBar: HTMLElement;
+  private flights: HTMLElement;
   private fx: HTMLElement;
   private jesterEl: HTMLElement;
   private jesterBubble: HTMLElement;
@@ -110,26 +241,31 @@ export class LuckySevenTable {
   ) {
     root.innerHTML = '';
     root.className = 'efoc-root felt-lucky7';
-    this.table = el('div', 'table', root);
-    this.centre = el('div', 'l7-centre', this.table);
-    const piles = el('div', 'l7-piles', this.centre);
-    this.deckEl = el('div', 'l7-pile l7-deck', piles);
-    this.discardEl = el('div', 'l7-pile l7-discard', piles);
-    this.usedEl = el('div', 'l7-pile l7-used', piles);
-    this.drawnEl = el('div', 'l7-drawn hidden', this.centre);
+    this.table = el('div', 'table l7-table', root);
+    el('div', 'l7-felt', this.table);
+    this.pilesEl = el('div', 'l7-piles', this.table);
+    this.deckEl = el('button', 'l7-pile l7-deck', this.pilesEl);
+    this.discardEl = el('button', 'l7-pile l7-discard', this.pilesEl);
+    this.usedEl = el('div', 'l7-pile l7-used', this.pilesEl);
+    this.deckEl.addEventListener('click', () => this.tapDeck());
+    this.discardEl.addEventListener('click', () => this.tapDiscard());
+    this.playEl = el('div', 'l7-drawn l7-play hidden', this.table);
     this.mineEl = el('div', 'l7-mine', this.table);
-    for (let i = 0; i < lucky7.SLOTS; i++) {
-      const s = el('button', 'l7-slot', this.mineEl) as HTMLButtonElement;
+    for (let i = 0; i < SLOTS; i++) {
+      const s = el('button', 'l7-slot l7-card mine', this.mineEl) as HTMLButtonElement;
       s.type = 'button';
+      s.dataset.seat = String(me);
       s.dataset.slot = String(i);
-      s.addEventListener('click', () => this.tapMine(i));
+      s.addEventListener('click', () => this.tapCard({ seat: me, slot: i }));
       this.slotEls.push(s);
+      this.cardEls.set(key(me, i), s);
     }
     this.turnChip = el('div', 'turn-chip l7-prompt hidden', this.table);
     this.turnChip.setAttribute('aria-live', 'polite');
     this.timerBar = el('div', 'timer-bar', this.table);
     this.timerFill = el('div', 'timer-fill', this.timerBar);
     this.actionBar = el('div', 'action-bar l7-actions', this.table);
+    this.flights = el('div', 'l7-flights', root);
     this.fx = el('div', 'fx-layer', root);
     this.jesterEl = el('div', 'jester hidden', root);
     this.jesterEl.setAttribute('aria-live', 'polite');
@@ -160,13 +296,15 @@ export class LuckySevenTable {
   /** New state from the host, with the events that produced it (only mine of the private ones). */
   update(view: View, events: GameEvent[], meta: UpdateMeta): void {
     const prevDeadline = this.meta.deadline;
+    this.prev = this.view;
     this.view = view;
     this.meta = meta;
     this.sent = false;
     if (meta.deadline && meta.deadline !== prevDeadline) this.turnTotal = Math.max(1000, meta.deadline - Date.now());
     // The host started another match: close the results.
-    if (view.phase === 'play' && this.resultsOpen) {
+    if (view.phase === 'play' && (this.resultsOpen || this.revealedSeats.size)) {
       this.resultsOpen = false;
+      this.revealedSeats.clear();
       this.overlay.className = 'overlay hidden';
       this.ownPeek = null;
       this.peekShown = null;
@@ -174,15 +312,11 @@ export class LuckySevenTable {
     if (view.turn !== this.me || view.phase !== 'play') this.resetMode();
     else if (view.step === 'peek' && this.mode !== 'peek') this.mode = this.ownPeek ? 'none' : 'peek';
     else if (view.step !== 'act' && this.mode !== 'peek') this.resetMode();
-    for (const e of events) {
-      if (e.to !== undefined && e.to !== this.me) continue;
-      this.moment(e, view);
-    }
+    const mine = events.filter((e) => e.to === undefined || e.to === this.me);
+    // Set up what must wait for its flight before drawing the new state.
+    this.planFlights(mine, this.prev, view);
+    for (const e of mine) this.moment(e, view);
     this.render();
-    if (view.phase === 'over' && !this.resultsOpen) {
-      this.resultsOpen = true;
-      window.setTimeout(() => this.results(view), RESULTS_DELAY_MS);
-    }
   }
 
   /** "Who's in for another?" on the results screen (online tables). */
@@ -194,14 +328,14 @@ export class LuckySevenTable {
   /** Who is connected (online tables only); redraws the seats when it changes. */
   setConnection(conn: Conn[]): void {
     this.conn = conn.slice();
-    if (this.view) this.renderSeats(this.view);
+    if (this.view) this.render();
   }
 
   /** A short note over the table, e.g. "Mei is now the host". */
   notice(text: string): void {
-    const c = this.layout?.stage;
-    if (!c) return;
-    this.feel.play(2, 'notice', (ctx) => banner(this.fx, text, 'info', 'pop', ctx, { x: c.x + c.w / 2, y: c.y + 8 }));
+    if (!this.geo) return;
+    const p = this.geo.piles;
+    this.feel.play(2, 'notice', (ctx) => banner(this.fx, text, 'info', 'pop', ctx, { x: p.x + p.w / 2, y: p.y - 10 }));
   }
 
   /** The host turned a move down (stale or illegal): try again. */
@@ -235,6 +369,263 @@ export class LuckySevenTable {
     return !!v && v.phase === 'play' && v.turn === this.me && !this.sent;
   }
 
+  // ------------------------------------------------------------ flights
+
+  private rectOf(e: Element): DOMRect {
+    return e.getBoundingClientRect();
+  }
+
+  /** Where the card in play sits (from the layout: the spot hides between turns). */
+  private playRect(): DOMRect {
+    const b = this.geo.play;
+    return new DOMRect(b.x, b.y, b.w, b.h);
+  }
+
+  private slotEl(t: Target): HTMLElement | undefined {
+    return this.cardEls.get(key(t.seat, t.slot));
+  }
+
+  /** The card in play, as the table showed it: its face if I could see it. */
+  private heldFace(prev: View | null): Card | null {
+    return prev?.drawn ?? null;
+  }
+
+  /** Animation steps waiting their turn. */
+  private backlog = 0;
+
+  /** Runs animation steps one after another. A backlog (moves arriving faster than cards can fly) speeds them up, then skips them. */
+  private chain(step: () => Promise<void>): void {
+    this.backlog++;
+    this.anim = this.anim
+      .then(step)
+      .catch(() => undefined)
+      .then(() => {
+        this.backlog--;
+        this.render();
+      });
+  }
+
+  /**
+   * One card flying from one box to another along an arc, optionally
+   * flipping. Resolves when it lands.
+   */
+  private fly(from: DOMRect, to: DOMRect, face: Card | null, flip: 'up' | 'down' | null, o: { ms?: number; bend?: number } = {}): Promise<void> {
+    const reduced = this.feel.reduced;
+    // Catching up: quicker flights, and none at all far behind.
+    if (this.backlog > 8) return Promise.resolve();
+    const ms = reduced || this.backlog > 3 ? 160 : o.ms ?? FLY_MS;
+    const f = el('div', 'l7-flyer', this.flights);
+    f.style.left = `${from.left}px`;
+    f.style.top = `${from.top}px`;
+    f.style.width = `${from.width}px`;
+    f.style.height = `${from.height}px`;
+    const inner = el('div', 'l7-flip', f);
+    const front = el('div', 'l7-face front', inner);
+    const back = el('div', 'l7-face back', inner);
+    if (face) front.style.backgroundImage = `url("${cardImage(face)}")`;
+    back.style.backgroundImage = `url("${cardImage('back')}")`;
+    // Which side shows at the start and at the end.
+    const startUp = flip === 'down' ? true : flip === 'up' ? false : !!face;
+    const endUp = flip === 'up' ? true : flip === 'down' ? false : !!face;
+    const dx = to.left - from.left;
+    const dy = to.top - from.top;
+    const sx = to.width / from.width;
+    const sy = to.height / from.height;
+    const bend = o.bend ?? 1;
+    const lift = reduced ? 0 : Math.min(60, 18 + Math.hypot(dx, dy) * 0.12) * bend;
+    const tilt = reduced ? 0 : (dx >= 0 ? 8 : -8) * bend;
+    const move = f.animate(
+      [
+        { transform: 'translate(0px, 0px) scale(1, 1) rotate(0deg)', offset: 0 },
+        { transform: `translate(${dx * 0.5}px, ${dy * 0.5 - lift}px) scale(${(1 + sx) / 2 + 0.1}, ${(1 + sy) / 2 + 0.1}) rotate(${tilt}deg)`, offset: 0.5 },
+        { transform: `translate(${dx}px, ${dy}px) scale(${sx}, ${sy}) rotate(0deg)`, offset: 1 },
+      ],
+      { duration: ms, easing: 'cubic-bezier(0.3, 0.7, 0.35, 1)', fill: 'forwards' },
+    );
+    const r0 = startUp ? 0 : 180;
+    const r1 = endUp ? 0 : 180;
+    inner.animate([{ transform: `rotateY(${r0}deg)` }, { transform: `rotateY(${r1}deg)` }], { duration: ms, easing: 'ease-in-out', fill: 'forwards' });
+    return move.finished.then(() => {
+      f.remove();
+      sound.thud(0);
+    }, () => f.remove());
+  }
+
+  /** The 10's shuffle: cards gather, spin together, and deal back. Shows nothing of the new order. */
+  private async shuffleSeat(seat: SeatId, slots: number[]): Promise<void> {
+    const els = slots.map((i) => this.slotEl({ seat, slot: i })).filter((x): x is HTMLElement => !!x);
+    if (!els.length) return;
+    const rects = els.map((e) => this.rectOf(e));
+    const mid = rects[Math.floor(rects.length / 2)]!;
+    slots.forEach((i) => this.hideSlots.add(key(seat, i)));
+    this.render();
+    await Promise.all(rects.map((r) => this.fly(r, mid, null, null, { ms: 320, bend: 0.4 })));
+    // A spinning stack while they mix.
+    const stack = el('div', 'l7-flyer l7-stack', this.flights);
+    stack.style.left = `${mid.left}px`;
+    stack.style.top = `${mid.top}px`;
+    stack.style.width = `${mid.width}px`;
+    stack.style.height = `${mid.height}px`;
+    stack.style.backgroundImage = `url("${cardImage('back')}")`;
+    if (!this.feel.reduced && this.backlog <= 3) await stack.animate([{ transform: 'rotate(0)' }, { transform: 'rotate(-14deg) scale(1.1)' }, { transform: 'rotate(14deg) scale(1.1)' }, { transform: 'rotate(0)' }], { duration: 520 }).finished;
+    stack.remove();
+    await Promise.all(rects.map((r) => this.fly(mid, r, null, null, { ms: 320, bend: 0.4 })));
+    slots.forEach((i) => this.hideSlots.delete(key(seat, i)));
+  }
+
+  /**
+   * Turns this entry's public events into flights. What a flight carries
+   * keeps its old look (hidden slot, lagging pile) until it lands. Flights
+   * use where things are on screen now, after this update is drawn.
+   */
+  private planFlights(events: GameEvent[], prev: View | null, v: View): void {
+    const held = this.heldFace(prev);
+    for (const e of events) {
+      const seat = typeof e.seat === 'number' ? e.seat : null;
+      switch (e.type) {
+        case 'drew': {
+          this.hidePlay = true;
+          const fromDeck = e.from === 'deck';
+          const face = fromDeck ? null : (e.card as Card);
+          this.chain(async () => {
+            const src = this.rectOf(fromDeck ? this.deckEl : this.discardEl);
+            this.render();
+            const dst = this.playRect();
+            sound.slide();
+            // My own draw turns face up as it reaches me.
+            const mineFace = fromDeck && seat === this.me ? this.view?.drawn ?? null : face;
+            await this.fly(src, dst, mineFace, fromDeck && mineFace ? 'up' : null);
+            this.hidePlay = false;
+          });
+          break;
+        }
+        case 'swapped': {
+          const t = { seat: seat!, slot: e.slot as number };
+          this.hideSlots.add(key(t.seat, t.slot));
+          this.discardLag++;
+          const out = e.out as Card;
+          this.chain(async () => {
+            const slot = this.slotEl(t);
+            if (!slot) return;
+            const at = this.rectOf(slot);
+            const play = this.playRect();
+            const pile = this.rectOf(this.discardEl);
+            await Promise.all([this.fly(play, at, held, held ? 'down' : null), this.fly(at, pile, out, 'up', { bend: -0.6 })]);
+            this.hideSlots.delete(key(t.seat, t.slot));
+            this.discardLag--;
+          });
+          break;
+        }
+        case 'discarded': {
+          this.discardLag++;
+          const card = e.card as Card;
+          this.chain(async () => {
+            await this.fly(this.playRect(), this.rectOf(this.discardEl), card, held ? null : 'up');
+            this.discardLag--;
+          });
+          break;
+        }
+        case 'power': {
+          const card = e.card as Card;
+          const p = e.power as Power;
+          const t = (e.target ?? null) as Target | null;
+          if (p === 'K' && t) {
+            // The K drops onto the card it locks.
+            this.hideLocks.add(key(t.seat, t.slot));
+            this.chain(async () => {
+              const slot = this.slotEl(t);
+              if (slot) await this.fly(this.playRect(), this.rectOf(slot), card, null);
+              this.hideLocks.delete(key(t.seat, t.slot));
+            });
+            break;
+          }
+          // Every other power goes to Used first.
+          this.usedLag++;
+          this.chain(async () => {
+            await this.fly(this.playRect(), this.rectOf(this.usedEl), card, null);
+            this.usedLag--;
+          });
+          if (p === 'Q' && t) {
+            const a: Target = { seat: seat!, slot: e.mine as number };
+            this.hideSlots.add(key(a.seat, a.slot));
+            this.hideSlots.add(key(t.seat, t.slot));
+            this.chain(async () => {
+              const ea = this.slotEl(a);
+              const eb = this.slotEl(t);
+              if (ea && eb) {
+                const ra = this.rectOf(ea);
+                const rb = this.rectOf(eb);
+                sound.slide();
+                await Promise.all([this.fly(ra, rb, null, null, { ms: 620 }), this.fly(rb, ra, null, null, { ms: 620, bend: -1 })]);
+              }
+              this.hideSlots.delete(key(a.seat, a.slot));
+              this.hideSlots.delete(key(t.seat, t.slot));
+            });
+          } else if (p === '9' && t) {
+            // The broken lock's K goes to Used too.
+            this.usedLag++;
+            const k = v.used[v.used.length - 1] ?? null; // the 9 went first, then the K
+            this.chain(async () => {
+              const slot = this.slotEl(t);
+              if (slot && k) await this.fly(this.rectOf(slot), this.rectOf(this.usedEl), k, null, { bend: -0.5 });
+              this.usedLag--;
+            });
+          } else if (p === 'T') {
+            const target = (t?.seat ?? seat)!;
+            const open = [0, 1, 2].filter((i) => !v.locked[target]![i]);
+            this.chain(() => this.shuffleSeat(target, open));
+          }
+          break;
+        }
+        case 'peeked': {
+          // Everyone sees which card is being looked at, never its face.
+          const t = e.target as Target;
+          this.chain(async () => {
+            this.lifted.add(key(t.seat, t.slot));
+            this.render();
+            await wait(this.feel.reduced || this.backlog > 3 ? 300 : 1300);
+            this.lifted.delete(key(t.seat, t.slot));
+          });
+          break;
+        }
+        case 'revealed': {
+          this.chain(() => this.reveal(v));
+          break;
+        }
+        default:
+      }
+    }
+  }
+
+  /** Seats flip face up one by one, the lowest total last; then results. */
+  private async reveal(v: View): Promise<void> {
+    const totals = v.totals ?? [];
+    const order = Array.from({ length: v.players }, (_, i) => i).sort((a, b) => totals[b]! - totals[a]! || b - a);
+    await wait(400);
+    for (const seat of order) {
+      const cards = v.revealed?.[seat] ?? [];
+      const flips = cards.map((c, i) => {
+        const e = this.slotEl({ seat, slot: i });
+        if (!e) return Promise.resolve();
+        const r = this.rectOf(e);
+        this.hideSlots.add(key(seat, i));
+        return this.fly(r, r, c, 'up', { ms: 420, bend: 0.3 });
+      });
+      this.render();
+      await Promise.all(flips);
+      cards.forEach((_, i) => this.hideSlots.delete(key(seat, i)));
+      this.revealedSeats.add(seat);
+      this.render();
+      sound.thud(1);
+      await wait(this.feel.reduced ? 80 : 160);
+    }
+    await wait(700);
+    if (!this.resultsOpen && this.view?.phase === 'over') {
+      this.resultsOpen = true;
+      this.results(this.view);
+    }
+  }
+
   // ------------------------------------------------------------- layout
 
   private relSeat(seat: SeatId): number {
@@ -242,20 +633,18 @@ export class LuckySevenTable {
     return (seat - this.me + n) % n;
   }
 
-  private seatBox(seat: SeatId): Box | null {
-    const r = this.relSeat(seat);
-    return r === 0 ? null : this.layout.seats[r - 1] ?? null;
-  }
-
   private seatCentre(seat: SeatId): { x: number; y: number } {
-    const b = this.seatBox(seat);
-    if (!b) return this.mineCentre();
-    return { x: b.x + b.w / 2, y: b.y + b.h / 2 };
+    if (seat === this.me) return this.mineCentre();
+    const g = this.geo.opp[this.relSeat(seat)];
+    if (!g || !g.cards.length) return this.mineCentre();
+    const a = g.cards[0]!;
+    const b = g.cards[SLOTS - 1]!;
+    return { x: (a.x + b.x + b.w) / 2, y: a.y + a.h / 2 };
   }
 
   private mineCentre(): { x: number; y: number } {
-    const h = this.layout.hand;
-    return { x: h.x + h.w / 2, y: h.y + h.h / 2 };
+    const m = this.geo.mine;
+    return { x: m.x + m.w / 2, y: m.y + m.h / 2 };
   }
 
   private nameOf(seat: SeatId): string {
@@ -267,157 +656,180 @@ export class LuckySevenTable {
     if (!v) return;
     const vw = this.root.clientWidth || window.innerWidth;
     const vh = this.root.clientHeight || window.innerHeight;
-    this.layout = computeLayout(vw, vh, v.players, readInsets(), 3);
-    const lay = this.layout;
-    this.root.style.setProperty('--card-w', `${lay.handW}px`);
-    this.root.style.setProperty('--card-h', `${lay.handH}px`);
-    this.root.style.setProperty('--pile-w', `${Math.round(lay.cardW * 1.05)}px`);
+    this.geo = luckyGeo(vw, vh, v.players, readInsets());
+    const g = this.geo;
+    this.root.style.setProperty('--card-w', `${g.cw}px`);
+    this.root.style.setProperty('--card-h', `${Math.round(g.cw * RATIO)}px`);
+    this.root.style.setProperty('--pile-w', `${g.pw}px`);
     this.root.classList.toggle('final-lap', v.phase === 'play' && v.deckCount <= v.players);
     this.renderSeats(v);
+    this.renderCards(v);
     this.renderCentre(v);
-    this.renderMine(v);
     this.renderPrompt(v);
     this.renderActions(v);
-    place(this.timerBar, lay.timerBar);
-    place(this.actionBar, lay.actionBar);
+    place(this.timerBar, g.timer);
+    place(this.actionBar, g.bar);
     if (this.focusSeat !== null) this.renderFocus();
   }
 
   private renderSeats(v: View): void {
-    const lay = this.layout;
-    while (this.seatEls.length < v.players - 1) {
-      const s = el('button', 'seat l7-seat', this.table) as HTMLButtonElement;
-      s.type = 'button';
-      s.innerHTML =
-        '<div class="avatar"><svg class="ring" viewBox="0 0 36 36"><circle class="ring-bg" cx="18" cy="18" r="16"/><circle class="ring-fg" cx="18" cy="18" r="16"/></svg><span class="face"></span><span class="dot"></span></div>' +
-        '<div class="name"></div><div class="l7-mini"></div><div class="chip hidden"></div><div class="stamp"></div>';
-      s.addEventListener('click', () => this.tapSeat(Number(s.dataset.seat)));
-      this.seatEls.push(s);
-    }
+    const g = this.geo;
     for (let r = 1; r < v.players; r++) {
       const seat = (this.me + r) % v.players;
-      const s = this.seatEls[r - 1]!;
-      place(s, lay.seats[r - 1]!);
-      s.classList.toggle('compact', lay.compact);
+      let s = this.chips[r - 1];
+      if (!s) {
+        s = el('button', 'seat l7-seat', this.table) as HTMLButtonElement;
+        (s as HTMLButtonElement).type = 'button';
+        s.innerHTML = '<span class="avatar"><span class="face"></span><span class="dot"></span></span><span class="name"></span><span class="chip hidden"></span><span class="stamp"></span>';
+        s.addEventListener('click', () => this.tapSeat(Number(s!.dataset.seat)));
+        this.chips[r - 1] = s;
+      }
+      place(s, g.opp[r]!.chip);
       s.dataset.seat = String(seat);
       const meta = this.seatMeta[seat]!;
       s.querySelector('.face')!.textContent = meta.avatar;
-      s.querySelector('.name')!.textContent = meta.name.slice(0, 8);
-      const mini = s.querySelector('.l7-mini') as HTMLElement;
-      if (mini.childElementCount !== lucky7.SLOTS) {
-        mini.innerHTML = '';
-        for (let i = 0; i < lucky7.SLOTS; i++) mini.appendChild(el('span', 'l7-mini-card', mini));
-      }
-      [...mini.children].forEach((c, i) => {
-        const locked = v.locked[seat]![i]!;
-        c.className = `l7-mini-card${locked ? ' locked' : ''}`;
-        const peeked = this.peekShown && this.peekShown.target.seat === seat && this.peekShown.target.slot === i && Date.now() < this.peekShown.until;
-        const revealed = v.revealed?.[seat]?.[i];
-        const face = peeked ? this.peekShown!.card : revealed ?? null;
-        c.innerHTML = face ? `<b>${face[0] === 'T' ? '10' : face[0]}</b>` : locked ? '🔒' : '';
-        c.classList.toggle('face', !!face);
-        c.classList.toggle('red', !!face && (face[1] === 'h' || face[1] === 'd'));
-      });
+      s.querySelector('.name')!.textContent = meta.name.slice(0, 9);
       const isTurn = v.phase === 'play' && v.turn === seat;
       s.classList.toggle('turn', isTurn);
+      if (!isTurn) s.classList.remove('urgent');
       const afk = this.meta.afk[seat] === true;
       const conn = this.conn[seat];
       s.classList.toggle('bot', meta.bot || afk || conn === 'left');
       s.classList.toggle('conn-away', conn === 'away');
       s.classList.toggle('conn-left', conn === 'left');
-      s.classList.toggle('pickable', this.seatPickable(seat));
+      s.classList.toggle('pickable', this.seatPickable(seat) && (this.mode === 'shuffle' || g.ocw < 40));
       const chip = s.querySelector('.chip') as HTMLElement;
-      if (conn === 'left' && !v.totals) {
+      const done = this.revealedSeats.has(seat) && v.totals;
+      if (done) {
+        chip.textContent = fmt(L().l7.total, { n: v.totals![seat]! });
+        chip.className = 'chip chip-gold';
+      } else if (conn === 'left') {
         chip.textContent = L().ui.leftGame;
         chip.className = 'chip chip-danger';
-      } else if (conn === 'away' && !v.totals) {
+      } else if (conn === 'away') {
         chip.textContent = L().ui.reconnecting;
         chip.className = 'chip chip-warn';
       } else if (afk) {
         chip.textContent = L().ui.afk;
         chip.className = 'chip chip-danger';
-      } else if (v.totals) {
-        chip.textContent = fmt(L().l7.total, { n: v.totals[seat]! });
-        chip.className = 'chip chip-gold';
       } else chip.className = 'chip hidden';
       s.setAttribute('aria-label', `${meta.name}${isTurn ? ', ' + L().ui.yourTurn.toLowerCase() : ''}`);
     }
-    for (let r = v.players - 1; r < this.seatEls.length; r++) this.seatEls[r]!.remove();
-    this.seatEls.length = v.players - 1;
+    for (let r = v.players - 1; r < this.chips.length; r++) this.chips[r]!.remove();
+    this.chips.length = Math.max(0, v.players - 1);
+  }
+
+  /** Every slot on the table: backs, locks, peeks, the reveal. */
+  private renderCards(v: View): void {
+    const g = this.geo;
+    const now = Date.now();
+    const own = this.ownPeek && now < this.ownPeek.until ? this.ownPeek : null;
+    place(this.mineEl, g.mine);
+    for (let seat = 0; seat < v.players; seat++) {
+      for (let i = 0; i < SLOTS; i++) {
+        const k = key(seat, i);
+        let c = this.cardEls.get(k);
+        if (!c) {
+          c = el('button', 'l7-card l7-mini-card', this.table) as HTMLButtonElement;
+          (c as HTMLButtonElement).type = 'button';
+          c.dataset.seat = String(seat);
+          c.dataset.slot = String(i);
+          const t = { seat, slot: i };
+          c.addEventListener('click', () => this.tapCard(t));
+          this.cardEls.set(k, c);
+        }
+        if (seat !== this.me) {
+          const box = g.opp[this.relSeat(seat)]?.cards[i];
+          if (box) place(c, box);
+        }
+        const locked = v.locked[seat]![i]! && !this.hideLocks.has(k);
+        const peeked = this.peekShown && this.peekShown.target.seat === seat && this.peekShown.target.slot === i && now < this.peekShown.until ? this.peekShown.card : null;
+        const revealed = this.revealedSeats.has(seat) ? v.revealed?.[seat]?.[i] ?? null : null;
+        const face = revealed ?? (seat === this.me ? own?.cards[i] ?? null : peeked);
+        const want = `${face ?? 'back'}|${locked}`;
+        if (c.dataset.paint !== want) {
+          c.dataset.paint = want;
+          c.innerHTML = '';
+          const card = face ? makeCard(face) : makeBack();
+          card.classList.add('l7-slot-card');
+          c.appendChild(card);
+          if (locked) {
+            const k7 = el('span', 'l7-lock', c);
+            k7.innerHTML = '<span class="l7-lock-k"></span><b>🔒</b>';
+            (k7.firstElementChild as HTMLElement).style.backgroundImage = `url("${cardImage('Ks')}")`;
+          }
+          if (seat === this.me) el('span', 'l7-slot-no', c).textContent = String(i + 1);
+        }
+        c.classList.toggle('face', !!face);
+        c.classList.toggle('locked', locked);
+        c.style.visibility = this.hideSlots.has(k) ? 'hidden' : '';
+        c.classList.toggle('lifted', this.lifted.has(k));
+        c.classList.toggle('pickable', this.cardPickable({ seat, slot: i }));
+        c.classList.toggle('selected', this.mode === 'qTheirs' && seat === this.me && this.qMine === i);
+        c.setAttribute('aria-label', `${seat === this.me ? L().l7.yourCards : this.seatMeta[seat]?.name ?? ''} ${i + 1}${locked ? ', ' + L().l7.locked : ''}${face ? ', ' + cardLabel(face) : ''}`);
+      }
+    }
+    if (own) {
+      const left = Math.ceil((own.until - now) / 1000);
+      this.mineEl.dataset.peek = `${L().l7.ownPeek} · ${left}s`;
+    } else delete this.mineEl.dataset.peek;
   }
 
   private renderCentre(v: View): void {
     const u = L().l7;
-    place(this.centre, this.layout.stage);
+    const g = this.geo;
+    place(this.pilesEl, g.piles);
     // Centre deck: a back with the count.
     this.deckEl.innerHTML = '';
     if (v.deckCount > 0) this.deckEl.appendChild(makeBack());
-    el('span', 'l7-pile-label', this.deckEl).textContent = `${u.deck} · ${v.deckCount}`;
+    el('span', 'l7-pile-label', this.deckEl).textContent = g.pw < 44 ? String(v.deckCount) : `${u.deck} · ${v.deckCount}`;
     this.deckEl.classList.toggle('pickable', this.myTurn && v.step === 'draw' && v.deckCount > 0);
-    // Discard: the top card, face up.
+    this.deckEl.setAttribute('aria-label', `${u.deck}, ${fmt(u.left, { n: v.deckCount })}`);
+    // Discard: the top card (one still flying shows the card under it).
     this.discardEl.innerHTML = '';
-    const top = v.discard[v.discard.length - 1];
+    const top = v.discard[v.discard.length - 1 - this.discardLag];
     if (top) this.discardEl.appendChild(makeCard(top));
     else el('span', 'l7-empty', this.discardEl);
     el('span', 'l7-pile-label', this.discardEl).textContent = u.discardPile;
-    this.discardEl.classList.toggle('pickable', this.myTurn && v.step === 'draw' && !!top);
-    this.discardEl.onclick = () => this.myTurn && v.step === 'draw' && top && this.send({ type: 'draw', from: 'discard' });
-    this.deckEl.onclick = () => this.myTurn && v.step === 'draw' && v.deckCount > 0 && this.send({ type: 'draw', from: 'deck' });
-    // Used: the last power used, dimmed, with the count.
+    const canTake = this.myTurn && v.step === 'draw' && v.discard.length > 0;
+    const canThrow = this.myTurn && v.step === 'act' && this.mode === 'none';
+    this.discardEl.classList.toggle('pickable', canTake || canThrow);
+    this.discardEl.classList.toggle('throw', canThrow);
+    this.discardEl.setAttribute('aria-label', canThrow ? u.discard : top ? fmt(u.takeDiscard, { card: cardLabel(top) }) : u.discardPile);
+    // Used: the last power used, with the count.
     this.usedEl.innerHTML = '';
-    const used = v.used[v.used.length - 1];
+    const used = v.used[v.used.length - 1 - this.usedLag];
     if (used) this.usedEl.appendChild(makeCard(used));
     else el('span', 'l7-empty', this.usedEl);
-    el('span', 'l7-pile-label', this.usedEl).textContent = `${u.usedPile} · ${v.used.length}`;
+    el('span', 'l7-pile-label', this.usedEl).textContent = g.pw < 44 ? String(v.used.length - this.usedLag) : `${u.usedPile} · ${v.used.length - this.usedLag}`;
     // The card in play this turn.
-    const showDrawn = v.phase === 'play' && v.step === 'act';
-    this.drawnEl.classList.toggle('hidden', !showDrawn);
-    if (showDrawn) {
-      this.drawnEl.innerHTML = '';
-      const label = el('div', 'l7-drawn-label', this.drawnEl);
-      label.textContent = v.turn === this.me ? u.youDrew : fmt(u.theyDrew, { name: this.nameOf(v.turn) });
-      const card = v.drawn ? makeCard(v.drawn) : makeBack();
-      card.classList.add('l7-drawn-card');
-      this.drawnEl.appendChild(card);
-      const p = lucky7.powerOf(v.drawn);
-      if (p) el('div', 'l7-power-tag', this.drawnEl).textContent = `⚡ ${u.powers[p]}`;
+    place(this.playEl, g.play);
+    const showPlay = v.phase === 'play' && v.step === 'act';
+    this.playEl.classList.toggle('hidden', !showPlay);
+    this.playEl.style.visibility = this.hidePlay ? 'hidden' : '';
+    const want = showPlay ? `${v.turn}|${v.drawn ?? 'back'}` : '';
+    if (this.playEl.dataset.paint !== want) {
+      this.playEl.dataset.paint = want;
+      this.playEl.innerHTML = '';
+      if (showPlay) {
+        el('div', 'l7-drawn-label', this.playEl).textContent = v.turn === this.me ? u.youDrew : fmt(u.theyDrew, { name: this.nameOf(v.turn) });
+        const card = v.drawn ? makeCard(v.drawn) : makeBack();
+        card.classList.add('l7-drawn-card');
+        this.playEl.appendChild(card);
+        const p = lucky7.powerOf(v.drawn);
+        if (p) el('div', 'l7-power-tag', this.playEl).textContent = `⚡ ${u.powers[p]}`;
+      }
     }
-  }
-
-  private renderMine(v: View): void {
-    place(this.mineEl, this.layout.hand);
-    const now = Date.now();
-    const own = this.ownPeek && now < this.ownPeek.until ? this.ownPeek : null;
-    this.slotEls.forEach((s, i) => {
-      s.innerHTML = '';
-      const locked = v.locked[this.me]![i]!;
-      const revealed = v.revealed?.[this.me]?.[i];
-      const peekCard = own?.cards[i];
-      const shown = revealed ?? peekCard ?? null;
-      const card = shown ? makeCard(shown) : makeBack();
-      card.classList.add('l7-slot-card');
-      s.appendChild(card);
-      if (locked) el('span', 'l7-lock', s).textContent = '🔒';
-      el('span', 'l7-slot-no', s).textContent = String(i + 1);
-      s.classList.toggle('locked', locked);
-      s.classList.toggle('pickable', this.minePickable(i));
-      s.classList.toggle('selected', this.mode === 'qTheirs' && this.qMine === i);
-      s.setAttribute('aria-label', `${L().l7.yourCards} ${i + 1}${locked ? ', ' + L().l7.locked : ''}${shown ? ', ' + cardLabel(shown) : ''}`);
-    });
-    if (own) {
-      const left = Math.ceil((own.until - now) / 1000);
-      this.mineEl.dataset.peek = fmt(`${L().l7.ownPeek} · {n}s`, { n: left });
-    } else delete this.mineEl.dataset.peek;
   }
 
   private renderPrompt(v: View): void {
     const u = L().l7;
     const chip = this.turnChip;
-    const lay = this.layout;
-    chip.style.left = `${lay.hand.x}px`;
-    chip.style.width = `${lay.hand.w}px`;
+    const pr = this.geo.prompt;
+    chip.style.left = `${pr.x}px`;
+    chip.style.width = `${pr.w}px`;
     chip.style.top = 'auto';
-    chip.style.bottom = `${lay.vh - lay.hand.y + 6}px`;
+    chip.style.bottom = `${this.geo.vh - this.geo.mine.y + 14}px`;
     if (v.phase !== 'play') {
       chip.classList.add('hidden');
       return;
@@ -431,7 +843,6 @@ export class LuckySevenTable {
     else
       text = {
         none: u.actPrompt,
-        swap: u.swapPrompt,
         qMine: u.pickMine,
         qTheirs: u.pickTheirs,
         lock: u.pickAny,
@@ -453,14 +864,6 @@ export class LuckySevenTable {
       return;
     }
     if (!this.myTurn || v.phase !== 'play') return;
-    if (v.step === 'draw') {
-      const top = v.discard[v.discard.length - 1];
-      const take = button(bar, 'btn btn-secondary', top ? fmt(u.takeDiscard, { card: shortCard(top) }) : u.discardPile, u.takeDiscard);
-      take.disabled = !top;
-      take.addEventListener('click', () => this.send({ type: 'draw', from: 'discard' }));
-      button(bar, 'btn btn-primary', u.drawDeck, u.drawDeck).addEventListener('click', () => this.send({ type: 'draw', from: 'deck' }));
-      return;
-    }
     if (v.step === 'peek') {
       if (this.ownPeek && Date.now() < this.ownPeek.until) {
         button(bar, 'btn btn-primary', L().ui.gotIt, L().ui.gotIt).addEventListener('click', () => {
@@ -473,7 +876,7 @@ export class LuckySevenTable {
       }
       return;
     }
-    // step 'act'
+    if (v.step !== 'act') return;
     if (this.mode !== 'none') {
       button(bar, 'btn btn-secondary', u.cancel, u.cancel).addEventListener('click', () => {
         this.resetMode();
@@ -483,16 +886,8 @@ export class LuckySevenTable {
       return;
     }
     const power = lucky7.powerOf(v.drawn);
-    const canSwap = v.locked[this.me]!.some((l) => !l);
-    const swap = button(bar, 'btn btn-secondary', u.swap, u.swap);
-    swap.disabled = !canSwap;
-    swap.addEventListener('click', () => {
-      this.mode = 'swap';
-      this.render();
-    });
-    button(bar, 'btn btn-secondary', u.discard, u.discard).addEventListener('click', () => this.send({ type: 'discard' }));
     if (power && this.canUse(v, power)) {
-      const use = button(bar, 'btn btn-primary btn-power', u.use, `${u.use} ${u.powers[power]}`);
+      const use = button(bar, 'btn btn-primary btn-power', `${u.use} · ${u.powers[power]}`, `${u.use} ${u.powers[power]}`);
       use.title = fmt(u.powerHelp[power], { n: v.config.peekSeconds });
       use.addEventListener('click', () => this.startPower(power));
     }
@@ -517,41 +912,70 @@ export class LuckySevenTable {
     this.render();
   }
 
-  private minePickable(slot: number): boolean {
+  /** Can this card be tapped now, and what for. */
+  private cardPickable(t: Target): boolean {
     const v = this.view;
     if (!v || !this.myTurn) return false;
-    const locked = v.locked[this.me]![slot]!;
-    if (this.mode === 'swap' || this.mode === 'qMine' || this.mode === 'lock') return !locked;
-    if (this.mode === 'unlock') return locked;
-    return this.mode === 'shuffle';
+    const locked = v.locked[t.seat]![t.slot]!;
+    const mine = t.seat === this.me;
+    if (v.step === 'peek') return this.mode === 'peek' && !mine && !locked;
+    if (v.step !== 'act') return false;
+    switch (this.mode) {
+      case 'none':
+        return mine && !locked; // swap into it
+      case 'qMine':
+        return mine && !locked;
+      case 'qTheirs':
+        return !mine && !locked;
+      case 'lock':
+        return !locked;
+      case 'unlock':
+        return locked;
+      case 'shuffle':
+        return mine;
+      default:
+        return false;
+    }
   }
 
   private seatPickable(seat: SeatId): boolean {
     const v = this.view;
     if (!v || !this.myTurn) return false;
-    const open = v.locked[seat]!.some((l) => !l);
-    if (this.mode === 'qTheirs' || this.mode === 'lock' || this.mode === 'peek') return open;
-    if (this.mode === 'unlock') return v.locked[seat]!.some((l) => l);
-    return this.mode === 'shuffle';
+    if (this.mode === 'shuffle') return true;
+    return [0, 1, 2].some((i) => this.cardPickable({ seat, slot: i }));
   }
 
-  private tapMine(slot: number): void {
-    if (!this.minePickable(slot)) return;
+  private tapDeck(): void {
+    const v = this.view;
+    if (v && this.myTurn && v.step === 'draw' && v.deckCount > 0) this.send({ type: 'draw', from: 'deck' });
+  }
+
+  private tapDiscard(): void {
+    const v = this.view;
+    if (!v || !this.myTurn) return;
+    if (v.step === 'draw' && v.discard.length > 0) this.send({ type: 'draw', from: 'discard' });
+    else if (v.step === 'act' && this.mode === 'none') this.send({ type: 'discard' });
+  }
+
+  private tapCard(t: Target): void {
+    if (!this.cardPickable(t)) {
+      // Small opponent cards: the badge's focus sheet picks them.
+      if (t.seat !== this.me && this.seatPickable(t.seat)) this.tapSeat(t.seat);
+      return;
+    }
+    if (t.seat !== this.me && this.geo.ocw < 40 && this.mode !== 'shuffle') return this.tapSeat(t.seat);
     switch (this.mode) {
-      case 'swap':
-        return this.send({ type: 'swap', slot });
+      case 'none':
+        return this.send({ type: 'swap', slot: t.slot });
       case 'qMine':
-        this.qMine = slot;
+        this.qMine = t.slot;
         this.mode = 'qTheirs';
         sound.click();
         return this.render();
-      case 'lock':
-        return this.send({ type: 'use', target: { seat: this.me, slot } });
-      case 'unlock':
-        return this.send({ type: 'use', target: { seat: this.me, slot } });
       case 'shuffle':
-        return this.send({ type: 'use', seat: this.me });
+        return this.send({ type: 'use', seat: t.seat });
       default:
+        return this.pickTheirs(t);
     }
   }
 
@@ -563,7 +987,7 @@ export class LuckySevenTable {
     this.renderFocus();
   }
 
-  /** A seat's three slots, big, to pick one of them. */
+  /** A seat's three cards, big, to pick one of them. */
   private renderFocus(): void {
     const v = this.view;
     const seat = this.focusSeat;
@@ -574,18 +998,18 @@ export class LuckySevenTable {
     const sheet = el('div', 'sheet l7-focus-sheet', f);
     const meta = this.seatMeta[seat]!;
     el('h2', '', sheet).textContent = `${meta.avatar} ${meta.name}`;
-    el('p', 'l7-focus-hint', sheet).textContent = this.renderPromptText();
+    el('p', 'l7-focus-hint', sheet).textContent = this.turnChip.textContent ?? '';
     const row = el('div', 'l7-focus-slots', sheet);
-    for (let i = 0; i < lucky7.SLOTS; i++) {
+    for (let i = 0; i < SLOTS; i++) {
       const locked = v.locked[seat]![i]!;
-      const ok = this.mode === 'unlock' ? locked : !locked;
+      const ok = this.cardPickable({ seat, slot: i });
       const b = el('button', `l7-slot big${locked ? ' locked' : ''}${ok ? ' pickable' : ''}`, row) as HTMLButtonElement;
       b.type = 'button';
       b.disabled = !ok;
       const c = makeBack();
       c.classList.add('l7-slot-card');
       b.appendChild(c);
-      if (locked) el('span', 'l7-lock', b).textContent = '🔒';
+      if (locked) el('span', 'l7-lock', b).innerHTML = '<b>🔒</b>';
       el('span', 'l7-slot-no', b).textContent = String(i + 1);
       b.setAttribute('aria-label', `${meta.name} ${i + 1}${locked ? ', ' + L().l7.locked : ''}`);
       b.addEventListener('click', () => this.pickTheirs({ seat, slot: i }));
@@ -595,16 +1019,12 @@ export class LuckySevenTable {
       this.closeFocus();
       this.render();
     });
-    f.addEventListener('click', (e) => {
+    f.onclick = (e) => {
       if (e.target === f) {
         this.closeFocus();
         this.render();
       }
-    });
-  }
-
-  private renderPromptText(): string {
-    return this.turnChip.textContent ?? '';
+    };
   }
 
   private closeFocus(): void {
@@ -643,16 +1063,11 @@ export class LuckySevenTable {
           this.feel.play(1, 'your_turn', () => sound.chime());
         }
         break;
-      case 'drew':
-        this.feel.play(1, 'drew', () => sound.slide());
-        break;
       case 'swapped':
         this.stamp(seat!, u.stamps.swap, 'turn');
-        this.feel.play(1, 'swapped', () => sound.thud(0));
         break;
       case 'discarded':
         this.stamp(seat!, u.stamps.discard, 'neutral');
-        this.feel.play(1, 'discarded', () => sound.thud(1));
         break;
       case 'gift_grabbed':
         this.feel.play(2, 'gift', (ctx) => {
@@ -669,36 +1084,20 @@ export class LuckySevenTable {
           const t = e.target as Target;
           this.stamp(seat!, u.stamps.qswap, 'power');
           if (t.seat !== seat) this.stamp(t.seat, u.stamps.qswap, 'power');
-          this.feel.play(2, 'q_swap', (ctx) => {
-            const a = this.seatCentre(seat!);
-            const b = this.seatCentre(t.seat);
-            burst(this.fx, a.x, a.y, 10, 'power', ctx, 60);
-            burst(this.fx, b.x, b.y, 10, 'power', ctx, 60);
-            sound.slide();
-          });
-        } else if (p === 'J') {
-          this.stamp(seat!, u.stamps.peek, 'info');
-        }
+        } else if (p === 'J') this.stamp(seat!, u.stamps.peek, 'info');
         break;
       }
       case 'card_locked': {
         const t = e.target as Target;
         this.stamp(t.seat, u.stamps.lock, 'danger');
-        this.feel.play(2, 'lock', (ctx) => {
-          const at = this.slotCentre(t);
-          banner(this.fx, '🔒', 'danger', 'pop', ctx, at);
-          shake(this.table, 'small', ctx);
-          sound.bass();
-          haptic(t.seat === this.me ? 'strong' : 'medium');
-        });
+        haptic(t.seat === this.me ? 'strong' : 'medium');
         break;
       }
       case 'lock_broken': {
         const t = e.target as Target;
         this.stamp(t.seat, u.stamps.unlock, 'good');
         this.feel.play(2, 'unlock', (ctx) => {
-          const at = this.slotCentre(t);
-          banner(this.fx, '💥🔓', 'good', 'pop', ctx, at);
+          const at = this.seatCentre(t.seat);
           burst(this.fx, at.x, at.y, 18, 'good', ctx, 90);
           sound.chime();
           haptic('medium');
@@ -708,17 +1107,8 @@ export class LuckySevenTable {
       case 'shuffled': {
         const target = e.target as SeatId;
         this.stamp(target, u.stamps.shuffle, 'power');
-        this.feel.play(2, 'shuffle', (ctx) => {
-          const at = this.seatCentre(target);
-          if (target === this.me) {
-            this.mineEl.classList.remove('spin');
-            void this.mineEl.offsetWidth;
-            this.mineEl.classList.add('spin');
-            banner(this.fx, u.shuffledYou, 'power', 'pop', ctx, at);
-          } else burst(this.fx, at.x, at.y, 12, 'power', ctx, 70);
-          sound.slide();
-          haptic(target === this.me ? 'strong' : 'light');
-        });
+        if (target === this.me) this.feel.play(2, 'shuffle', (ctx) => banner(this.fx, u.shuffledYou, 'power', 'pop', ctx, this.mineCentre()));
+        haptic(target === this.me ? 'strong' : 'light');
         break;
       }
       case 'peek_own': {
@@ -738,7 +1128,7 @@ export class LuckySevenTable {
         const t = e.target as Target;
         this.peekShown = { target: t, card: e.card as Card, until: Date.now() + PEEK_RESULT_MS };
         this.feel.play(2, 'peek', (ctx) => {
-          banner(this.fx, `👀 ${shortCard(e.card as Card)} · ${L().l7.peekResult}`, 'info', 'pop', ctx, this.slotCentre(t));
+          banner(this.fx, `👀 ${L().l7.peekResult}`, 'info', 'pop', ctx, this.seatCentre(t.seat));
           haptic('medium');
         });
         window.setTimeout(() => this.render(), PEEK_RESULT_MS + 50);
@@ -775,38 +1165,26 @@ export class LuckySevenTable {
     return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
   }
 
-  private slotCentre(t: Target): { x: number; y: number } {
-    if (t.seat === this.me) return this.pileCentre(this.slotEls[t.slot]!);
-    return this.seatCentre(t.seat);
-  }
-
-  /** A big word over a seat (or my slots): SWAP, LOCKED!, SHUFFLED! */
+  /** A big word over a seat's cards (or mine): SWAP, LOCKED!, SHUFFLED! */
   private stamp(seat: SeatId, text: string, role: ColourRole | 'pass'): void {
-    const target = seat === this.me ? null : this.seatEls[this.relSeat(seat) - 1];
-    const s = target?.querySelector('.stamp') as HTMLElement | null;
-    if (s) {
-      s.textContent = text;
-      s.className = `stamp stamp-${role}`;
-      void s.offsetWidth;
-      s.classList.add('show');
-      return;
-    }
-    this.feel.play(1, 'stamp', (ctx) => banner(this.fx, text, role === 'pass' ? 'neutral' : role, 'pop', ctx, this.mineCentre()));
+    if (!this.geo) return;
+    const at = this.seatCentre(seat);
+    this.feel.play(1, 'stamp', (ctx) => banner(this.fx, text, role === 'pass' ? 'neutral' : role, 'pop', ctx, at));
   }
 
   private showJester(e: JesterEvent): void {
     const text = jesterText(e);
     if (!text) return;
     const j = this.jesterEl;
-    const lay = this.layout ?? computeLayout(window.innerWidth, window.innerHeight, this.seatMeta.length, readInsets(), 3);
+    const g = this.geo ?? luckyGeo(window.innerWidth, window.innerHeight, this.seatMeta.length, readInsets());
     this.stopEmoji?.();
     this.stopEmoji = e.emoji ? playEmoji(this.jesterEmoji, e.emoji) : null;
     j.className = `jester mood-${e.mood} eyes-${EYES[e.mood]}`;
     this.jesterBubble.textContent = text;
-    const w = Math.min(lay.vw - 24, 520);
+    const w = Math.min(g.vw - 24, 520);
     j.style.width = `${w}px`;
-    j.style.left = `${(lay.vw - w) / 2}px`;
-    j.style.top = `${lay.portrait ? Math.max(lay.centre.y, lay.hand.y - TURN_CHIP_H - 116 - 10) : Math.max(4, lay.centre.y - 20)}px`;
+    j.style.left = `${(g.vw - w) / 2}px`;
+    j.style.top = `${Math.max(4, g.prompt.y - 124)}px`;
     void j.offsetWidth;
     j.classList.add('show');
     window.clearTimeout(this.jesterTimer);
@@ -839,11 +1217,10 @@ export class LuckySevenTable {
     el('h2', '', card).textContent = `${L().ui.results} · ${u.title}`;
     el('p', 'l7-results-sub', card).textContent = winners.length > 1 ? u.tie : u.winner;
     const list = el('ol', 'standings l7-standings', card);
-    // Seats flip one by one, the lowest total last (spec "Final reveal").
     placings.forEach((seat, k) => {
       const li = el('li', `standing${winners.includes(seat) ? ' winner' : ''}`, list);
-      li.style.animationDelay = `${(placings.length - 1 - k) * 380}ms`;
-      el('span', 'medal', li).textContent = winners.includes(seat) ? '👑' : String(placings.indexOf(seat) + 1);
+      li.style.animationDelay = `${k * 90}ms`;
+      el('span', 'medal', li).textContent = winners.includes(seat) ? '👑' : String(k + 1);
       el('span', 'who', li).textContent = `${this.seatMeta[seat]!.avatar} ${seat === this.me ? L().ui.you : this.seatMeta[seat]!.name}`;
       const cards = el('span', 'l7-res-cards', li);
       for (const c of v.revealed?.[seat] ?? []) cards.appendChild(makeCard(c));
@@ -862,7 +1239,7 @@ export class LuckySevenTable {
     button(actions, 'btn btn-secondary', L().ui.leave, L().ui.leave).addEventListener('click', () => this.hooks.exit());
     this.feel.play(4, 'results', (ctx) => {
       if (winners.includes(this.me)) {
-        confetti(this.fx, this.layout.vw, ctx);
+        confetti(this.fx, this.geo.vw, ctx);
         sound.fanfare();
       } else sound.trombone();
     });
@@ -891,11 +1268,11 @@ export class LuckySevenTable {
   private tick = (): void => {
     requestAnimationFrame(this.tick);
     const v = this.view;
-    if (this.ownPeek) {
+    if (this.ownPeek && v) {
       const left = Math.ceil((this.ownPeek.until - Date.now()) / 1000);
       if (this.mineEl.dataset.peekLeft !== String(left)) {
         this.mineEl.dataset.peekLeft = String(left);
-        this.renderMine(v!);
+        this.renderCards(v);
       }
     }
     if (!v || !this.meta.deadline || v.phase !== 'play') {
@@ -907,11 +1284,8 @@ export class LuckySevenTable {
     const mine = v.turn === this.me;
     this.timerFill.style.transform = `scaleX(${mine ? frac : 0})`;
     this.timerBar.classList.toggle('urgent', mine && left <= 5000);
-    for (const s of this.seatEls) {
-      const fg = s.querySelector('.ring-fg') as SVGCircleElement | null;
-      if (!fg) continue;
+    for (const s of this.chips) {
       const isTurn = Number(s.dataset.seat) === v.turn;
-      fg.style.strokeDashoffset = String(isTurn ? 100.5 * (1 - frac) : 100.5);
       s.classList.toggle('urgent', isTurn && left <= 5000);
     }
     if (mine) {
@@ -925,11 +1299,6 @@ export class LuckySevenTable {
 }
 
 // ---------------------------------------------------------------- helpers
-
-function shortCard(c: Card): string {
-  const r = c[0] === 'T' ? '10' : c[0]!;
-  return r + ({ d: '♦', c: '♣', h: '♥', s: '♠' } as Record<string, string>)[c[1]!]!;
-}
 
 function el(tag: string, cls: string, parent: HTMLElement): HTMLElement {
   const e = document.createElement(tag);

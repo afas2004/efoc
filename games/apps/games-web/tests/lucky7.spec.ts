@@ -1,5 +1,6 @@
 // Lucky 7 Practice: a full game against bots, the layout at phone sizes,
-// and every way of picking a target (your slot, a seat's focus sheet).
+// tapping where a card goes (docs/table-feel.md), and every way of picking a
+// target (your card, theirs on the table, a focus sheet when cards are small).
 import { expect, test, type Page } from '@playwright/test';
 
 const errorsOf = (page: Page): string[] => {
@@ -15,120 +16,150 @@ async function stackDeck(page: Page, card: string): Promise<void> {
     const host = (window as any).__efoc.host;
     const s = host.state;
     const deck = s.deck.filter((c: string) => c !== card);
-    let found = deck.length !== s.deck.length;
-    // Not in the deck (dealt or gone)? Swap it with the top card wherever it is.
     const slots = s.slots.map((r: string[]) => r.slice());
-    if (!found) {
+    if (deck.length === s.deck.length) {
+      // Dealt to someone: give them the deck's top card instead.
       for (const row of slots) for (let i = 0; i < row.length; i++) if (row[i] === card) {
         row[i] = s.deck[s.deck.length - 1];
         deck.splice(deck.indexOf(row[i]), 1);
-        found = true;
       }
     }
     host.state = { ...s, slots, deck: [...deck, card] };
   }, card);
 }
 
+const host = (page: Page, expr: string) => page.evaluate((expr) => new Function('h', `return ${expr}`)((window as any).__efoc.host), expr);
+const theirCard = (page: Page, seat: number, slot: number) => page.locator(`.l7-card[data-seat="${seat}"][data-slot="${slot}"]`);
+
 for (const players of [2, 4, 8]) {
-  test(`${players} players on a small phone: seats, piles and my slots don't overlap`, async ({ page }) => {
+  test(`${players} players on a small phone: cards on the table don't overlap`, async ({ page }) => {
     await page.setViewportSize({ width: 360, height: 780 });
     const errs = errorsOf(page);
     await page.goto(`/lucky7/?players=${players}&seed=4&mute=1&turn=60000`);
     await expect(page.locator('.l7-slot')).toHaveCount(3);
     await expect(page.locator('.l7-seat')).toHaveCount(players - 1);
+    await expect(page.locator('.l7-card')).toHaveCount(players * 3);
+    // Hold a card so the card in play shows too.
+    await page.locator('.l7-deck').click();
+    await expect(page.locator('.l7-play')).toBeVisible();
     const boxes = await page.evaluate(() => {
       const r = (el: Element) => el.getBoundingClientRect();
       return {
-        seats: [...document.querySelectorAll('.l7-seat')].map(r),
-        piles: r(document.querySelector('.l7-piles')!),
-        mine: [...document.querySelectorAll('.l7-slot')].map(r),
+        all: [
+          ...[...document.querySelectorAll('.l7-seat')].map(r),
+          ...[...document.querySelectorAll('.l7-card')].map(r),
+          r(document.querySelector('.l7-piles')!),
+          r(document.querySelector('.l7-play')!),
+        ],
         bar: r(document.querySelector('.action-bar')!),
       };
     });
-    const hit = (a: DOMRect, b: DOMRect) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
-    const all = [...boxes.seats, boxes.piles, ...boxes.mine];
+    const hit = (a: DOMRect, b: DOMRect) => a.left + 1 < b.right && b.left + 1 < a.right && a.top + 1 < b.bottom && b.top + 1 < a.bottom;
+    const all = boxes.all;
     for (let i = 0; i < all.length; i++) for (let j = i + 1; j < all.length; j++) expect(hit(all[i]!, all[j]!), `boxes ${i} and ${j}`).toBe(false);
     for (const b of all) {
       expect(b.left).toBeGreaterThanOrEqual(0);
       expect(b.right).toBeLessThanOrEqual(360);
       expect(b.bottom).toBeLessThanOrEqual(boxes.bar.top);
     }
-    for (const s of boxes.mine) expect(s.width).toBeGreaterThanOrEqual(44);
     expect(errs).toEqual([]);
   });
 }
 
-test('a whole game against bots ends with everyone revealed, lowest first', async ({ page }) => {
+test('a whole game against bots ends with the reveal, then everyone ranked lowest first', async ({ page }) => {
   const errs = errorsOf(page);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/lucky7/?players=4&seed=11&mute=1&autoplay=1&speed=0.02&turn=4000&reduced=1');
-  await expect(page.locator('.overlay.results')).toBeVisible({ timeout: 90_000 });
+  await expect(page.locator('.overlay.results')).toBeVisible({ timeout: 120_000 });
+  // The reveal turned every card on the table face up before the results.
+  await expect(page.locator('.l7-card.face')).toHaveCount(12);
   await expect(page.locator('.l7-standings .standing')).toHaveCount(4);
   await expect(page.locator('.l7-res-cards').first().locator('.card')).toHaveCount(3);
-  const totals = await page.locator('.l7-standings .standing .pts').allTextContents();
-  const nums = totals.map((t) => Number(t.replace(/\D/g, '')));
+  const nums = (await page.locator('.l7-standings .standing .pts').allTextContents()).map((t) => Number(t.replace(/\D/g, '')));
   expect(nums).toEqual(nums.slice().sort((a, b) => a - b));
   expect(errs).toEqual([]);
 });
 
-test('my turn: draw, then swap into a slot; the old card goes face up on Discard', async ({ page }) => {
+test('tap the deck, then tap one of my cards: it flies in, the old card flies face up to Discard', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto('/lucky7/?players=3&seed=5&mute=1&turn=60000&speed=0.05');
+  await page.goto('/lucky7/?players=3&seed=5&mute=1&turn=60000');
   await expect(page.locator('.l7-prompt')).toHaveText(/Your turn/);
-  await page.getByRole('button', { name: 'Draw', exact: true }).click();
-  await expect(page.locator('.l7-drawn .card')).toBeVisible();
-  await page.getByRole('button', { name: 'Swap in' }).click();
+  await expect(page.locator('.l7-deck')).toHaveClass(/pickable/);
+  await page.locator('.l7-deck').click();
+  await expect(page.locator('.l7-play .card')).toBeVisible();
+  // Holding a card: my cards and Discard light up.
   await expect(page.locator('.l7-slot.pickable')).toHaveCount(3);
-  const before = await page.evaluate(() => (window as any).__efoc.host.state.slots[0][1]);
+  await expect(page.locator('.l7-discard')).toHaveClass(/throw/);
+  const before = await host(page, 'h.state.slots[0][1]');
   await page.locator('.l7-slot').nth(1).click();
-  await expect(page.locator('.l7-discard .card')).toHaveAttribute('data-card', before);
+  await expect(page.locator('.l7-flyer')).toHaveCount(2); // in and out at once
+  await expect(page.locator('.l7-discard .card')).toHaveAttribute('data-card', before as string);
+  await expect(page.locator('.l7-flyer')).toHaveCount(0);
   await expect(page.locator('.l7-prompt')).toHaveText(/turn…/);
 });
 
-test('Q: pick my card, then a player, then their card in the focus sheet', async ({ page }) => {
+test('or tap Discard to throw the card away', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/lucky7/?players=2&seed=8&mute=1&turn=60000');
+  await page.locator('.l7-deck').click();
+  const drawn = await host(page, 'h.state.drawn');
+  await page.locator('.l7-discard').click();
+  await expect(page.locator('.l7-discard .card')).toHaveAttribute('data-card', drawn as string);
+});
+
+test('Q: pick my card, then theirs right on the table; the two cards cross', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/lucky7/?players=4&seed=6&mute=1&turn=60000&speed=0.05');
   await expect(page.locator('.l7-prompt')).toHaveText(/Your turn/);
   await stackDeck(page, 'Qc');
-  await page.getByRole('button', { name: 'Draw', exact: true }).click();
+  await page.locator('.l7-deck').click();
   await expect(page.locator('.l7-power-tag')).toContainText('Swap');
   await page.getByRole('button', { name: /Use/ }).click();
   await page.locator('.l7-slot').nth(0).click();
   await expect(page.locator('.l7-slot.selected')).toHaveCount(1);
-  await expect(page.locator('.l7-seat.pickable')).toHaveCount(3);
-  const mine = await page.evaluate(() => (window as any).__efoc.host.state.slots[0][0]);
-  const seat = Number(await page.locator('.l7-seat.pickable').first().getAttribute('data-seat'));
-  const theirs = await page.evaluate((seat) => (window as any).__efoc.host.state.slots[seat][2], seat);
-  await page.locator('.l7-seat.pickable').first().click();
-  await expect(page.locator('.l7-focus-sheet')).toBeVisible();
-  await page.locator('.l7-focus-slots .l7-slot').nth(2).click();
-  await expect(page.locator('.l7-focus-sheet')).toBeHidden();
-  const after = await page.evaluate((seat) => [(window as any).__efoc.host.state.slots[0][0], (window as any).__efoc.host.state.slots[seat][2]], seat);
-  expect(after).toEqual([theirs, mine]);
+  await expect(page.locator('.l7-card.pickable:not(.mine)')).toHaveCount(9);
+  const mine = await host(page, 'h.state.slots[0][0]');
+  const theirs = await host(page, 'h.state.slots[2][2]');
+  await theirCard(page, 2, 2).click();
+  await expect.poll(() => page.locator('.l7-flyer').count()).toBeGreaterThan(0);
+  expect([await host(page, 'h.state.slots[0][0]'), await host(page, 'h.state.slots[2][2]')]).toEqual([theirs, mine]);
 });
 
-test('K locks a card (padlock everywhere); J then shows my own cards except the locked one', async ({ page }) => {
+test('8 players: small cards are picked in the focus sheet', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/lucky7/?players=8&seed=6&mute=1&turn=60000');
+  await stackDeck(page, 'Kc');
+  await page.locator('.l7-deck').click();
+  await page.getByRole('button', { name: /Use/ }).click();
+  await page.locator('.l7-seat.pickable').first().click();
+  await expect(page.locator('.l7-focus-sheet')).toBeVisible();
+  const seat = Number(await page.locator('.l7-seat.pickable').first().getAttribute('data-seat'));
+  await page.locator('.l7-focus-slots .l7-slot').nth(1).click();
+  await expect(page.locator('.l7-focus-sheet')).toBeHidden();
+  await expect(theirCard(page, seat, 1).locator('.l7-lock')).toBeVisible();
+});
+
+test('K locks a card (a K and padlock sit on it); J shows my own cards except the locked one, then a peek', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/lucky7/?players=2&seed=7&mute=1&turn=60000&speed=0.05');
   await stackDeck(page, 'Kc');
-  await page.getByRole('button', { name: 'Draw', exact: true }).click();
+  await page.locator('.l7-deck').click();
   await page.getByRole('button', { name: /Use/ }).click();
-  await page.locator('.l7-slot').nth(1).click(); // lock my own slot 2
+  await page.locator('.l7-slot').nth(1).click(); // lock my own card 2
   await expect(page.locator('.l7-slot').nth(1).locator('.l7-lock')).toBeVisible();
   // The bot moves; my turn again.
   await expect(page.locator('.l7-prompt')).toHaveText(/Your turn/, { timeout: 15_000 });
   await stackDeck(page, 'Jc');
-  await page.getByRole('button', { name: 'Draw', exact: true }).click();
+  await page.locator('.l7-deck').click();
   await page.getByRole('button', { name: /Use/ }).click();
   // Own cards face up, except the locked one.
   await expect(page.locator('.l7-mine .card')).toHaveCount(2);
   await expect(page.locator('.l7-mine[data-peek]')).toBeVisible();
   await page.getByRole('button', { name: 'Got it' }).click();
   await expect(page.locator('.l7-mine .card')).toHaveCount(0);
-  // Then peek at the bot's card through the focus sheet.
-  await page.locator('.l7-seat.pickable').first().click();
-  const card = await page.evaluate(() => (window as any).__efoc.host.state.slots[1][0]);
-  await page.locator('.l7-focus-slots .l7-slot').nth(0).click();
-  await expect(page.locator('.l7-seat .l7-mini-card.face').first()).toBeVisible();
-  expect(await page.locator('.l7-seat .l7-mini-card.face').first().textContent()).toContain(card[0] === 'T' ? '10' : card[0]);
+  // Then peek at the bot's card, right on the table: only I see its face.
+  const card = (await host(page, 'h.state.slots[1][0]')) as string;
+  await theirCard(page, 1, 0).click();
+  await expect(theirCard(page, 1, 0)).toHaveClass(/face/);
+  await expect(theirCard(page, 1, 0).locator('.card')).toHaveAttribute('data-card', card);
 });

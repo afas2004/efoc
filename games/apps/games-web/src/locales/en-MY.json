@@ -529,8 +529,8 @@
     "yourCards": "Your cards",
     "youDrew": "You drew",
     "theyDrew": "{name} drew",
-    "drawPrompt": "Your turn · draw a card",
-    "actPrompt": "Swap it in, throw it, or use its power",
+    "drawPrompt": "Your turn · tap the deck, or the Discard card",
+    "actPrompt": "Tap one of your cards to swap it in, or Discard to throw it",
     "swapPrompt": "Tap one of your cards to swap it out",
     "waitingFor": "{name}'s turn…",
     "powers": {

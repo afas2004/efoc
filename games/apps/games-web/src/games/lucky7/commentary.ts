@@ -75,16 +75,22 @@ export class LuckySevenCommentator {
   }
 }
 
-/** How long the table pauses after an entry before the next bot moves. */
+/**
+ * How long the table pauses after an entry before the next bot moves: long
+ * enough for its card flights to land (docs/table-feel.md "Pacing").
+ */
 export function dwellMs(events: GameEvent[]): number {
   let ms = 0;
   for (const e of events) {
-    if (e.type === 'round_ended') ms = Math.max(ms, 1500);
-    else if (e.type === 'final_lap') ms = Math.max(ms, 1600);
-    else if (e.type === 'card_locked' || e.type === 'lock_broken' || e.type === 'shuffled' || e.type === 'gift_grabbed') ms = Math.max(ms, 1300);
-    else if (e.type === 'power' || e.type === 'swapped' || e.type === 'discarded') ms = Math.max(ms, 700);
-    else if (e.type === 'jester') ms = Math.max(ms, 900);
-    else if (e.type === 'drew') ms = Math.max(ms, 400);
+    let t = 0;
+    if (e.type === 'drew') t = 650;
+    else if (e.type === 'swapped' || e.type === 'discarded') t = 900;
+    else if (e.type === 'power') t = ({ J: 900, Q: 1500, K: 900, '9': e.target ? 1400 : 900, T: 1900 } as Record<string, number>)[e.power as string] ?? 900;
+    else if (e.type === 'peeked') t = 1600;
+    else if (e.type === 'final_lap') t = 1600;
+    else if (e.type === 'round_ended') t = 1500;
+    else if (e.type === 'jester') t = 900;
+    ms = Math.max(ms, t);
   }
   return ms;
 }

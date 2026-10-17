@@ -1431,17 +1431,31 @@ table.stats tr.me {
 }
 
 /* ============================================================ Lucky 7 */
+/* docs/table-feel.md: cards on the felt, tap where the card goes, every
+   move flies. */
 
 .felt-lucky7 {
   background: radial-gradient(ellipse at 50% 40%, #146c64 0%, #0b4a45 55%, #062b29 100%);
 }
-.felt-lucky7.final-lap .table {
+.l7-felt {
+  position: absolute;
+  left: 3%;
+  right: 3%;
+  top: 2%;
+  bottom: 16%;
+  border-radius: 46% / 40%;
+  background: radial-gradient(ellipse at 50% 45%, rgba(255, 255, 255, 0.07), rgba(0, 0, 0, 0.18) 75%);
+  box-shadow: inset 0 0 0 6px rgba(120, 72, 28, 0.55), inset 0 0 40px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+}
+.felt-lucky7.final-lap .l7-felt {
   animation: final-lap-pulse 1.4s ease-in-out infinite;
 }
 @keyframes final-lap-pulse {
-  50% { box-shadow: inset 0 0 90px rgba(239, 68, 68, 0.45); }
+  50% { box-shadow: inset 0 0 0 6px rgba(239, 68, 68, 0.8), inset 0 0 90px rgba(239, 68, 68, 0.45); }
 }
 .l7-prompt {
+  position: absolute;
   height: auto !important;
   min-height: 30px;
   padding: 4px 14px;
@@ -1453,88 +1467,209 @@ table.stats tr.me {
   animation: none;
 }
 
-/* Seats: avatar, name, and three mini face-down slots with padlocks. */
+/* A seat's badge: avatar and name, just behind their cards. */
 .l7-seat {
+  position: absolute;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 0 6px;
   border: 0;
+  border-radius: 999px;
+  background: var(--chip-bg);
   color: var(--ink);
   font: inherit;
-  cursor: default;
+}
+.l7-seat .avatar {
+  position: relative;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+}
+.l7-seat .face {
+  font-size: 17px;
+}
+.l7-seat .dot {
+  right: -2px;
+  bottom: -2px;
+  width: 8px;
+  height: 8px;
+}
+.l7-seat .name {
+  font-size: 13px;
+  font-weight: 800;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.l7-seat .chip {
+  position: static;
+  transform: none;
+  white-space: nowrap;
+  font-size: 11px;
+}
+.l7-seat.turn {
+  background: var(--turn);
+  color: #052e16;
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.4);
+}
+.l7-seat.urgent {
+  background: var(--danger);
+  color: #fff;
 }
 .l7-seat.pickable {
-  cursor: pointer;
-  background: rgba(168, 85, 247, 0.35);
+  background: rgba(168, 85, 247, 0.6);
   box-shadow: 0 0 0 3px var(--efoc), 0 0 18px rgba(168, 85, 247, 0.8);
   animation: pick-pulse 1s ease-in-out infinite;
 }
 @keyframes pick-pulse {
   50% { box-shadow: 0 0 0 5px var(--efoc), 0 0 26px rgba(168, 85, 247, 0.9); }
 }
-.l7-mini {
-  display: flex;
-  gap: 3px;
+
+/* Every slot is a card on the felt. */
+.l7-card {
+  position: absolute;
+  padding: 0;
+  border: 0;
+  border-radius: 9%/6.5%;
+  background: transparent;
+  transition: transform 220ms var(--spring), box-shadow 220ms;
 }
-.l7-mini-card {
+.l7-mine .l7-card {
   position: relative;
-  width: 16px;
-  height: 22px;
-  border-radius: 3px;
-  background: linear-gradient(135deg, #1e3a8a, #2563eb);
-  border: 1px solid rgba(255, 255, 255, 0.5);
+  width: var(--card-w);
+  height: var(--card-h);
+}
+.l7-card .l7-slot-card {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  background-size: 100% 100%;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.45);
+  transform: none;
+  transition: none;
+}
+.l7-card:not(.mine) .card .idx {
+  font-size: 9px;
+}
+.l7-card.pickable {
+  cursor: pointer;
+  transform: translateY(-6px);
+  box-shadow: 0 0 0 3px var(--efoc), 0 0 20px rgba(168, 85, 247, 0.9);
+  animation: pick-pulse 1s ease-in-out infinite;
+}
+.l7-card.selected {
+  transform: translateY(-12px);
+  box-shadow: 0 0 0 4px var(--good), 0 0 22px rgba(250, 204, 21, 0.9);
+  animation: none;
+}
+/* Someone is looking at this card: it lifts and tilts toward them. */
+.l7-card.lifted {
+  z-index: 5;
+  transform: translateY(-14px) rotateX(28deg) scale(1.1);
+  box-shadow: 0 0 0 3px var(--info), 0 12px 24px rgba(0, 0, 0, 0.5);
+}
+.l7-card.lifted::after {
+  content: '👀';
+  position: absolute;
+  top: -22px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 18px;
+}
+.l7-slot-no {
+  position: absolute;
+  bottom: -18px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 12px;
+  font-weight: 900;
+  color: var(--ink-dim);
+}
+/* A K sits on a locked card, with a padlock. */
+.l7-lock {
+  position: absolute;
+  inset: 0;
   display: grid;
   place-items: center;
-  font-size: 11px;
-  line-height: 1;
+  pointer-events: none;
 }
-.l7-seat:not(.compact) .l7-mini-card {
-  width: 20px;
-  height: 27px;
+.l7-lock-k {
+  position: absolute;
+  inset: 12% 8% 12% 8%;
+  border-radius: 8%;
+  background-size: 100% 100%;
+  transform: rotate(-14deg);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
 }
-.l7-mini-card.locked {
-  background: linear-gradient(135deg, #78350f, #b45309);
+.l7-lock b {
+  position: relative;
+  font-size: var(--lock-size, 22px);
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.7));
+  animation: lock-slam 380ms var(--spring);
 }
-.l7-mini-card.face {
-  background: #fff;
-  color: #111827;
-  font-size: 9px;
+.l7-mine .l7-lock b {
+  --lock-size: calc(var(--card-w) * 0.42);
+}
+@keyframes lock-slam {
+  from { transform: translateY(-140%) scale(1.8); opacity: 0; }
+}
+
+/* My cards along the bottom. */
+.l7-mine {
+  position: absolute;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 14px;
+}
+.l7-mine[data-peek]::before {
+  content: attr(data-peek);
+  position: absolute;
+  top: -26px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--info);
+  font-size: 13px;
   font-weight: 900;
-}
-.l7-mini-card.face.red {
-  color: var(--card-red);
+  white-space: nowrap;
+  z-index: 2;
 }
 
 /* Centre: deck, Discard, Used, and the card in play. */
-.l7-centre {
+.l7-piles {
   position: absolute;
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  pointer-events: none;
-}
-.l7-piles {
-  display: flex;
-  gap: 14px;
-  align-items: flex-end;
-  pointer-events: auto;
+  gap: 12px;
 }
 .l7-pile {
   position: relative;
   width: var(--pile-w);
-  height: calc(var(--pile-w) * 1.36);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
+  height: calc(var(--pile-w) * 1.4);
+  padding: 0;
+  border: 0;
+  border-radius: calc(var(--pile-w) * 0.1);
+  background: transparent;
+  color: inherit;
+  font: inherit;
 }
 .l7-pile .card,
 .l7-pile .back,
-.l7-drawn .card,
-.l7-drawn .back {
-  position: relative;
+.l7-play .card,
+.l7-play .back {
+  position: absolute;
+  inset: 0;
   display: block;
   width: 100%;
   height: 100%;
-  border-radius: calc(var(--pile-w) * 0.12);
+  border-radius: calc(var(--pile-w) * 0.1);
   background-size: 100% 100%;
   transition: none;
   transform: none;
@@ -1546,47 +1681,57 @@ table.stats tr.me {
   filter: grayscale(0.7) brightness(0.8);
 }
 .l7-empty {
-  width: 100%;
-  height: 100%;
+  position: absolute;
+  inset: 0;
   border: 2px dashed rgba(255, 255, 255, 0.3);
-  border-radius: calc(var(--pile-w) * 0.12);
+  border-radius: calc(var(--pile-w) * 0.1);
 }
 .l7-pile-label {
   position: absolute;
-  bottom: -20px;
+  left: 50%;
+  bottom: -18px;
+  transform: translateX(-50%);
   white-space: nowrap;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 800;
   color: var(--ink-dim);
 }
 .l7-pile.pickable {
   cursor: pointer;
-  border-radius: calc(var(--pile-w) * 0.12);
   box-shadow: 0 0 0 3px var(--turn), 0 0 20px rgba(34, 197, 94, 0.8);
   animation: pile-pulse 1.1s ease-in-out infinite;
 }
-@keyframes pile-pulse {
-  50% { transform: translateY(-4px); }
+.l7-pile.throw {
+  box-shadow: 0 0 0 3px var(--danger), 0 0 22px rgba(239, 68, 68, 0.8);
 }
-.l7-drawn {
-  position: relative;
-  width: calc(var(--pile-w) * 1.25);
-  height: calc(var(--pile-w) * 1.7);
-  margin-top: 46px;
-  animation: drawn-in 300ms var(--spring);
+.l7-pile.throw .l7-pile-label::before {
+  content: '⬇ ';
+}
+@keyframes pile-pulse {
+  50% { box-shadow: 0 0 0 5px var(--turn), 0 0 30px rgba(34, 197, 94, 0.95); }
+}
+.l7-pile.throw {
+  animation-name: throw-pulse;
+}
+@keyframes throw-pulse {
+  50% { box-shadow: 0 0 0 5px var(--danger), 0 0 30px rgba(239, 68, 68, 0.95); }
+}
+.l7-play {
+  position: absolute;
 }
 .l7-drawn-label {
   position: absolute;
-  top: -20px;
+  top: -19px;
   left: 50%;
   transform: translateX(-50%);
   white-space: nowrap;
   font-size: 12px;
   font-weight: 800;
 }
-.l7-drawn .card,
-.l7-drawn .back {
+.l7-play .card,
+.l7-play .back {
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  border-radius: 8%;
 }
 .l7-power-tag {
   position: absolute;
@@ -1601,96 +1746,45 @@ table.stats tr.me {
   white-space: nowrap;
   box-shadow: 0 0 14px rgba(168, 85, 247, 0.8);
 }
-@keyframes drawn-in {
-  from { transform: translateY(-30px) scale(0.6); opacity: 0; }
-}
 
-/* My three slots, face down. */
-.l7-mine {
-  position: absolute;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 14px;
-}
-.l7-mine[data-peek]::before {
-  content: attr(data-peek);
-  position: absolute;
-  top: -4px;
-  left: 50%;
-  transform: translateX(-50%);
-  padding: 2px 10px;
-  border-radius: 999px;
-  background: var(--info);
-  font-size: 13px;
-  font-weight: 900;
-  white-space: nowrap;
-  z-index: 2;
-}
-.l7-mine.spin .l7-slot {
-  animation: slot-spin 700ms ease-in-out;
-}
-@keyframes slot-spin {
-  50% { transform: rotateY(180deg) translateY(-10px); }
-}
-.l7-slot {
-  position: relative;
-  width: var(--card-w);
-  height: var(--card-h);
-  padding: 0;
-  border: 0;
-  border-radius: calc(var(--card-w) * 0.12);
-  background: transparent;
-  cursor: default;
-  transition: transform 200ms var(--spring);
-}
-.l7-slot .l7-slot-card {
+/* Cards in flight, above the table. */
+.l7-flights {
   position: absolute;
   inset: 0;
+  z-index: 40;
+  pointer-events: none;
+}
+.l7-flyer {
+  position: absolute;
+  transform-origin: 0 0;
+  perspective: 600px;
+  will-change: transform;
+}
+.l7-flip {
+  position: relative;
   width: 100%;
   height: 100%;
-  border-radius: inherit;
+  transform-style: preserve-3d;
+}
+.l7-face {
+  position: absolute;
+  inset: 0;
+  border-radius: 8%;
+  background-color: #fff;
   background-size: 100% 100%;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-  transform: none;
-  transition: none;
+  backface-visibility: hidden;
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.45);
 }
-.l7-slot-no {
-  position: absolute;
-  bottom: -18px;
-  left: 50%;
-  transform: translateX(-50%);
-  font-size: 12px;
-  font-weight: 900;
-  color: var(--ink-dim);
+.l7-face.back {
+  transform: rotateY(180deg);
 }
-.l7-lock {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  font-size: calc(var(--card-w) * 0.55);
-  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.6));
-  animation: lock-slam 380ms var(--spring);
-}
-@keyframes lock-slam {
-  from { transform: translate(-50%, -160%) scale(1.8); opacity: 0; }
-}
-.l7-slot.locked .l7-slot-card {
-  filter: brightness(0.75) sepia(0.4);
-}
-.l7-slot.pickable {
-  cursor: pointer;
-  transform: translateY(-10px);
-  box-shadow: 0 0 0 3px var(--efoc), 0 0 22px rgba(168, 85, 247, 0.9);
-  animation: pick-pulse 1s ease-in-out infinite;
-}
-.l7-slot.selected {
-  transform: translateY(-16px);
-  box-shadow: 0 0 0 4px var(--good), 0 0 22px rgba(250, 204, 21, 0.9);
+.l7-stack {
+  border-radius: 8%;
+  background-size: 100% 100%;
+  box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.3), 6px 6px 0 rgba(0, 0, 0, 0.2);
 }
 
-/* Focus sheet: one seat's three slots, big. */
+/* Focus sheet: one seat's three cards, big. */
 .l7-focus {
   align-items: center;
 }
@@ -1705,10 +1799,26 @@ table.stats tr.me {
   margin: 8px 0 26px;
 }
 .l7-slot.big {
+  position: relative;
   width: 84px;
-  height: 114px;
+  height: 118px;
+  padding: 0;
+  border: 0;
+  border-radius: 8%;
+  background: transparent;
 }
-.l7-slot.big .l7-lock {
+.l7-slot.big .l7-slot-card {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  background-size: 100% 100%;
+}
+.l7-slot.big.pickable {
+  box-shadow: 0 0 0 3px var(--efoc), 0 0 22px rgba(168, 85, 247, 0.9);
+}
+.l7-slot.big .l7-lock b {
   font-size: 40px;
 }
 .l7-slot.big:disabled {
@@ -1730,7 +1840,7 @@ table.stats tr.me {
   flex-direction: column;
 }
 .l7-standings .standing {
-  animation: reveal-in 420ms var(--spring) both;
+  animation: reveal-in 380ms var(--spring) both;
 }
 @keyframes reveal-in {
   from { transform: rotateX(90deg); opacity: 0; }
@@ -1754,6 +1864,12 @@ table.stats tr.me {
   margin: 0 0 12px;
   padding-left: 18px;
   line-height: 1.45;
+}
+.reduced-motion .l7-card,
+.reduced-motion .l7-pile.pickable,
+.reduced-motion .l7-card.pickable {
+  animation: none !important;
+  transition: none !important;
 }
 
 /* "Who's in for another?" on online results. */
