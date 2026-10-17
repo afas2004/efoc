@@ -467,6 +467,22 @@ def cleanup(today: dt.date, dry_run: bool) -> None:
         rest_delete_ids("vlogs", [v["id"] for v in gone])
         storage_delete("vlogs", files)
 
+    # ---- on-demand exports ("Make a vlog"): kept for a day ----
+    cutoff = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=1)).isoformat()
+    try:
+        old_exports = rest_get("exports", {
+            "select": "id,storage_path", "created_at": f"lt.{cutoff}",
+        })
+    except Exception as e:  # table not there yet
+        print(f"Exports cleanup skipped: {e}", file=sys.stderr)
+        old_exports = []
+    print(f"On-demand exports older than a day: {verb} {len(old_exports)}")
+    if old_exports and not dry_run:
+        rest_delete_ids("exports", [x["id"] for x in old_exports])
+        files = [x["storage_path"] for x in old_exports if x.get("storage_path")]
+        if files:
+            storage_delete("exports", files)
+
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
