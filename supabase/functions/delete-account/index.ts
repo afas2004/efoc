@@ -1,7 +1,7 @@
 // POST /functions/v1/delete-account
-// Deletes the caller's account for good: their clip videos, thumbnails,
-// avatar and exports from Storage, then everything else through the
-// delete_my_account() SQL function (supabase/migrations/20261018_delete_account.sql).
+// Deletes the caller's account for good: everything in the database through
+// the delete_my_account() SQL function, then their clip videos, thumbnails,
+// avatar and exports from Storage (supabase/migrations/20261018_delete_account.sql).
 //
 // Deploy: npx supabase functions deploy delete-account --project-ref <ref> --use-api
 
@@ -42,9 +42,9 @@ Deno.serve(async (req) => {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
-  // Storage first: once the rows are gone we no longer know the paths.
-  // A failed file delete is logged, not fatal; the nightly cleanup and
-  // the empty rows mean nothing points at it any more.
+  // Note every file path first (the rows hold them), delete the rows in one
+  // transaction, then the files. If the SQL fails nothing is lost; if a
+  // file delete fails it's only logged, since nothing points at it any more.
   const remove = async (bucket: string, paths: string[]) => {
     for (let i = 0; i < paths.length; i += 100) {
       const { error } = await admin.storage.from(bucket).remove(paths.slice(i, i + 100));
@@ -54,19 +54,21 @@ Deno.serve(async (req) => {
 
   const { data: clips } = await admin.from("clips").select("storage_path").eq("user_id", uid);
   const clipPaths = (clips ?? []).map((c) => c.storage_path as string).filter(Boolean);
-  await remove("clips", clipPaths);
-  await remove("thumbnails", clipPaths.map((p) => p.replace(VIDEO_EXT, ".jpg")));
-
   const { data: avatars } = await admin.storage.from("avatars").list(uid);
-  await remove("avatars", (avatars ?? []).map((f) => `${uid}/${f.name}`));
-
+  const avatarPaths = (avatars ?? []).map((f) => `${uid}/${f.name}`);
   const { data: exports } = await admin.from("exports").select("storage_path").eq("user_id", uid);
-  await remove("exports", (exports ?? []).map((e) => e.storage_path as string).filter(Boolean));
+  const exportPaths = (exports ?? []).map((e) => e.storage_path as string).filter(Boolean);
 
   const { error } = await asUser.rpc("delete_my_account");
   if (error) {
     console.error("delete-account rpc:", error);
     return json(500, { error: "Couldn't delete the account" });
   }
+
+  await remove("clips", clipPaths);
+  await remove("thumbnails", clipPaths.map((p) => p.replace(VIDEO_EXT, ".jpg")));
+  await remove("avatars", avatarPaths);
+  await remove("exports", exportPaths);
+
   return json(200, { ok: true });
 });
