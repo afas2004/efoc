@@ -7,10 +7,5 @@ if "%~1"=="" (
     exit /b 1
 )
 
-powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0release.ps1" -Version "%~1" -Notes "%~2"
-
-if %ERRORLEVEL% neq 0 (
-    echo.
-    echo Release failed. Nothing was built or committed.
-    exit /b %ERRORLEVEL%
-)
+rem Same as build_web.bat, with a new version number and release notes.
+call "%~dp0build_web.bat" -Version "%~1" -Notes "%~2"

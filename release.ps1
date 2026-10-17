@@ -1,6 +1,9 @@
+# Bumps the build number (and optionally the version) in pubspec.yaml,
+# web/update.json and lib/version.dart. build_web.bat runs this on every
+# deploy so installed apps always see the new build.
 param(
-    [Parameter(Mandatory=$true)]
-    [string]$Version,
+    # Defaults to the current version: only the build number goes up.
+    [string]$Version = "",
 
     [string]$Notes = ""
 )
@@ -30,6 +33,7 @@ if ($versionLine -notmatch '^version:\s*(\d+\.\d+\.\d+)\+(\d+)') {
 $currentVersion = $Matches[1]
 $currentBuild = [int]$Matches[2]
 $newBuild = $currentBuild + 1
+if ([string]::IsNullOrWhiteSpace($Version)) { $Version = $currentVersion }
 
 Write-Host "Current: $currentVersion+$currentBuild"
 Write-Host "New:     $Version+$newBuild"
@@ -87,4 +91,3 @@ Write-Host "  pubspec.yaml     -> version: $Version+$newBuild"
 Write-Host "  web/update.json  -> $Version (build $newBuild)"
 Write-Host "  lib/version.dart -> $Version (build $newBuild)"
 Write-Host ""
-Write-Host "Next: run build_web.bat to build and deploy."
