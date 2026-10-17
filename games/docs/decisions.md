@@ -59,6 +59,15 @@ efoc/                         (this repo)
 
 - **Playtest 4:** a big moment (legendary play, bomb, auto-pass, "Double it!") holds the next turn: the clock, the timer bar and moves wait until its animation has played, and the host refuses moves until then. The look-at-your-cards pause is **15 s**, with an "I'm ready" button that starts the game as soon as every human is ready.
 
+## Lucky 7 (18 Oct)
+
+The spec's rules stand. Clarified with Fahmi:
+
+- A card taken from Discard can be swapped in, used (if a power card), or thrown straight back onto Discard.
+- Fully blind: nobody sees their own cards at the start; only a J shows them.
+- Full deck: play until the centre deck is empty, however many players.
+- A locked card stays hidden even from its owner's J peek.
+
 ## Left for later (as the spec says)
 
 - Pressure-rule numbers get tuned in beta.
