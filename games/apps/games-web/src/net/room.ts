@@ -15,7 +15,7 @@ import { L, fmt } from '../strings';
 import { arr, Follower, type FollowUpdate } from './follower';
 import { HostRelay } from './hostRelay';
 import { lobbySeats, renderLobby } from './lobby';
-import { netGame, type NetGame, type NetTable, type OnlineGameId } from './netGame';
+import { netGame, type Conn, type NetGame, type NetTable, type OnlineGameId } from './netGame';
 import { HEARTBEAT_MS, P, type Member, type RoomMeta, type SeatEntry } from './protocol';
 import { TIMESTAMP, type Json, type RoomStore } from './store';
 
@@ -79,7 +79,11 @@ export async function createRoom(store: RoomStore, room: string, me: Me, c: Crea
 export class OnlineGame {
   private meta: RoomMeta | null = null;
   private members: Record<string, Member> = {};
-  private presence: Record<string, { online?: boolean; lastSeen?: number }> = {};
+  private presence: Record<string, { online?: boolean; lastSeen?: number; left?: boolean }> = {};
+  private connKey = '';
+  /** When the last match's results were written: the key for "I'm in". */
+  private resultsAt = 0;
+  private rematchKey = '';
   private table: NetTable | null = null;
   private follower: Follower | null = null;
   /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
@@ -114,10 +118,12 @@ export class OnlineGame {
     this.store.onDisconnect(p, { online: false, lastSeen: TIMESTAMP });
     this.timers.push(window.setInterval(beat, HEARTBEAT_MS));
     this.timers.push(window.setInterval(() => this.checkHost(), 1000));
+    this.timers.push(window.setInterval(() => this.checkConnections(), 1000));
 
     this.showWaitingForRoom();
     this.store.watch(P.members(this.room), (v) => {
       this.members = (v as unknown as Record<string, Member>) ?? {};
+      this.refreshRematch();
       // The host took me off the waiting list.
       if (this.joinedAs === 'member' && this.meta?.status === 'waiting' && !this.members[this.me.uid] && !this.leaving) {
         this.end(L().ui.removedFromTable);
@@ -130,6 +136,10 @@ export class OnlineGame {
       this.refreshLobby();
     });
     this.store.watch(P.meta(this.room), (v) => this.onMeta(v as RoomMeta | null));
+    this.store.watch(P.results(this.room), (v) => {
+      this.resultsAt = Number((v as { at?: number } | null)?.at ?? 0);
+      this.refreshRematch();
+    });
   }
 
   stop(): void {
@@ -290,10 +300,7 @@ export class OnlineGame {
         ready: () => void this.intent({ type: 'ready' }),
         back: () => void this.intent({ type: 'back' }),
         playAgain: () => this.host?.playAgain(),
-        exit: () => {
-          this.stop();
-          this.opts.onExit();
-        },
+        exit: () => void this.quitTable(),
       },
       meta.humour,
     );
@@ -387,6 +394,63 @@ export class OnlineGame {
     this.relay.listen();
     if (this.table) this.table.isHost = true;
     (window as unknown as { __efoc: unknown }).__efoc = this.debug();
+  }
+
+  /**
+   * Each seat's connection, for the seat chips: online, reconnecting
+   * (offline, its seat held), left (tapped Leave), or a bot. The host lets a
+   * bot play a seat whose player left, so nobody waits for them.
+   */
+  private checkConnections(): void {
+    const m = this.meta;
+    if (!m || m.status !== 'playing' || !this.table) return;
+    const conn: Conn[] = this.seats.map((s) => {
+      if (!s.uid) return 'bot';
+      if (this.presence[s.uid]?.left) return 'left';
+      return this.online(s.uid) || s.uid === this.me.uid ? 'online' : 'away';
+    });
+    const key = conn.join();
+    if (key !== this.connKey) {
+      this.connKey = key;
+      this.table.setConnection(conn);
+    }
+    this.refreshRematch();
+    if (this.host) conn.forEach((c, i) => c === 'left' && !this.host!.afk[i] && this.host!.setAfk(i, true));
+  }
+
+  /** "Who's in for another?" on the results screen. */
+  private refreshRematch(): void {
+    const m = this.meta;
+    if (!m || !this.table || !this.resultsAt || this.mySeat === 'public') return;
+    const at = this.resultsAt;
+    const rows = this.seats
+      .filter((s) => s.uid && s.uid !== this.me.uid)
+      .map((s) => {
+        const left = this.presence[s.uid!]?.left || !this.online(s.uid);
+        const state: 'in' | 'waiting' | 'left' = left ? 'left' : this.members[s.uid!]?.again === at ? 'in' : 'waiting';
+        return { name: s.name, avatar: s.avatar, state };
+      });
+    const isHost = m.hostUid === this.me.uid;
+    const mineIn = this.members[this.me.uid]?.again === at;
+    const key = JSON.stringify([at, rows, isHost, mineIn]);
+    if (key === this.rematchKey) return;
+    this.rematchKey = key;
+    this.table.setRematch({ rows, isHost, mineIn, onIn: () => void this.store.set(`${P.member(this.room, this.me.uid)}/again`, at) });
+  }
+
+  /** Leave mid-game (or after it): say so, so nobody waits for me. */
+  private async quitTable(): Promise<void> {
+    const p = P.presenceOf(this.room, this.me.uid);
+    const gone = { online: false, left: true, lastSeen: TIMESTAMP };
+    // Replace the onDisconnect write too, or it would clear `left` as we go.
+    this.store.onDisconnect(p, gone);
+    this.stop();
+    try {
+      await this.store.set(p, gone);
+    } catch {
+      /* leave anyway */
+    }
+    this.opts.onExit();
   }
 
   /** Host migration: take over if the host has been silent too long and I'm next in line. */

@@ -174,7 +174,15 @@
     "onlineCount": "{n} at the table",
     "offline": "Offline",
     "waitingHost": "Waiting for the host to start…",
-    "waitingForTable": "Waiting for the host to open this table…"
+    "waitingForTable": "Waiting for the host to open this table…",
+    "reconnecting": "Reconnecting…",
+    "leftGame": "Left",
+    "imIn": "I'm in! 🔁",
+    "waitingAgain": "Waiting for the host…",
+    "againReady": "✓ In",
+    "againWaiting": "…",
+    "againLeft": "Left",
+    "whosIn": "Who's in for another?"
   },
   "tutorial": {
     "lead3d": "You hold 3♦, so you start. Tap the 3♦ (you can add cards that make a pair, triple or 5-card hand), then tap Play.",

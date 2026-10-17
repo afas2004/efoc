@@ -88,6 +88,7 @@ function fire() {
 const frames = [];
 function addPhone(o) {
   const el = document.createElement('iframe');
+  el.id = 'p-' + o.uid;
   el.src = '/' + (o.game || 'bigtwo') + '/?' + o.query;
   const frame = { el, uid: o.uid, room: o.room, post: (m) => el.contentWindow && el.contentWindow.postMessage(m, location.origin) };
   frames.push(frame);
@@ -333,4 +334,69 @@ test('Lucky 7 online on Firebase-shaped data: private cards stay private; the ho
   const st = await page.evaluate(() => [...document.querySelectorAll('iframe')].map((f) => (f.contentWindow as any).__room?.status()));
   expect(st.map((s: any) => s.drift)).toEqual([0, 0, 0]);
   expect(await page.evaluate(() => (window as any).harness.errors)).toEqual([]);
+});
+
+test('seats show who is reconnecting and who left; a bot takes over for a player who left', async ({ page }) => {
+  await openHarness(page);
+  const room = `cn-${Date.now()}`;
+  const q = 'mute=1&turn=60000&preview=0';
+  await page.evaluate(
+    ({ room, q }) => {
+      const h = (window as any).harness;
+      h.addPhone({ room, uid: 'h1', name: 'Host', avatar: '🦁', query: q, create: { groupId: 'g1', allowed: ['h1', 'a2', 'b3'] } });
+      h.addPhone({ room, uid: 'a2', name: 'Ann', avatar: '🐸', query: q });
+      h.addPhone({ room, uid: 'b3', name: 'Ben', avatar: '🐵', query: q });
+    },
+    { room, q },
+  );
+  const [host, ann, ben] = ['h1', 'a2', 'b3'].map((uid) => page.frameLocator(`#p-${uid}`));
+  for (const f of [host, ann, ben]) await expect(f.locator('.lobby-seat')).toHaveCount(3);
+  for (const f of [host, ann, ben]) await f.getByRole('button', { name: 'Ready?' }).click();
+  await host.getByRole('button', { name: 'Start' }).click();
+  await expect(host.locator('.seat')).toHaveCount(2);
+
+  // Ann's connection drops: everyone else sees her seat greyed, reconnecting.
+  await page.evaluate(() => (window as any).harness.dropPhone(1));
+  const annSeat = (f: typeof host) => f.locator('.seat', { hasText: 'Ann' });
+  await expect(annSeat(host)).toHaveClass(/conn-away/, { timeout: 10_000 });
+  await expect(annSeat(host).locator('.chip')).toHaveText('Reconnecting…');
+  await expect(annSeat(ben)).toHaveClass(/conn-away/);
+
+  // Ben leaves from the menu: he shows as Left and the host's bot plays his seat.
+  await ben.getByRole('button', { name: 'Menu' }).click();
+  await ben.getByRole('button', { name: 'Leave' }).first().click();
+  const benSeat = host.locator('.seat', { hasText: 'Ben' });
+  await expect(benSeat).toHaveClass(/conn-left/, { timeout: 10_000 });
+  await expect(benSeat.locator('.chip')).toHaveText('Left');
+  await expect.poll(() => page.evaluate(() => {
+    const w = (document.getElementById('p-h1') as HTMLIFrameElement).contentWindow as any;
+    const host = w.__efoc.host;
+    return host.afk[host.seats.findIndex((s: any) => s.name === 'Ben')];
+  })).toBe(true);
+});
+
+test('after a match, players say "I\'m in" and the host sees who is in before playing again', async ({ page }) => {
+  test.setTimeout(240_000);
+  await openHarness(page);
+  const room = `rm-${Date.now()}`;
+  const q = 'mute=1&turn=5000&autopilot=1&speed=0.1';
+  await page.evaluate(
+    ({ room, q }) => {
+      const h = (window as any).harness;
+      h.addPhone({ game: 'lucky7', room, uid: 'h1', name: 'Host', avatar: '🦁', query: q, create: { groupId: 'g1', allowed: ['h1', 'a2'] } });
+      h.addPhone({ game: 'lucky7', room, uid: 'a2', name: 'Ann', avatar: '🐸', query: q });
+    },
+    { room, q },
+  );
+  const [host, ann] = [0, 1].map((i) => page.frameLocator('iframe').nth(i));
+  for (const f of [host, ann]) await expect(f.locator('.lobby-seat')).toHaveCount(2);
+  for (const f of [host, ann]) await f.getByRole('button', { name: 'Ready?' }).click();
+  await host.getByRole('button', { name: 'Start' }).click();
+  for (const f of [host, ann]) await expect(f.locator('.overlay.results')).toBeVisible({ timeout: 180_000 });
+  await expect(host.locator('.rematch-chip')).toHaveText(/Ann .*…/);
+  await ann.getByRole('button', { name: "I'm in! 🔁" }).click();
+  await expect(ann.getByRole('button', { name: 'Waiting for the host…' })).toBeVisible();
+  await expect(host.locator('.rematch-chip.in')).toHaveText(/Ann/);
+  await host.getByRole('button', { name: 'Play again' }).click();
+  for (const f of [host, ann]) await expect(f.locator('.overlay.results')).toBeHidden({ timeout: 15_000 });
 });

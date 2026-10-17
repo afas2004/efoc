@@ -42,21 +42,32 @@ export function lobbySeats(meta: RoomMeta, members: Record<string, Member>): Sea
   return [...humans, ...(meta.bots ?? [])].slice(0, 8);
 }
 
+/** What the waiting room last drew, so a heartbeat that changes nothing doesn't redraw it. */
+let drawn = '';
+
 export function renderLobby(root: HTMLElement, st: LobbyState, act: LobbyActions): void {
   const u = L().ui;
   const isHost = st.meta.hostUid === st.me;
   root.className = `efoc-root ${st.felt}`;
   let overlay = root.querySelector('.overlay.lobby') as HTMLElement | null;
+  // Presence beats every 2 s. Redrawing then would jump the sheet back to
+  // the top and swallow a tap that lands mid-redraw, so only redraw when
+  // something on screen changes.
+  const key = JSON.stringify([st.meta, st.members, [...st.online].sort(), st.me, st.title, st.houseRules]);
+  if (overlay && key === drawn) return;
+  drawn = key;
   if (!overlay) {
     root.innerHTML = '';
     overlay = document.createElement('div');
     overlay.className = 'overlay lobby';
     root.appendChild(overlay);
   }
+  const scrolled = (overlay.querySelector('.sheet') as HTMLElement | null)?.scrollTop ?? 0;
   overlay.innerHTML = '';
   const sheet = document.createElement('div');
   sheet.className = 'sheet setup-sheet';
   overlay.appendChild(sheet);
+  queueMicrotask(() => (sheet.scrollTop = scrolled));
   // Title, with Leave (or the host's Close table) always in view at the top.
   const head = document.createElement('div');
   head.className = 'lobby-head';

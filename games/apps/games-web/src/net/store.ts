@@ -141,7 +141,9 @@ export class LocalStore implements RoomStore {
       localStorage.setItem(PREFIX + above, JSON.stringify(obj));
       return;
     }
-    for (const k of atOrBelow) localStorage.removeItem(PREFIX + k);
+    // Overwrite in place (removing first would show other tabs a moment
+    // where the value is gone); only clear what sits below it.
+    for (const k of atOrBelow) if (k !== path || value === null) localStorage.removeItem(PREFIX + k);
     if (value !== null) localStorage.setItem(PREFIX + path, JSON.stringify(value));
   }
 

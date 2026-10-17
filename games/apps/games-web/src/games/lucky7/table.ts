@@ -15,6 +15,7 @@ import { FeelQueue } from '../../feel/tiers';
 import { L, fmt } from '../../strings';
 import { cardLabel, makeBack, makeCard } from '../../table/cardFace';
 import { computeLayout, TURN_CHIP_H, type Box, type TableLayout } from '../../table/layout';
+import { renderRematch, type RematchInfo } from '../../table/rematch';
 
 type View = lucky7.LuckyView;
 type Move = lucky7.LuckyMove;
@@ -45,6 +46,9 @@ export interface UpdateMeta {
   afk: boolean[];
 }
 
+/** A seat's connection, online only: reconnecting greys it out, left shows a bot took over. */
+export type Conn = 'online' | 'away' | 'left' | 'bot';
+
 /** What a tap on a card or seat means right now. */
 type Mode = 'none' | 'swap' | 'qMine' | 'qTheirs' | 'lock' | 'unlock' | 'shuffle' | 'peek';
 
@@ -68,6 +72,9 @@ export class LuckySevenTable {
   private lastTickSecond = -1;
   private resultsOpen = false;
   private focusSeat: SeatId | null = null;
+  private conn: Conn[] = [];
+  private rematch: RematchInfo | null = null;
+  private rematchEl: HTMLElement | null = null;
 
   // DOM
   private table: HTMLElement;
@@ -157,6 +164,13 @@ export class LuckySevenTable {
     this.meta = meta;
     this.sent = false;
     if (meta.deadline && meta.deadline !== prevDeadline) this.turnTotal = Math.max(1000, meta.deadline - Date.now());
+    // The host started another match: close the results.
+    if (view.phase === 'play' && this.resultsOpen) {
+      this.resultsOpen = false;
+      this.overlay.className = 'overlay hidden';
+      this.ownPeek = null;
+      this.peekShown = null;
+    }
     if (view.turn !== this.me || view.phase !== 'play') this.resetMode();
     else if (view.step === 'peek' && this.mode !== 'peek') this.mode = this.ownPeek ? 'none' : 'peek';
     else if (view.step !== 'act' && this.mode !== 'peek') this.resetMode();
@@ -169,6 +183,18 @@ export class LuckySevenTable {
       this.resultsOpen = true;
       window.setTimeout(() => this.results(view), RESULTS_DELAY_MS);
     }
+  }
+
+  /** "Who's in for another?" on the results screen (online tables). */
+  setRematch(info: RematchInfo | null): void {
+    this.rematch = info;
+    if (this.rematchEl?.isConnected) renderRematch(this.rematchEl, info);
+  }
+
+  /** Who is connected (online tables only); redraws the seats when it changes. */
+  setConnection(conn: Conn[]): void {
+    this.conn = conn.slice();
+    if (this.view) this.renderSeats(this.view);
   }
 
   /** A short note over the table, e.g. "Mei is now the host". */
@@ -295,10 +321,19 @@ export class LuckySevenTable {
       const isTurn = v.phase === 'play' && v.turn === seat;
       s.classList.toggle('turn', isTurn);
       const afk = this.meta.afk[seat] === true;
-      s.classList.toggle('bot', meta.bot || afk);
+      const conn = this.conn[seat];
+      s.classList.toggle('bot', meta.bot || afk || conn === 'left');
+      s.classList.toggle('conn-away', conn === 'away');
+      s.classList.toggle('conn-left', conn === 'left');
       s.classList.toggle('pickable', this.seatPickable(seat));
       const chip = s.querySelector('.chip') as HTMLElement;
-      if (afk) {
+      if (conn === 'left' && !v.totals) {
+        chip.textContent = L().ui.leftGame;
+        chip.className = 'chip chip-danger';
+      } else if (conn === 'away' && !v.totals) {
+        chip.textContent = L().ui.reconnecting;
+        chip.className = 'chip chip-warn';
+      } else if (afk) {
         chip.textContent = L().ui.afk;
         chip.className = 'chip chip-danger';
       } else if (v.totals) {
@@ -814,6 +849,8 @@ export class LuckySevenTable {
       for (const c of v.revealed?.[seat] ?? []) cards.appendChild(makeCard(c));
       el('span', 'pts', li).textContent = fmt(u.total, { n: totals[seat]! });
     });
+    this.rematchEl = el('div', 'rematch', card);
+    renderRematch(this.rematchEl, this.rematch);
     const actions = el('div', 'sheet-actions', card);
     if (this.isHost && this.hooks.playAgain) {
       button(actions, 'btn btn-primary', L().ui.playAgain, L().ui.playAgain).addEventListener('click', () => {

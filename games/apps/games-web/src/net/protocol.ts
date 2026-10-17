@@ -53,6 +53,8 @@ export interface Member {
   avatar: string;
   ready: boolean;
   joinedAt: number;
+  /** "I'm in" for another match: the results' `at` it answers. */
+  again?: number;
 }
 
 export interface Intent {

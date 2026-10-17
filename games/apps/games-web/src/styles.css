@@ -368,6 +368,31 @@ body {
 .chip-danger {
   background: var(--danger) !important;
 }
+.chip-warn {
+  background: #f59e0b !important;
+  color: #1f1300;
+}
+/* Connection, online tables: reconnecting greys the seat with an amber
+   pulsing dot; a player who left stays grey and a bot plays their turns. */
+.seat.conn-away .avatar,
+.seat.conn-away .name,
+.seat.conn-away .fan,
+.seat.conn-away .l7-mini {
+  opacity: 0.4;
+  filter: grayscale(1);
+}
+.seat.conn-away .dot {
+  background: #f59e0b;
+  animation: away-blink 1s ease-in-out infinite;
+}
+@keyframes away-blink {
+  50% { opacity: 0.25; }
+}
+.seat.conn-left .avatar,
+.seat.conn-left .name {
+  opacity: 0.5;
+  filter: grayscale(1);
+}
 
 /* ------------------------------------------------------ centre, timer */
 
@@ -1729,4 +1754,36 @@ table.stats tr.me {
   margin: 0 0 12px;
   padding-left: 18px;
   line-height: 1.45;
+}
+
+/* "Who's in for another?" on online results. */
+.rematch {
+  margin: 4px 0 10px;
+}
+.rematch .btn-im-in {
+  width: 100%;
+  min-height: 52px;
+  margin-bottom: 10px;
+  font-size: 18px;
+}
+.rematch-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.rematch-chip {
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 14px;
+  font-weight: 800;
+}
+.rematch-chip.in {
+  background: var(--turn);
+  color: #052e16;
+}
+.rematch-chip.left {
+  opacity: 0.5;
+  text-decoration: line-through;
 }

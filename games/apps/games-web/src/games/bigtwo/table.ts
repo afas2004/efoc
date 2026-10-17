@@ -13,6 +13,7 @@ import { FeelQueue, type Tier } from '../../feel/tiers';
 import { L, fmt } from '../../strings';
 import { cardLabel, cardsText, makeBack, makeCard } from '../../table/cardFace';
 import { TURN_CHIP_H } from '../../table/layout';
+import { renderRematch, type RematchInfo } from '../../table/rematch';
 import { describeCombo, isLegendary } from './commentary';
 import { MatchStats } from './stats';
 import { computeLayout, handPlaces, RAISE_PX, type Box, type TableLayout } from '../../table/layout';
@@ -52,6 +53,9 @@ export interface UpdateMeta {
   totals?: number[];
 }
 
+/** A seat's connection, online only: reconnecting greys it out, left shows a bot took over. */
+export type Conn = 'online' | 'away' | 'left' | 'bot';
+
 interface TrickPlay {
   seat: SeatId;
   cards: Card[];
@@ -82,6 +86,9 @@ export class BigTwoTable {
   private sortMode: SortMode = 'rank';
   private customOrder: Card[] = [];
   private outSeats = new Map<SeatId, number>();
+  private conn: Conn[] = [];
+  private rematch: RematchInfo | null = null;
+  private rematchEl: HTMLElement | null = null;
   private initialHand = 13;
   private lastTickSecond = -1;
   private announced10 = false;
@@ -548,9 +555,18 @@ export class BigTwoTable {
       s.classList.toggle('out', this.outSeats.has(seat));
       s.classList.toggle('last-card', count === 1);
       const afk = this.meta.afk[seat] === true;
-      s.classList.toggle('bot', meta.bot || afk);
+      const conn = this.conn[seat];
+      s.classList.toggle('bot', meta.bot || afk || conn === 'left');
+      s.classList.toggle('conn-away', conn === 'away');
+      s.classList.toggle('conn-left', conn === 'left');
       const chip = s.querySelector('.chip') as HTMLElement;
-      if (this.outSeats.has(seat)) {
+      if (conn === 'left' && !this.outSeats.has(seat)) {
+        chip.textContent = L().ui.leftGame;
+        chip.className = 'chip chip-danger';
+      } else if (conn === 'away' && !this.outSeats.has(seat)) {
+        chip.textContent = L().ui.reconnecting;
+        chip.className = 'chip chip-warn';
+      } else if (this.outSeats.has(seat)) {
         chip.textContent = fmt(L().ui.place, { n: this.outSeats.get(seat)! });
         chip.className = 'chip chip-gold';
       } else if (afk) {
@@ -1054,6 +1070,8 @@ export class BigTwoTable {
     const mine = this.stats.seats[this.me];
     if (mine?.best) fact(u.statBest, describeCombo(mine.best.cards, mine.best.kind));
 
+    this.rematchEl = el('div', 'rematch', card);
+    renderRematch(this.rematchEl, this.rematch);
     const actions = el('div', 'sheet-actions', card);
     if (this.isHost) {
       if (!matchOver && this.hooks.nextRound) {
@@ -1269,6 +1287,18 @@ export class BigTwoTable {
       }
     }
   };
+
+  /** "Who's in for another?" on the results screen (online tables). */
+  setRematch(info: RematchInfo | null): void {
+    this.rematch = info;
+    if (this.rematchEl?.isConnected) renderRematch(this.rematchEl, info);
+  }
+
+  /** Who is connected (online tables only); redraws the seats when it changes. */
+  setConnection(conn: Conn[]): void {
+    this.conn = conn.slice();
+    if (this.view) this.renderSeats(this.view);
+  }
 
   /** Plain description of what is on the table, for tests and screen readers. */
   describe(): string {

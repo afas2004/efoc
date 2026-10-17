@@ -18,6 +18,7 @@ import { LuckySevenCommentator } from '../games/lucky7/commentary';
 import { luckyHostOptions } from '../games/lucky7/practice';
 import { LuckySevenTable } from '../games/lucky7/table';
 import type { HostOptions } from '../host/hostCore';
+import type { RematchInfo } from '../table/rematch';
 import { L } from '../strings';
 import { arr, reviveState as reviveBigTwo } from './follower';
 import type { RoomMeta } from './protocol';
@@ -38,7 +39,12 @@ export interface NetTable {
   update(view: never, events: GameEvent[], meta: TableUpdateMeta): void;
   reject(reason: string): void;
   notice(text: string): void;
+  setConnection(conn: Conn[]): void;
+  setRematch(info: RematchInfo | null): void;
 }
+
+/** A seat's connection on an online table. */
+export type Conn = 'online' | 'away' | 'left' | 'bot';
 
 export interface NetTableHooks {
   move(m: unknown): void;

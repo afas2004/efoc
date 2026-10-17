@@ -121,3 +121,28 @@ test('players who open the link before the host creates the table still get seat
   for (const p of early) await expect.poll(() => status(p).then((s) => s.seat), { timeout: 15_000 }).not.toBe('public');
   for (const p of early) await expect(p.locator('.card.in-hand').first()).toBeVisible();
 });
+
+test('the waiting room keeps its scroll and buttons through presence heartbeats', async ({ context }) => {
+  const room = `ls-${Date.now()}`;
+  const host = await context.newPage();
+  await host.setViewportSize({ width: 360, height: 560 });
+  await host.goto(`/bigtwo/?room=${room}&uid=s1&name=Host&mute=1&create=1&allowed=s1,s2`);
+  const guest = await context.newPage();
+  await guest.goto(`/bigtwo/?room=${room}&uid=s2&name=Guest&mute=1`);
+  await expect(host.locator('.lobby-seat')).toHaveCount(2);
+  // Scroll down to Start, and mark the button so a redraw would show.
+  await host.evaluate(() => {
+    const sheet = document.querySelector('.overlay.lobby .sheet') as HTMLElement;
+    sheet.scrollTop = sheet.scrollHeight;
+    (document.querySelector('.btn-start') as HTMLElement).dataset.mark = '1';
+  });
+  const top = await host.evaluate(() => (document.querySelector('.overlay.lobby .sheet') as HTMLElement).scrollTop);
+  expect(top).toBeGreaterThan(0);
+  await host.waitForTimeout(5000); // two or three heartbeats from each phone
+  expect(await host.evaluate(() => (document.querySelector('.overlay.lobby .sheet') as HTMLElement).scrollTop)).toBe(top);
+  expect(await host.evaluate(() => (document.querySelector('.btn-start') as HTMLElement).dataset.mark)).toBe('1');
+  // A real change still redraws: the guest gets ready.
+  await guest.getByRole('button', { name: 'Ready?' }).click();
+  await expect(host.locator('.lobby-seat.ready')).toHaveCount(1);
+  expect(await host.evaluate(() => (document.querySelector('.overlay.lobby .sheet') as HTMLElement).scrollTop)).toBe(top);
+});
