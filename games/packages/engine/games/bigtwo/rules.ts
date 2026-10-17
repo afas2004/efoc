@@ -412,6 +412,16 @@ export function apply(
 ): { state: BigTwoState; events: GameEvent[] } {
   const check = validate(state, seat, move);
   if (!check.ok) throw new Error(`Illegal move by seat ${seat}: ${check.reason}`);
+  return applyTrusted(state, seat, move);
+}
+
+/**
+ * Applies a move the host has already checked. Every phone runs this on
+ * each log entry against its masked copy of the table (other hands are
+ * placeholders), so it never looks inside a hand it can't see: a played
+ * card leaves a masked hand as one placeholder.
+ */
+export function applyTrusted(state: BigTwoState, seat: SeatId, move: BigTwoMove): { state: BigTwoState; events: GameEvent[] } {
   const s = clone(state);
   const events: GameEvent[] = [];
 
@@ -424,7 +434,8 @@ export function apply(
 
   const cards = sortCards(move.cards);
   const combo = classify(cards, s.config)!;
-  s.hands[seat] = s.hands[seat]!.filter((c) => !cards.includes(c));
+  const hand = s.hands[seat]!;
+  s.hands[seat] = cards.every((c) => hand.includes(c)) ? hand.filter((c) => !cards.includes(c)) : hand.slice(cards.length);
   s.pile.push(...cards);
   s.lead = { seat, cards, combo };
   s.lastPlayer = seat;
@@ -462,6 +473,35 @@ export function apply(
   }
   advance(s, events);
   return { state: s, events };
+}
+
+// --------------------------------------------------------------- masking
+
+/** A card a phone isn't allowed to see. */
+export const HIDDEN = '??';
+
+/**
+ * The table as `seat` may hold it: every other hand and the burned cards
+ * become placeholders. `'public'` masks every hand (spectators). Phones keep
+ * this and advance it with applyTrusted; the host keeps the real state.
+ */
+export function mask(state: BigTwoState, seat: SeatId | 'public'): BigTwoState {
+  const s = clone(state);
+  s.hands = s.hands.map((h, i) => (i === seat ? h.slice() : h.map(() => HIDDEN)));
+  s.out = s.out.map(() => HIDDEN);
+  if (s.mustInclude && !(seat !== 'public' && s.hands[seat]!.includes(s.mustInclude))) s.mustInclude = HIDDEN;
+  return s;
+}
+
+/** FNV-1a over the public view: equal on every phone that applied the same log. */
+export function checksum(state: BigTwoState): string {
+  const text = JSON.stringify(view(state, 'public'));
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(16).padStart(8, '0');
 }
 
 export function result(state: BigTwoState): RoundResult | null {
@@ -506,7 +546,7 @@ export function view(state: BigTwoState, seat: SeatId | 'public'): BigTwoView {
     lead: state.lead && { seat: state.lead.seat, cards: state.lead.cards.slice(), kind: state.lead.combo.kind },
     lastPlayer: state.lastPlayer,
     passed: state.passed.slice(),
-    mustInclude: state.mustInclude && hand.includes(state.mustInclude) ? state.mustInclude : null,
+    mustInclude: state.mustInclude && state.mustInclude !== HIDDEN && hand.includes(state.mustInclude) ? state.mustInclude : null,
     openingPlay: state.mustInclude !== null,
     pile: state.pile.slice(),
     outCount: state.out.length,

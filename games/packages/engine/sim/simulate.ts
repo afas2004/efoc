@@ -12,7 +12,17 @@
 import { fullDeck, isCard, type Card } from '../core/cards';
 import { createRng, type Rng } from '../core/rng';
 import type { BotLevel } from '../core/types';
-import { bigTwo, defaultConfig, nextRound, type BigTwoConfig, type BigTwoMove, type BigTwoState } from '../games/bigtwo/index';
+import {
+  applyTrusted,
+  bigTwo,
+  checksum,
+  defaultConfig,
+  mask,
+  nextRound,
+  type BigTwoConfig,
+  type BigTwoMove,
+  type BigTwoState,
+} from '../games/bigtwo/index';
 
 export interface SimOptions {
   games: number;
@@ -107,12 +117,33 @@ interface Played {
   rounds: number;
 }
 
+/**
+ * Phones' copies: each seat (and a spectator) holds a masked table and
+ * applies only the public moves. After every move each copy must match the
+ * host's checksum and show its seat exactly the host's view.
+ */
+function followers(s: BigTwoState): BigTwoState[] {
+  return [...s.hands.map((_, i) => mask(s, i)), mask(s, 'public')];
+}
+
+function checkFollowers(host: BigTwoState, copies: BigTwoState[]): string | null {
+  const sum = checksum(host);
+  for (let i = 0; i < copies.length; i++) {
+    const c = copies[i]!;
+    if (checksum(c) !== sum) return `copy ${i === host.players ? 'spectator' : `seat ${i}`} drifted from the host`;
+    if (i < host.players && JSON.stringify(bigTwo.view(c, i)) !== JSON.stringify(bigTwo.view(host, i))) return `seat ${i}'s view differs from the host's`;
+    if (c.hands.some((h, k) => k !== i && h.some((x) => x !== '??'))) return `copy ${i} holds someone else's card`;
+  }
+  return null;
+}
+
 /** Plays one match. Returns the failure message, or the played match. */
-function playMatch(players: number, config: BigTwoConfig, seed: number, levels: BotLevel[], cap: number, checks: boolean): Played | string {
+function playMatch(players: number, config: BigTwoConfig, seed: number, levels: BotLevel[], cap: number, checks: boolean, follow = false): Played | string {
   const dealRng = createRng(seed);
   const botRng = createRng(seed ^ 0x9e3779b9);
   const seats = [...Array(players).keys()];
   let s = bigTwo.setup(seats, config, dealRng);
+  let copies = follow ? followers(s) : [];
   const moves: [number, BigTwoMove][] = [];
   let rounds = 1;
   let movesThisRound = 0;
@@ -124,6 +155,7 @@ function playMatch(players: number, config: BigTwoConfig, seed: number, levels: 
       }
       if (s.phase === 'matchOver') return { final: s, moves, rounds };
       s = nextRound(s, dealRng);
+      if (follow) copies = followers(s); // a new deal arrives as a fresh masked snapshot
       rounds++;
       movesThisRound = 0;
       continue;
@@ -142,6 +174,11 @@ function playMatch(players: number, config: BigTwoConfig, seed: number, levels: 
     if (!ok.ok) return `bot at seat ${seat} made an illegal move ${JSON.stringify(move)}: ${ok.reason}`;
     s = bigTwo.apply(s, seat, move, botRng).state;
     moves.push([seat, move]);
+    if (follow) {
+      copies = copies.map((c) => applyTrusted(c, seat, move).state);
+      const bad = checkFollowers(s, copies);
+      if (bad) return bad;
+    }
     if (checks) {
       const bad = checkConservation(s) ?? checkViews(s);
       if (bad) return bad;
@@ -175,7 +212,7 @@ export function simulate(opts: SimOptions): SimReport {
     const label = `players=${opts.players} seed=${seed} config=${JSON.stringify(config)}`;
     let played: Played | string;
     try {
-      played = playMatch(opts.players, config, seed, levels, cap, true);
+      played = playMatch(opts.players, config, seed, levels, cap, true, g % 10 === 0);
     } catch (e) {
       played = `threw: ${(e as Error).message}`;
     }

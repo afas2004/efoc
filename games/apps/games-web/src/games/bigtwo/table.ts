@@ -124,7 +124,8 @@ export class BigTwoTable {
     private readonly root: HTMLElement,
     readonly me: SeatId,
     private readonly seatMeta: SeatMeta[],
-    private readonly isHost: boolean,
+    /** True on the phone that referees; changes if the host migrates. */
+    public isHost: boolean,
     private readonly hooks: TableHooks,
     public settings: TableSettings,
   ) {
@@ -1131,6 +1132,13 @@ export class BigTwoTable {
   }
 
   // ------------------------------------------------------------ tutorial
+
+  /** A short public notice over the table, e.g. "Mei is now the host". */
+  notice(text: string): void {
+    const c = this.layout?.stage;
+    if (!c) return;
+    this.feel.play(2, 'notice', (ctx) => banner(this.fx, text, 'info', 'pop', ctx, { x: c.x + c.w / 2, y: c.y + 8 }));
+  }
 
   showTip(text: string, onDone: () => void, onSkip: () => void): void {
     const t = this.tipEl;

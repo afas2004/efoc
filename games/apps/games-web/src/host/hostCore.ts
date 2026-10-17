@@ -41,6 +41,18 @@ export interface HostOptions {
   previewMs?: number;
 }
 
+/** Everything a new host needs to carry on where the old one stopped. */
+export interface HostSnapshot<State> {
+  n: number;
+  state: State;
+  round: number;
+  totals: number[];
+  stamps: number[];
+  doubled: boolean[];
+  afk: boolean[];
+  seedBase: number;
+}
+
 export interface Clock {
   set(fn: () => void, ms: number): unknown;
   clear(handle: unknown): void;
@@ -234,6 +246,62 @@ export class HostCore<Config, State, Move, View> {
   stop(): void {
     this.stopped = true;
     this.stopTimers();
+  }
+
+  /** What hostState holds, so another phone can take over as host. */
+  save(): HostSnapshot<State> {
+    return {
+      n: this.n,
+      state: this.state,
+      round: this.round,
+      totals: this.totals.slice(),
+      stamps: this.stamps.slice(),
+      doubled: this.doubled.slice(),
+      afk: this.afk.slice(),
+      seedBase: this.seedBase,
+    };
+  }
+
+  /**
+   * Host migration: carry on from a saved hostState. The turn clock restarts
+   * in full for whoever is to move, and the first entry says who took over.
+   */
+  restore(saved: HostSnapshot<State>, events: GameEvent[] = []): void {
+    this.state = saved.state;
+    this.n = saved.n;
+    this.round = saved.round;
+    saved.totals.forEach((v, i) => (this.totals[i] = v));
+    saved.stamps.forEach((v, i) => (this.stamps[i] = v));
+    saved.doubled.forEach((v, i) => (this.doubled[i] = v));
+    saved.afk.forEach((v, i) => (this.afk[i] = v));
+    this.seedBase = saved.seedBase;
+    this.rng = createRng((saved.seedBase ^ Math.imul(saved.n + 1, 0x9e3779b1)) >>> 0);
+    this.stopped = false;
+    this.previewing = false;
+    this.holdUntil = 0;
+    this.lastDwell = 0;
+    if (this.game.result(this.state)) {
+      this.deadline = null;
+      if (events.length) this.emit(null, null, events);
+      return;
+    }
+    this.armTurn(0);
+    this.emit(null, null, events);
+    this.scheduleBot();
+  }
+
+  /** Marks a seat as away (a bot plays it) or back, e.g. from presence. */
+  setAfk(seat: SeatId, afk: boolean): void {
+    if (this.afk[seat] === afk || this.stopped) return;
+    this.afk[seat] = afk;
+    this.consecutive[seat] = 0;
+    this.lastDwell = 0;
+    this.emit(null, null, [{ type: afk ? 'afk' : 'afk_cleared', seat }]);
+    this.scheduleBot();
+  }
+
+  get matchOver(): boolean {
+    return !!this.state && !!this.game.result(this.state);
   }
 
   private commit(seat: SeatId, move: Move, extra: GameEvent[]): void {

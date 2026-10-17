@@ -6,6 +6,9 @@ import { defaultConfig, type BigTwoConfig } from './config';
 import {
   allCombos,
   apply,
+  applyTrusted,
+  checksum,
+  mask,
   beats,
   classify,
   legalMoves,
@@ -428,6 +431,34 @@ describe('multi-round matches', () => {
     const pts = result(s)!.points;
     expect(pts.every((p) => p % 2 === 0)).toBe(true);
     expect(s.scores).toEqual([0 + pts[0]!, 2 + pts[1]!]);
+  });
+});
+
+describe('masked copies (what each phone holds)', () => {
+  it('follow the public log and match the host after every move', () => {
+    for (let seed = 0; seed < 20; seed++) {
+      const rng = createRng(seed);
+      let host = setup([0, 1, 2, 3, 4], cfg({ mode: seed % 2 ? 'fightTillTheEnd' : 'standard' }), rng);
+      let copies = [0, 1, 2, 3, 4].map((i) => mask(host, i));
+      while (host.phase === 'play') {
+        const seat = host.turn;
+        const m = bot(view(host, seat), 'normal', rng);
+        host = apply(host, seat, m).state;
+        copies = copies.map((c) => applyTrusted(c, seat, m).state);
+        copies.forEach((c, i) => {
+          expect(checksum(c)).toBe(checksum(host));
+          expect(view(c, i)).toEqual(view(host, i));
+        });
+      }
+    }
+  });
+  it("never hold another seat's cards or the burned cards", () => {
+    const s = setup([0, 1, 2, 3, 4, 5, 6, 7], cfg(), createRng(3));
+    const m = mask(s, 2);
+    expect(m.hands[2]).toEqual(s.hands[2]);
+    for (const [i, h] of m.hands.entries()) if (i !== 2) expect(h.every((c) => c === '??')).toBe(true);
+    expect(m.out.every((c) => c === '??')).toBe(true);
+    expect(mask(s, 'public').hands.flat().every((c) => c === '??')).toBe(true);
   });
 });
 

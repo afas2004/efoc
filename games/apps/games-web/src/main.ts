@@ -79,10 +79,39 @@ function setup(base: Omit<Launch, 'players' | 'humour'> & Partial<Launch>): void
   showSetup(root, (c) => launch({ myName: base.myName, myAvatar: base.myAvatar, players: c.players, humour: c.humour, mode: c.mode, pokerHands: c.pokerHands, tutorial: false }));
 }
 
+/**
+ * Online table in a plain browser (development and the multi-player tests),
+ * on the localStorage room store:
+ *   ?room=r1&uid=u1&name=Ali&create=1&allowed=u1,u2,u3&turn=20000&migrate=60000&preview=15000&autopilot=1
+ * Inside EFOC the same OnlineGame runs on the bridge store (Phase 3c).
+ */
+async function launchOnline(): Promise<void> {
+  const { LocalStore } = await import('./net/store');
+  const { OnlineGame, createRoom, exitApp } = await import('./net/room');
+  const uid = q.get('uid') ?? `u${Math.floor(Math.random() * 1e6)}`;
+  const me = { uid, name: q.get('name') ?? uid, avatar: q.get('avatar') ?? '😎' };
+  const room = q.get('room')!;
+  const store = new LocalStore(uid);
+  if (q.get('create') === '1') {
+    await createRoom(store, room, me, {
+      groupId: q.get('group') ?? 'dev',
+      allowed: (q.get('allowed') ?? uid).split(','),
+      turnMs: num('turn'),
+      migrateAfterMs: num('migrate'),
+      previewMs: num('preview'),
+    });
+  }
+  const game = new OnlineGame(store, room, me, root, { autopilot: q.get('autopilot') === '1', onExit: exitApp });
+  (window as unknown as { __room: unknown }).__room = game;
+  await game.start();
+}
+
 startBridge();
 const humourParam = (q.get('humour') as Humour | null) ?? 'spicy';
 
-if (inApp()) {
+if (q.has('room') && !inApp()) {
+  void launchOnline();
+} else if (inApp()) {
   onMessage((msg) => {
     if (msg.t !== 'init') return;
     if (msg.practice || msg.isHost) {
