@@ -103,3 +103,21 @@ test('a player who reloads rejoins their seat; a latecomer watches', async ({ co
   const st = await Promise.all([...pages, late].map(status));
   expect(st.every((s) => s.drift === 0)).toBe(true);
 });
+
+test('players who open the link before the host creates the table still get seats', async ({ context }) => {
+  const room = `early-${Date.now()}`;
+  const early: Page[] = [];
+  for (const [uid, name] of [['e2', 'Ali'], ['e3', 'Mei']]) {
+    const p = await context.newPage();
+    await p.goto(`/bigtwo/?room=${room}&uid=${uid}&name=${name}&mute=1`);
+    await expect(p.getByText('Waiting for the host to open this table…')).toBeVisible();
+    early.push(p);
+  }
+  const host = await context.newPage();
+  await host.goto(`/bigtwo/?room=${room}&uid=e1&name=Fahmi&mute=1&preview=0&create=1&allowed=e1,e2,e3`);
+  for (const p of [host, ...early]) await expect(p.locator('.lobby-seat')).toHaveCount(3);
+  for (const p of [host, ...early]) await p.getByRole('button', { name: 'Ready?' }).click();
+  await host.getByRole('button', { name: 'Start' }).click();
+  for (const p of early) await expect.poll(() => status(p).then((s) => s.seat), { timeout: 15_000 }).not.toBe('public');
+  for (const p of early) await expect(p.locator('.card.in-hand').first()).toBeVisible();
+});

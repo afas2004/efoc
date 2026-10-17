@@ -105,22 +105,7 @@ export class OnlineGame {
     this.timers.push(window.setInterval(beat, HEARTBEAT_MS));
     this.timers.push(window.setInterval(() => this.checkHost(), 1000));
 
-    const meta = (await this.store.get(P.meta(this.room))) as RoomMeta | null;
-    if (meta && meta.status === 'waiting') {
-      const existing = (await this.store.get(P.member(this.room, this.me.uid))) as Member | null;
-      if (!existing) await this.store.set(P.member(this.room, this.me.uid), { name: this.me.name, avatar: this.me.avatar, ready: false, joinedAt: this.store.now() });
-    } else if (meta && !arr<SeatEntry>(meta.seats).some((s) => s.uid === this.me.uid)) {
-      // Claim a free spectator slot (at most 8 watch).
-      const slots = ((await this.store.get(P.spectatorSlots(this.room))) as Record<string, string> | null) ?? {};
-      const mine = Object.entries(slots).find(([, u]) => u === this.me.uid)?.[0];
-      const free = mine ?? ['0', '1', '2', '3', '4', '5', '6', '7'].find((k) => !slots[k]);
-      if (free !== undefined) {
-        await this.store.update({
-          [`${P.spectatorSlots(this.room)}/${free}`]: this.me.uid,
-          [P.spectator(this.room, this.me.uid)]: { name: this.me.name, avatar: this.me.avatar, slot: Number(free) },
-        });
-      }
-    }
+    this.showWaitingForRoom();
     this.store.watch(P.members(this.room), (v) => {
       this.members = (v as unknown as Record<string, Member>) ?? {};
       this.refreshLobby();
@@ -141,8 +126,58 @@ export class OnlineGame {
 
   // --------------------------------------------------------------- meta
 
+  private joining = false;
+  private joinedAs: 'member' | 'spectator' | null = null;
+
+  /**
+   * Join the room the first time it is seen open: a member while it is
+   * waiting, a spectator once it has started without me. Runs on every meta
+   * change, so a phone that opened the link before the host created the
+   * table joins as soon as the table appears.
+   */
+  private async ensureJoined(meta: RoomMeta): Promise<void> {
+    if (this.joining || this.joinedAs) return;
+    this.joining = true;
+    try {
+      if (meta.status === 'waiting') {
+        const existing = (await this.store.get(P.member(this.room, this.me.uid))) as Member | null;
+        if (!existing) await this.store.set(P.member(this.room, this.me.uid), { name: this.me.name, avatar: this.me.avatar, ready: false, joinedAt: this.store.now() });
+        this.joinedAs = 'member';
+      } else if (arr<SeatEntry>(meta.seats).some((s) => s.uid === this.me.uid)) {
+        this.joinedAs = 'member'; // rejoining my own seat
+      } else {
+        // Claim a free spectator slot (at most 8 watch).
+        const slots = ((await this.store.get(P.spectatorSlots(this.room))) as Record<string, string> | null) ?? {};
+        const mine = Object.entries(slots).find(([, u]) => u === this.me.uid)?.[0];
+        const free = mine ?? ['0', '1', '2', '3', '4', '5', '6', '7'].find((k) => !slots[k]);
+        if (free !== undefined) {
+          await this.store.update({
+            [`${P.spectatorSlots(this.room)}/${free}`]: this.me.uid,
+            [P.spectator(this.room, this.me.uid)]: { name: this.me.name, avatar: this.me.avatar, slot: Number(free) },
+          });
+        }
+        this.joinedAs = 'spectator';
+      }
+    } finally {
+      this.joining = false;
+    }
+  }
+
+  /** Before the host has created the table. */
+  private showWaitingForRoom(): void {
+    if (this.meta) return;
+    this.root.className = 'efoc-root felt-bigtwo';
+    this.root.innerHTML = '<div class="overlay lobby"><div class="sheet setup-sheet"><h2></h2><p class="lobby-wait"></p></div></div>';
+    this.root.querySelector('h2')!.textContent = `🃏 ${L().ui.setupTitle}`;
+    this.root.querySelector('.lobby-wait')!.textContent = L().ui.waitingForTable;
+  }
+
   private onMeta(meta: RoomMeta | null): void {
-    if (!meta) return;
+    if (!meta) {
+      this.showWaitingForRoom();
+      return;
+    }
+    void this.ensureJoined(meta);
     meta.bots = arr<SeatEntry>(meta.bots);
     const prevHost = this.meta?.hostUid;
     this.meta = meta;

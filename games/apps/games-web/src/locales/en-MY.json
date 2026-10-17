@@ -163,7 +163,8 @@
     "tableFull": "Table full (8 seats)",
     "onlineCount": "{n} at the table",
     "offline": "Offline",
-    "waitingHost": "Waiting for the host to start…"
+    "waitingHost": "Waiting for the host to start…",
+    "waitingForTable": "Waiting for the host to open this table…"
   },
   "tutorial": {
     "lead3d": "You hold 3♦, so you start. Tap the 3♦ (you can add cards that make a pair, triple or 5-card hand), then tap Play.",
