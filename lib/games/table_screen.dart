@@ -7,6 +7,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../services/chat_service.dart';
 import '../theme/colors.dart';
+import 'active_table.dart';
 import 'game_session.dart';
 import 'games_config.dart';
 import 'games_database.dart';
@@ -87,7 +88,23 @@ class _TableScreenState extends State<TableScreen> with WidgetsBindingObserver {
       onUpdated: (values) => _onPageUpdate(db, roomId, values),
     );
     _clock = db.clockOffset.listen((o) => _clockOffset = o, onError: (_) {});
+    // Come back here if the app or tab dies mid-game.
+    ActiveTable.save(_link!);
+    // A joiner's room already exists; the host's is watched once created.
+    if (widget.createWithMembers == null) _watchResults(db, roomId);
     setState(() => _view = _buildView());
+  }
+
+  /// When the match has results: off the group's open tables, and no
+  /// coming back to it after a reload.
+  void _watchResults(GameDb db, String roomId) {
+    _resultsWatch ??= db.watch('rooms/$roomId/results', (r) {
+      if (r == null) return;
+      ActiveTable.clear();
+      OpenTables.instance
+          .unlist(widget.groupId, roomId)
+          .catchError((Object e) => debugPrint('games unlist: $e'));
+    });
   }
 
   Widget _buildView() => buildTableView(
@@ -111,6 +128,14 @@ class _TableScreenState extends State<TableScreen> with WidgetsBindingObserver {
   /// results. Watching the room before it exists isn't allowed by the
   /// rules, which is why this waits for the page's own write.
   void _onPageUpdate(GameDb db, String roomId, Map<String, Object?> values) {
+    // The host closed the table from the waiting room.
+    if (values['rooms/$roomId/meta/status'] == 'closed') {
+      ActiveTable.clear();
+      OpenTables.instance
+          .unlist(widget.groupId, roomId)
+          .catchError((Object e) => debugPrint('games unlist: $e'));
+      return;
+    }
     if (_announced || widget.createWithMembers == null) return;
     final meta = values['rooms/$roomId/meta'];
     if (meta is! Map || meta['hostUid'] != widget.myUid) return;
@@ -131,13 +156,7 @@ class _TableScreenState extends State<TableScreen> with WidgetsBindingObserver {
           .catchError((Object e) => debugPrint('games chat card: $e'));
     }
 
-    _resultsWatch = db.watch('rooms/$roomId/results', (r) {
-      if (r == null) return;
-      _resultsWatch?.cancel();
-      OpenTables.instance
-          .unlist(widget.groupId, roomId)
-          .catchError((Object e) => debugPrint('games unlist: $e'));
-    });
+    _watchResults(db, roomId);
   }
 
   /// The waiting room's Invite button: share (Android) or copy (web) a
@@ -264,7 +283,11 @@ class _TableScreenState extends State<TableScreen> with WidgetsBindingObserver {
     _clock?.cancel();
     _session?.close();
     _controller.sender = null;
-    if (_online) GamesDatabase.instance.release();
+    if (_online) {
+      // Left on purpose (a dying tab never gets here).
+      ActiveTable.clear();
+      GamesDatabase.instance.release();
+    }
     super.dispose();
   }
 

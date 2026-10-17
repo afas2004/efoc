@@ -225,3 +225,46 @@ test('the host reloads mid-match on Firebase-shaped data: same seats, unique pla
   const drift = await page.evaluate(() => [...document.querySelectorAll('iframe')].map((f) => (f.contentWindow as any).__room?.status().drift));
   expect(drift).toEqual([0, 0]);
 });
+
+test('waiting room: leave, the host removes a player, the host closes the table', async ({ page }) => {
+  await openHarness(page);
+  const room = `brl-${Date.now()}`;
+  const q = 'mute=1&preview=0';
+  await page.evaluate(
+    ({ room, q }) => {
+      const h = (window as any).harness;
+      h.addPhone({ room, uid: 'h1', name: 'Host', avatar: '🦁', query: q, create: { groupId: 'g1', allowed: ['h1', 'a2', 'b3', 'c4'] } });
+      h.addPhone({ room, uid: 'a2', name: 'Ann', avatar: '🐸', query: q });
+      h.addPhone({ room, uid: 'b3', name: 'Ben', avatar: '🐵', query: q });
+    },
+    { room, q },
+  );
+  const [host, ann, ben] = [0, 1, 2].map((i) => page.frameLocator('iframe').nth(i));
+  for (const f of [host, ann, ben]) await expect(f.locator('.lobby-seat')).toHaveCount(3);
+  const others = () => page.evaluate(() => (window as any).harness.others as string[]);
+  const members = () => page.evaluate((room) => Object.keys((window as any).harness.read(`rooms/${room}/members`) ?? {}).sort(), room);
+
+  // Ben leaves: one tap asks "Sure?", the second goes. His seat disappears.
+  await ben.getByRole('button', { name: 'Leave table' }).click();
+  await ben.getByRole('button', { name: 'Sure?' }).click();
+  await expect.poll(others).toContain('b3:exit');
+  await expect.poll(members).toEqual(['a2', 'h1']);
+  await expect(host.locator('.lobby-seat')).toHaveCount(2);
+
+  // The host removes Ann; her page says so.
+  const annSeat = host.locator('.lobby-seat', { hasText: 'Ann' });
+  await annSeat.getByRole('button', { name: 'Remove' }).click();
+  await annSeat.getByRole('button', { name: 'Sure?' }).click();
+  await expect(ann.getByText('The host took you off this table.')).toBeVisible();
+  await expect.poll(members).toEqual(['h1']);
+
+  // Someone new joins, then the host closes the table: they're told, the host exits.
+  await page.evaluate(({ room, q }) => (window as any).harness.addPhone({ room, uid: 'c4', name: 'Cat', avatar: '🦄', query: q }), { room, q });
+  const cat = page.frameLocator('iframe').nth(3);
+  await expect(host.locator('.lobby-seat')).toHaveCount(2);
+  await host.getByRole('button', { name: 'Close table' }).click();
+  await host.getByRole('button', { name: 'Sure?' }).click();
+  await expect.poll(others).toContain('h1:exit');
+  await expect(cat.getByText('The host closed this table.')).toBeVisible();
+  expect(await page.evaluate((room) => (window as any).harness.read(`rooms/${room}/meta/status`), room)).toBe('closed');
+});

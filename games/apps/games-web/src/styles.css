@@ -1355,6 +1355,23 @@ table.stats tr.me {
   min-height: 36px;
   font-size: 13px;
 }
+.lobby-remove.armed,
+.btn-close-table.armed,
+.btn-leave-table.armed {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+  animation: armed-wobble 0.3s ease-in-out 2;
+}
+@keyframes armed-wobble { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-2deg); } 75% { transform: rotate(2deg); } }
+@media (prefers-reduced-motion: reduce) { .armed { animation: none !important; } }
+.lobby-leave {
+  margin-top: 6px;
+}
+.lobby-ended {
+  font-size: 17px;
+  color: var(--ink);
+}
 .lobby-wait {
   margin: 10px 0 0;
   text-align: center;

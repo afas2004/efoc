@@ -31,7 +31,8 @@ export interface RoomMeta {
   gameId: 'bigtwo';
   groupId: string;
   hostUid: string;
-  status: 'waiting' | 'playing';
+  /** 'closed': the host cancelled the table from the waiting room. */
+  status: 'waiting' | 'playing' | 'closed';
   /** House rules, chosen by the host in the waiting room. */
   mode: 'standard' | 'fightTillTheEnd';
   pokerHands: boolean;

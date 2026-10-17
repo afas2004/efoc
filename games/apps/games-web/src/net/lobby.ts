@@ -20,6 +20,12 @@ export interface LobbyActions {
   removeBot(i: number): void;
   setRule(patch: Partial<Pick<RoomMeta, 'mode' | 'pokerHands' | 'humour'>>): void;
   start(): void;
+  /** Host: take a player off the table. */
+  removePlayer(uid: string): void;
+  /** A player leaves the waiting room. */
+  leave(): void;
+  /** Host: cancel the table for everyone. */
+  closeTable(): void;
   /** Only inside the EFOC app: share a link to this table. */
   invite?(): void;
 }
@@ -78,6 +84,9 @@ export function renderLobby(root: HTMLElement, st: LobbyState, act: LobbyActions
       b.textContent = u.removeBot;
       b.addEventListener('click', () => act.removeBot(i - seats.filter((x) => !x.bot).length));
       li.appendChild(b);
+    } else if (isHost && s.uid && s.uid !== st.me) {
+      const uid = s.uid;
+      li.appendChild(twoTap(`remove:${uid}`, 'btn btn-ghost lobby-remove', u.removePlayer, () => act.removePlayer(uid)));
     }
     list.appendChild(li);
   });
@@ -163,4 +172,44 @@ export function renderLobby(root: HTMLElement, st: LobbyState, act: LobbyActions
   count.className = 'lobby-wait';
   count.textContent = fmt(u.onlineCount, { n: seats.length });
   sheet.appendChild(count);
+
+  // Leaving: a player just goes; the host leaving closes the table.
+  const out = document.createElement('div');
+  out.className = 'sheet-actions lobby-leave';
+  out.appendChild(isHost ? twoTap('close', 'btn btn-secondary btn-close-table', u.closeTable, () => act.closeTable()) : twoTap('leave', 'btn btn-secondary btn-leave-table', u.leaveTable, () => act.leave()));
+  sheet.appendChild(out);
+}
+
+/** Which two-tap button is waiting for its second tap, and until when. */
+let armed: { key: string; until: number } | null = null;
+
+/**
+ * A button that asks "Sure?" on the first tap and acts on a second tap
+ * within 4 s, so a stray tap can't remove someone or close the table. The
+ * lobby redraws often (presence), so the armed state lives outside it.
+ */
+function twoTap(key: string, cls: string, text: string, act: () => void): HTMLButtonElement {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = cls;
+  const isArmed = (): boolean => !!armed && armed.key === key && Date.now() < armed.until;
+  const show = (): void => {
+    b.textContent = isArmed() ? L().ui.sure : text;
+    b.classList.toggle('armed', isArmed());
+  };
+  show();
+  b.addEventListener('click', (e) => {
+    e.stopPropagation();
+    unlockAudio();
+    sound.click();
+    if (isArmed()) {
+      armed = null;
+      act();
+      return;
+    }
+    armed = { key, until: Date.now() + 4000 };
+    show();
+    window.setTimeout(show, 4050);
+  });
+  return b;
 }

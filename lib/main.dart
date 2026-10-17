@@ -7,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'app.dart';
 import 'firebase_options.dart';
+import 'games/active_table.dart';
 import 'games/table_link.dart';
 import 'state/app_state.dart';
 import 'theme/theme_controller.dart';
@@ -36,7 +37,13 @@ Future<void> main() async {
   }
   // A card-game table link (efoc.party/join?table=...).
   final initialTable = initialUri == null ? null : TableLink.fromUri(initialUri);
-  if (initialTable != null) appState.setPendingTable(initialTable);
+  if (initialTable != null) {
+    appState.setPendingTable(initialTable);
+  } else {
+    // Back to the table this phone was at, if the app or tab died mid-game.
+    final active = await ActiveTable.load();
+    if (active != null) appState.setPendingTable(active);
+  }
 
   // Warm-start deep links (Android). Web handles this via page reload.
   _listenForIncomingInviteLinks(appState);

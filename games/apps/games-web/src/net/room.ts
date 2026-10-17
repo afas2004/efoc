@@ -108,6 +108,11 @@ export class OnlineGame {
     this.showWaitingForRoom();
     this.store.watch(P.members(this.room), (v) => {
       this.members = (v as unknown as Record<string, Member>) ?? {};
+      // The host took me off the waiting list.
+      if (this.joinedAs === 'member' && this.meta?.status === 'waiting' && !this.members[this.me.uid] && !this.leaving) {
+        this.end(L().ui.removedFromTable);
+        return;
+      }
       this.refreshLobby();
     });
     this.store.watch(P.presence(this.room), (v) => {
@@ -136,7 +141,7 @@ export class OnlineGame {
    * table joins as soon as the table appears.
    */
   private async ensureJoined(meta: RoomMeta): Promise<void> {
-    if (this.joining || this.joinedAs) return;
+    if (this.joining || this.joinedAs || meta.status === 'closed') return;
     this.joining = true;
     try {
       if (meta.status === 'waiting') {
@@ -173,8 +178,13 @@ export class OnlineGame {
   }
 
   private onMeta(meta: RoomMeta | null): void {
+    if (this.ended) return;
     if (!meta) {
       this.showWaitingForRoom();
+      return;
+    }
+    if (meta.status === 'closed') {
+      if (!this.leaving) this.end(L().ui.tableClosed);
       return;
     }
     void this.ensureJoined(meta);
@@ -188,6 +198,36 @@ export class OnlineGame {
     if (!this.table) this.startTable(meta);
     if (meta.hostUid === this.me.uid && !this.host) void this.becomeHost(prevHost !== undefined && prevHost !== this.me.uid);
     if (this.table) this.table.isHost = meta.hostUid === this.me.uid;
+  }
+
+  private leaving = false;
+  private ended = false;
+
+  /** The table is over for this phone before it started: a note and a way back. */
+  private end(message: string): void {
+    if (this.ended) return;
+    this.ended = true;
+    this.stop();
+    this.root.className = 'efoc-root felt-bigtwo';
+    this.root.innerHTML = '<div class="overlay lobby"><div class="sheet setup-sheet"><h2></h2><p class="lobby-wait lobby-ended"></p><div class="sheet-actions"><button type="button" class="btn btn-primary"></button></div></div></div>';
+    this.root.querySelector('h2')!.textContent = `🃏 ${L().ui.setupTitle}`;
+    this.root.querySelector('.lobby-ended')!.textContent = message;
+    const back = this.root.querySelector('button')!;
+    back.textContent = L().ui.back;
+    back.addEventListener('click', () => this.opts.onExit());
+  }
+
+  /** I leave on purpose: my seat goes (or, as host, the whole table). */
+  private async leaveTable(close: boolean): Promise<void> {
+    this.leaving = true;
+    try {
+      if (close) await this.store.update({ [`${P.meta(this.room)}/status`]: 'closed' });
+      else await this.store.set(P.member(this.room, this.me.uid), null);
+    } catch {
+      /* leave anyway */
+    }
+    this.stop();
+    this.opts.onExit();
   }
 
   private online(uid: string | null): boolean {
@@ -210,6 +250,9 @@ export class OnlineGame {
       removeBot: (i) => void this.store.set(`${P.meta(this.room)}/bots`, m.bots.filter((_, k) => k !== i) as unknown as Json),
       setRule: (patch) => void this.store.update(Object.fromEntries(Object.entries(patch).map(([k, v]) => [`${P.meta(this.room)}/${k}`, v as Json]))),
       invite: inApp() ? () => send({ t: 'invite' }) : undefined,
+      removePlayer: (uid) => void this.store.set(P.member(this.room, uid), null),
+      leave: () => void this.leaveTable(false),
+      closeTable: () => void this.leaveTable(true),
       start: () => {
         const seats = lobbySeats(m, this.members);
         if (seats.length < 2) return;
