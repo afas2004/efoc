@@ -4,7 +4,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../models/day_dot_state.dart';
 import '../models/log_group.dart';
 import '../models/member.dart';
 import '../models/vlog.dart';
@@ -180,12 +179,12 @@ class AppState extends ChangeNotifier {
   Timer? _debounce;
 
   // ---------- vlogs ----------
-  /// Stitched vlogs keyed by `groupId|yyyy-mm-dd`, for the last [dayDotCount] days.
+  /// Stitched vlogs keyed by `groupId|yyyy-mm-dd`, for the last [recentDays] days.
   final Map<String, EfocVlog> _vlogs = {};
   final Set<String> _viewedVlogIds = {};
 
-  /// Today plus the six days before it.
-  static const int dayDotCount = 7;
+  /// Today plus the six days before it: the window for vlogs and unseen counts.
+  static const int recentDays = 7;
 
   static DateTime _dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);
   static String _vlogKey(String groupId, DateTime day) =>
@@ -207,40 +206,6 @@ class AppState extends ChangeNotifier {
     return v != null && !isVlogViewed(v);
   }
 
-  /// Day dots for [groupId], oldest first, today last.
-  List<DayDotData> dayDotsFor(String groupId) {
-    final today = _dateOnly(DateTime.now());
-    return [
-      for (int back = dayDotCount - 1; back >= 0; back--)
-        () {
-          final day = today.subtract(Duration(days: back));
-          if (back == 0) {
-            return DayDotData(
-              label: 'Today',
-              date: day,
-              kind: DayDotKind.today,
-              hasUnseenClips: _dayHasUnseen(groupId, day),
-            );
-          }
-          final vlog = vlogFor(groupId, day);
-          return DayDotData(
-            label: back == 1 ? 'Yesterday' : _weekday(day),
-            date: day,
-            vlog: vlog,
-            hasUnseenClips: _dayHasUnseen(groupId, day),
-            kind: vlog == null
-                ? DayDotKind.missed
-                : isVlogViewed(vlog)
-                    ? DayDotKind.stitchedViewed
-                    : DayDotKind.stitchedUnviewed,
-          );
-        }(),
-    ];
-  }
-
-  static String _weekday(DateTime d) =>
-      const ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][d.weekday - 1];
-
   /// Marks a vlog as watched everywhere (dots, ring, dropdown). Optimistic.
   Future<void> markVlogViewed(EfocVlog vlog) async {
     if (!_viewedVlogIds.add(vlog.id)) return;
@@ -258,7 +223,7 @@ class AppState extends ChangeNotifier {
     if (!hasGroups) return;
     try {
       final since = _dateOnly(DateTime.now())
-          .subtract(const Duration(days: dayDotCount - 1));
+          .subtract(const Duration(days: recentDays - 1));
       final vlogs = await VlogService.instance.fetchRecent(
         groupIds: groups.map((g) => g.id).toList(),
         since: since,
@@ -296,14 +261,10 @@ class AppState extends ChangeNotifier {
   final Set<String> _viewedClipIds = {};
 
   /// Unwatched clips from other members, keyed by `groupId|yyyy-mm-dd`,
-  /// for the last [dayDotCount] days across all groups.
+  /// for the last [recentDays] days across all groups.
   final Map<String, int> _unseenCounts = {};
 
   String? get _myId => _client.auth.currentUser?.id;
-
-  static String _dayKey(String groupId, DateTime d) =>
-      '$groupId|${d.year.toString().padLeft(4, '0')}-'
-      '${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
   /// Someone else's clip you haven't opened yet. Your own clips never are.
   bool isClipUnseen(Map<String, dynamic> clip) =>
@@ -321,8 +282,10 @@ class AppState extends ChangeNotifier {
           hasUnviewedYesterday(g.id) ||
           hasUnreadChat(g.id)));
 
-  bool _dayHasUnseen(String groupId, DateTime day) =>
-      (_unseenCounts[_dayKey(groupId, day)] ?? 0) > 0;
+  /// Someone else's clip at [hour] today, in the current group, that you
+  /// haven't opened yet. Lights that hour's dot.
+  bool hourHasUnseen(int hour) => _clipsByUserAndHour.values
+      .any((c) => c['hour_of_day'] == hour && isClipUnseen(c));
 
   /// Marks clips as watched everywhere (grid, dots, dropdown). Optimistic.
   void markClipsViewed(Iterable<Map<String, dynamic>> clips) {
@@ -350,7 +313,7 @@ class AppState extends ChangeNotifier {
     if (!hasGroups) return;
     try {
       final since = _dateOnly(DateTime.now())
-          .subtract(const Duration(days: dayDotCount - 1));
+          .subtract(const Duration(days: recentDays - 1));
       final counts =
           await ClipService.instance.fetchUnseenCounts(since: since);
       _unseenCounts

@@ -28,11 +28,11 @@
 
   <script src="fix-webm-duration.js"></script>
   <script>
-    function efocFixWebm(blobUrl, onDone) {
+    function efocFixWebm(blobUrl, durationMs, onDone) {
       fetch(blobUrl)
         .then(function(res) { return res.blob(); })
         .then(function(blob) {
-          ysFixWebmDuration(blob, 2000, function(fixedBlob) {
+          ysFixWebmDuration(blob, durationMs, function(fixedBlob) {
             var url = URL.createObjectURL(fixedBlob);
             onDone(url);
           }, { logger: false });

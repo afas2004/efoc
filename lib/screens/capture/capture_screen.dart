@@ -33,11 +33,14 @@ class _CaptureScreenState extends State<CaptureScreen>
   // Fixed portrait. No picker, no forced screen rotation.
   static const String _ratio = '9x16';
 
+  static const _clipLength = Duration(seconds: 3);
+  static const _readyLength = Duration(seconds: 1);
+
   // ---------- capture state ----------
   CapturePhase _phase = CapturePhase.setup;
 
   // text
-  String _text = 'Good morning!';
+  String _text = '';
   String _fontKey = 'classic';
   Color _textColor = Colors.white;
   Offset _textAlign = const Offset(0, -0.3);
@@ -45,8 +48,7 @@ class _CaptureScreenState extends State<CaptureScreen>
   // groups
   late Set<String> _selectedGroups;
 
-  // countdown
-  int _countValue = 3;
+  // "Ready?" ring
   late final AnimationController _ringController;
 
   // recording timer
@@ -73,8 +75,13 @@ class _CaptureScreenState extends State<CaptureScreen>
     super.initState();
     _ringController = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 3),
-    );
+      duration: _readyLength,
+    )..addStatusListener((status) {
+        if (status == AnimationStatus.completed &&
+            _phase == CapturePhase.counting) {
+          _beginRecording();
+        }
+      });
 
     final current = context.read<AppState>().currentGroup.id;
     _selectedGroups = {current};
@@ -155,24 +162,8 @@ class _CaptureScreenState extends State<CaptureScreen>
   // ============================================================
   void _startCapture() {
     if (!_cameraReady || _cameraController == null) return;
-    setState(() {
-      _phase = CapturePhase.counting;
-      _countValue = 3;
-    });
+    setState(() => _phase = CapturePhase.counting);
     _ringController.forward(from: 0);
-    _ringController.addListener(_onRingTick);
-  }
-
-  void _onRingTick() {
-    final remaining = 3 - (_ringController.value * 3);
-    final newCount = remaining.ceil().clamp(0, 3);
-    if (newCount != _countValue) {
-      setState(() => _countValue = newCount);
-    }
-    if (_ringController.isCompleted) {
-      _ringController.removeListener(_onRingTick);
-      _beginRecording();
-    }
   }
 
   Future<void> _beginRecording() async {
@@ -187,12 +178,15 @@ class _CaptureScreenState extends State<CaptureScreen>
       return;
     }
 
-    _recordTimer = Timer(const Duration(seconds: 2), () async {
+    _recordTimer = Timer(_clipLength, () async {
       try {
         final file = await _cameraController!.stopVideoRecording();
         await _cameraController!.pausePreview();
 
-        final fixedUrl = await VideoRemuxService.fixForLooping(file.path);
+        final fixedUrl = await VideoRemuxService.fixForLooping(
+          file.path,
+          _clipLength.inMilliseconds,
+        );
 
         if (!mounted) return;
 
@@ -213,6 +207,10 @@ class _CaptureScreenState extends State<CaptureScreen>
           _phase = CapturePhase.compose;
         });
       } catch (e) {
+        if (!mounted) return;
+        // Preview was paused for the compose step; bring it back so the
+        // error isn't sitting on a frozen frame.
+        await _cameraController?.resumePreview().catchError((_) {});
         if (!mounted) return;
         setState(() {
           _phase = CapturePhase.setup;
@@ -376,7 +374,6 @@ class _CaptureScreenState extends State<CaptureScreen>
   @override
   Widget build(BuildContext context) {
     final phase = _phase;
-    final isSetup = phase == CapturePhase.setup;
     final isCompose = phase == CapturePhase.compose;
     final isCounting = phase == CapturePhase.counting;
     final isRecording = phase == CapturePhase.recording;
@@ -409,7 +406,8 @@ class _CaptureScreenState extends State<CaptureScreen>
                           ),
                         ),
                       ),
-                      _CircleBtn(icon: Icons.more_horiz, onTap: () {}),
+                      // Keeps the hour title centred opposite the close button.
+                      const SizedBox(width: 38),
                     ],
                   ),
                 ),
@@ -418,7 +416,7 @@ class _CaptureScreenState extends State<CaptureScreen>
                   child: Text(
                     isCompose
                         ? 'Add text, pick groups, then send'
-                        : '2 seconds · one shot · no retakes',
+                        : '3 seconds · one shot · no retakes',
                     textAlign: TextAlign.center,
                     style: const TextStyle(
                       color: Color(0xFF666666),
@@ -443,10 +441,7 @@ class _CaptureScreenState extends State<CaptureScreen>
                             color: Colors.black.withValues(alpha: 0.35),
                           ),
                         if (isCounting)
-                          BigCountdown(
-                            value: _countValue,
-                            progress: _ringController.value,
-                          ),
+                          BigCountdown(progress: _ringController),
                         if (isRecording) const RecPip(),
                         if (isCompose)
                           DraggableTextOverlay(

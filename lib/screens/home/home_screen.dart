@@ -13,7 +13,6 @@ import '../chat/chat_screen.dart';
 import '../vlog/vlog_viewer_screen.dart';
 import 'widgets/clip_popup.dart';
 import 'widgets/create_join_sheet.dart';
-import 'widgets/day_dots.dart';
 import 'widgets/download_popover.dart';
 import 'widgets/group_dropdown.dart';
 import 'widgets/group_setting_sheet.dart';
@@ -471,7 +470,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   onOpenChat: _openChat,
                   chatHasUnread: currentGroupHasUnread,
                 ),
-                const DayDots(),
                 HourDots(controller: _hourController),
                 Expanded(
                   child: HourPager(

@@ -91,7 +91,7 @@ class _PrimaryButton extends StatelessWidget {
           'Send to $selectedCount Log${selectedCount != 1 ? "s" : ""}';
       onTap = selectedCount > 0 ? onSend : null;
     } else if (phase == CapturePhase.counting) {
-      label = 'Get ready…';
+      label = 'Ready?';
       onTap = null;
     } else {
       label = 'Recording…';

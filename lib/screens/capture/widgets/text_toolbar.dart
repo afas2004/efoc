@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../theme/colors.dart';
 
-class TextToolbar extends StatelessWidget {
+class TextToolbar extends StatefulWidget {
   final String text;
   final String fontKey;
   final Color color;
@@ -19,6 +19,21 @@ class TextToolbar extends StatelessWidget {
     required this.onFontChanged,
     required this.onColorChanged,
   });
+
+  @override
+  State<TextToolbar> createState() => _TextToolbarState();
+}
+
+class _TextToolbarState extends State<TextToolbar> {
+  // Kept across rebuilds: a new controller per build reset the cursor to
+  // the end on every keystroke.
+  late final _controller = TextEditingController(text: widget.text);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
   static const _fonts = [
     ('classic', 'Classic'),
@@ -52,9 +67,8 @@ class TextToolbar extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 16),
             alignment: Alignment.center,
             child: TextField(
-              controller: TextEditingController(text: text)
-                ..selection = TextSelection.collapsed(offset: text.length),
-              onChanged: onTextChanged,
+              controller: _controller,
+              onChanged: widget.onTextChanged,
               maxLength: 40,
               style: const TextStyle(
                 color: Colors.white,
@@ -80,12 +94,12 @@ class TextToolbar extends StatelessWidget {
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 12),
             itemCount: _fonts.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 8),
+            separatorBuilder: (_, _) => const SizedBox(width: 8),
             itemBuilder: (context, i) {
               final (key, label) = _fonts[i];
-              final isActive = key == fontKey;
+              final isActive = key == widget.fontKey;
               return GestureDetector(
-                onTap: () => onFontChanged(key),
+                onTap: () => widget.onFontChanged(key),
                 child: Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 12,
@@ -127,12 +141,12 @@ class TextToolbar extends StatelessWidget {
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 12),
             itemCount: _colors.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 8),
+            separatorBuilder: (_, _) => const SizedBox(width: 8),
             itemBuilder: (context, i) {
               final c = _colors[i];
-              final isActive = c.value == color.value;
+              final isActive = c.toARGB32() == widget.color.toARGB32();
               return GestureDetector(
-                onTap: () => onColorChanged(c),
+                onTap: () => widget.onColorChanged(c),
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 150),
                   width: isActive ? 28 : 24,
@@ -140,9 +154,14 @@ class TextToolbar extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: c,
                     shape: BoxShape.circle,
+                    // Black needs a rim or it vanishes on the black screen.
                     border: Border.all(
-                      color: isActive ? Colors.white : Colors.transparent,
-                      width: 2,
+                      color: isActive
+                          ? Colors.white
+                          : c.computeLuminance() < 0.1
+                              ? Colors.white38
+                              : Colors.transparent,
+                      width: isActive ? 2 : 1.5,
                     ),
                   ),
                 ),

@@ -4,30 +4,30 @@ import 'package:flutter/material.dart';
 
 import '../../../theme/colors.dart';
 
+/// "Ready?" inside a ring that runs out as [progress] goes 0 → 1.
 class BigCountdown extends StatelessWidget {
-  final int value;
-  final double progress; // 0..1
+  final Animation<double> progress;
 
-  const BigCountdown({
-    super.key,
-    required this.value,
-    required this.progress,
-  });
+  const BigCountdown({super.key, required this.progress});
 
   @override
   Widget build(BuildContext context) {
     return Center(
       child: SizedBox(
-        width: 140,
-        height: 140,
-        child: CustomPaint(
-          painter: _RingPainter(progress: progress),
-          child: Center(
+        width: 160,
+        height: 160,
+        child: AnimatedBuilder(
+          animation: progress,
+          builder: (context, child) => CustomPaint(
+            painter: _RingPainter(progress: progress.value),
+            child: child,
+          ),
+          child: const Center(
             child: Text(
-              '$value',
-              style: const TextStyle(
+              'Ready?',
+              style: TextStyle(
                 color: Colors.white,
-                fontSize: 64,
+                fontSize: 34,
                 fontWeight: FontWeight.w900,
                 height: 1,
                 shadows: [
@@ -64,7 +64,7 @@ class _RingPainter extends CustomPainter {
 
     canvas.drawCircle(center, radius, trackPaint);
 
-    // progress
+    // what's left of the second
     final progressPaint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 6
