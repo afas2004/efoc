@@ -63,6 +63,7 @@ class ClipService {
     double? textX,
     double? textY,
     int rotation = 0,
+    String? textBg,
   }) async {
     final userId = _client.auth.currentUser?.id;
     if (userId == null) throw Exception('Not signed in');
@@ -110,6 +111,7 @@ class ClipService {
         'text_x': textX,
         'text_y': textY,
         'rotation': rotation,
+        'text_bg': textBg,
       },
       onConflict: 'user_id,group_id,hour_of_day,recorded_on',
     );

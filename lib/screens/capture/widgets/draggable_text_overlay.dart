@@ -6,6 +6,7 @@ class DraggableTextOverlay extends StatefulWidget {
   final String text;
   final String fontKey;
   final Color color;
+  final String highlight;
   final Offset alignment; // -1..1 on each axis
   final ValueChanged<Offset> onAlignmentChanged;
 
@@ -14,6 +15,7 @@ class DraggableTextOverlay extends StatefulWidget {
     required this.text,
     required this.fontKey,
     required this.color,
+    required this.highlight,
     required this.alignment,
     required this.onAlignmentChanged,
   });
@@ -60,20 +62,13 @@ class _DraggableTextOverlayState extends State<DraggableTextOverlay> {
           onPanEnd: (_) => setState(() => _dragging = false),
           child: Align(
             alignment: Alignment(_local.dx, _local.dy),
-            child: Container(
-              margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              padding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 8,
-              ),
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.55),
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Text(
-                widget.text.isEmpty ? ' ' : widget.text,
-                textAlign: TextAlign.center,
-                style: captionStyle(widget.fontKey, widget.color),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+              child: CaptionBubble(
+                text: widget.text.isEmpty ? ' ' : widget.text,
+                fontKey: widget.fontKey,
+                color: widget.color,
+                highlight: widget.highlight,
               ),
             ),
           ),

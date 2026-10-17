@@ -53,6 +53,7 @@ dependencies:
   app_links: ^7.0.0
   firebase_messaging: ^16.7.0
   shared_preferences: ^2.5.5
+  google_fonts: ^8.2.1
 
 dev_dependencies:
   flutter_test:

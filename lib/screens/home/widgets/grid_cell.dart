@@ -260,6 +260,7 @@ class _FilledCell extends StatelessWidget {
               PositionedCaption(
                 text: overlayText,
                 fontKey: clip?['text_font'] as String?,
+                highlight: clip?['text_bg'] as String?,
                 color: overlayColor,
                 alignment: captionAlignmentOf(clip),
                 size: 12,

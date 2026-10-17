@@ -316,6 +316,7 @@ class _ClipPopupState extends State<ClipPopup> {
               PositionedCaption(
                 text: overlayText,
                 fontKey: _clip?['text_font'] as String?,
+                highlight: _clip?['text_bg'] as String?,
                 color: overlayColor,
                 alignment: captionAlignmentOf(_clip),
               ),

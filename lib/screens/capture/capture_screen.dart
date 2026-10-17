@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -47,6 +46,7 @@ class _CaptureScreenState extends State<CaptureScreen>
   // text
   String _text = '';
   String _fontKey = 'classic';
+  String _highlight = kDefaultHighlight;
   Color _textColor = Colors.white;
   Offset _textAlign = Offset(kDefaultCaptionAlignment.x, kDefaultCaptionAlignment.y);
 
@@ -265,6 +265,7 @@ class _CaptureScreenState extends State<CaptureScreen>
           textX: _textAlign.dx,
           textY: _textAlign.dy,
           rotation: _sidewaysRotation,
+          textBg: _highlight,
         );
         successCount++;
       } catch (e) {
@@ -355,13 +356,7 @@ class _CaptureScreenState extends State<CaptureScreen>
     // portrait because the app is locked to portrait.
     final ps = controller.value.previewSize ?? const Size(720, 480);
     final w = ps.shortestSide, h = ps.longestSide;
-    Widget preview = CameraPreview(controller);
-    if (controller.description.lensDirection == CameraLensDirection.front) {
-      // The selfie mirror flips left/right of the upright phone, which is
-      // up/down once it's sideways. Turning it 180° makes it a normal
-      // left/right mirror again.
-      preview = Transform.rotate(angle: math.pi, child: preview);
-    }
+    final preview = CameraPreview(controller);
     return ClipRect(
       child: FittedBox(
         fit: BoxFit.cover,
@@ -394,17 +389,16 @@ class _CaptureScreenState extends State<CaptureScreen>
     final isRecording = phase == CapturePhase.recording;
     final pad = _canvasInsets(context);
 
+    // After recording the phone goes back upright: a normal portrait page.
+    if (isCompose) return _buildCompose();
+
     return Scaffold(
       backgroundColor: Colors.black,
-      // The keyboard opens along the phone's real bottom edge, which is the
-      // canvas's right side; don't squash the rotated layout for it.
       resizeToAvoidBottomInset: false,
       body: RotatedBox(
         // Drawn for a phone turned counter-clockwise (top to the left).
         quarterTurns: 1,
-        child: isCompose
-            ? _buildCompose(pad)
-            : Stack(
+        child: Stack(
                 fit: StackFit.expand,
                 children: [
                   _buildLivePreview(),
@@ -490,125 +484,139 @@ class _CaptureScreenState extends State<CaptureScreen>
     );
   }
 
-  /// After recording: tools on the left (the keyboard covers the right
-  /// side of the canvas), the clip in its real 3:2 shape on the right.
-  Widget _buildCompose(EdgeInsets pad) {
+  /// After recording, phone upright again: the clip as a wide landscape
+  /// box at the top, the text and Log tools below it.
+  Widget _buildCompose() {
     final vc = _videoController;
     final ready = vc != null && vc.value.isInitialized;
 
-    return Stack(
-      children: [
-        Padding(
-          padding: pad,
-          child: Row(
-            children: [
-              SizedBox(
-                width: 300,
-                child: SingleChildScrollView(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: SafeArea(
+        child: Stack(
+          children: [
+            Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                  child: Row(
                     children: [
-                      Row(
-                        children: [
-                          _CircleBtn(
-                            icon: Icons.close,
-                            onTap: _uploading
-                                ? null
-                                : () => Navigator.of(context).pop(),
+                      _CircleBtn(
+                        icon: Icons.close,
+                        onTap: _uploading
+                            ? null
+                            : () => Navigator.of(context).pop(),
+                      ),
+                      Expanded(
+                        child: Text(
+                          _formatHour(widget.hour),
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
                           ),
-                          const SizedBox(width: 10),
-                          Text(
-                            _formatHour(widget.hour),
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 15,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ],
+                        ),
                       ),
-                      const SizedBox(height: 12),
-                      TextToolbar(
-                        text: _text,
-                        fontKey: _fontKey,
-                        color: _textColor,
-                        onTextChanged: (v) => setState(() => _text = v),
-                        onFontChanged: (v) => setState(() => _fontKey = v),
-                        onColorChanged: (v) => setState(() => _textColor = v),
-                      ),
-                      const SizedBox(height: 10),
-                      GroupChips(
-                        selected: _selectedGroups,
-                        onToggle: _toggleGroup,
-                      ),
-                      const SizedBox(height: 14),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        child: _uploading
-                            ? const _UploadingBar()
-                            : CaptureActions(
-                                phase: CapturePhase.compose,
-                                selectedCount: _selectedGroups.length,
-                                onFlip: _flipCamera,
-                                onStart: _startCapture,
-                                onSend: _sendClip,
-                              ),
-                      ),
+                      const SizedBox(width: 38),
                     ],
                   ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Center(
-                  child: AspectRatio(
-                    aspectRatio: ready ? uprightAspect(vc, _sidewaysRotation) : 3 / 2,
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(16),
-                      child: Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          if (ready)
-                            UprightVideoCover(
-                              controller: vc,
-                              rotation: _sidewaysRotation,
-                            )
-                          else
-                            const ColoredBox(
-                              color: Color(0xFF0A0A0A),
-                              child: Center(
-                                child: SizedBox(
-                                  width: 24,
-                                  height: 24,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.white24,
+                const Text(
+                  'Add text, drag it into place, pick Logs, then send',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Color(0xFF666666),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Expanded(
+                  child: Center(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: AspectRatio(
+                        aspectRatio: ready
+                            ? uprightAspect(vc, _sidewaysRotation)
+                            : 3 / 2,
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(16),
+                          child: Stack(
+                            fit: StackFit.expand,
+                            children: [
+                              if (ready)
+                                UprightVideoCover(
+                                  controller: vc,
+                                  rotation: _sidewaysRotation,
+                                )
+                              else
+                                const ColoredBox(
+                                  color: Color(0xFF0A0A0A),
+                                  child: Center(
+                                    child: SizedBox(
+                                      width: 24,
+                                      height: 24,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.white24,
+                                      ),
+                                    ),
                                   ),
                                 ),
+                              DraggableTextOverlay(
+                                text: _text,
+                                fontKey: _fontKey,
+                                color: _textColor,
+                                highlight: _highlight,
+                                alignment: _textAlign,
+                                onAlignmentChanged: (a) =>
+                                    setState(() => _textAlign = a),
                               ),
-                            ),
-                          DraggableTextOverlay(
-                            text: _text,
-                            fontKey: _fontKey,
-                            color: _textColor,
-                            alignment: _textAlign,
-                            onAlignmentChanged: (a) =>
-                                setState(() => _textAlign = a),
+                            ],
                           ),
-                        ],
+                        ),
                       ),
                     ),
                   ),
                 ),
+                const SizedBox(height: 10),
+                TextToolbar(
+                  text: _text,
+                  fontKey: _fontKey,
+                  color: _textColor,
+                  highlight: _highlight,
+                  onTextChanged: (v) => setState(() => _text = v),
+                  onFontChanged: (v) => setState(() => _fontKey = v),
+                  onColorChanged: (v) => setState(() => _textColor = v),
+                  onHighlightChanged: (v) => setState(() => _highlight = v),
+                ),
+                const SizedBox(height: 10),
+                GroupChips(
+                  selected: _selectedGroups,
+                  onToggle: _toggleGroup,
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 14, 12, 20),
+                  child: _uploading
+                      ? const _UploadingBar()
+                      : CaptureActions(
+                          phase: CapturePhase.compose,
+                          selectedCount: _selectedGroups.length,
+                          onFlip: _flipCamera,
+                          onStart: _startCapture,
+                          onSend: _sendClip,
+                        ),
+                ),
+              ],
+            ),
+            if (_uploading)
+              Positioned.fill(
+                child: Container(color: Colors.black.withValues(alpha: 0.35)),
               ),
-            ],
-          ),
+          ],
         ),
-        if (_uploading)
-          Positioned.fill(
-            child: Container(color: Colors.black.withValues(alpha: 0.35)),
-          ),
-      ],
+      ),
     );
   }
 }

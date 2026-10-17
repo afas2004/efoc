@@ -1,23 +1,28 @@
 import 'package:flutter/material.dart';
 
 import '../../../theme/colors.dart';
+import '../../../widgets/caption.dart';
 
 class TextToolbar extends StatefulWidget {
   final String text;
   final String fontKey;
   final Color color;
+  final String highlight;
   final ValueChanged<String> onTextChanged;
   final ValueChanged<String> onFontChanged;
   final ValueChanged<Color> onColorChanged;
+  final ValueChanged<String> onHighlightChanged;
 
   const TextToolbar({
     super.key,
     required this.text,
     required this.fontKey,
     required this.color,
+    required this.highlight,
     required this.onTextChanged,
     required this.onFontChanged,
     required this.onColorChanged,
+    required this.onHighlightChanged,
   });
 
   @override
@@ -35,21 +40,45 @@ class _TextToolbarState extends State<TextToolbar> {
     super.dispose();
   }
 
-  static const _fonts = [
-    ('classic', 'Classic'),
-    ('bold', 'Bold'),
-    ('elegant', 'Elegant'),
-    ('mono', 'Mono'),
-  ];
+  Widget _chip({
+    required bool active,
+    required VoidCallback onTap,
+    required Widget child,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        height: 34,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: active
+              ? EfocColors.accent.withValues(alpha: 0.12)
+              : EfocColors.surface,
+          borderRadius: BorderRadius.circular(17),
+          border: Border.all(
+            color: active ? EfocColors.accent : Colors.transparent,
+            width: 1.5,
+          ),
+        ),
+        child: child,
+      ),
+    );
+  }
 
-  static const _colors = [
-    Colors.white,
-    Colors.black,
-    Color(0xFFA855F7),
-    Color(0xFFC77DFF),
-    Color(0xFFFFD93D),
-    Color(0xFF4ECDC4),
-  ];
+  Widget _row({required double height, required List<Widget> children}) {
+    return SizedBox(
+      height: height,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        itemCount: children.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 8),
+        itemBuilder: (_, i) => Center(child: children[i]),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -70,10 +99,7 @@ class _TextToolbarState extends State<TextToolbar> {
               controller: _controller,
               onChanged: widget.onTextChanged,
               maxLength: 40,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 14,
-              ),
+              style: const TextStyle(color: Colors.white, fontSize: 14),
               cursorColor: EfocColors.accent,
               decoration: const InputDecoration(
                 isDense: true,
@@ -87,88 +113,85 @@ class _TextToolbarState extends State<TextToolbar> {
         ),
         const SizedBox(height: 8),
 
-        // fonts
-        SizedBox(
-          height: 34,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            itemCount: _fonts.length,
-            separatorBuilder: (_, _) => const SizedBox(width: 8),
-            itemBuilder: (context, i) {
-              final (key, label) = _fonts[i];
-              final isActive = key == widget.fontKey;
-              return GestureDetector(
-                onTap: () => widget.onFontChanged(key),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 6,
+        // fonts: each label in its own font
+        _row(height: 36, children: [
+          for (final (key, label) in captionFonts)
+            _chip(
+              active: key == widget.fontKey,
+              onTap: () => widget.onFontChanged(key),
+              child: Text(
+                label,
+                style: captionStyle(
+                  key,
+                  key == widget.fontKey
+                      ? EfocColors.accentBright
+                      : Colors.white70,
+                  size: 13,
+                  highlight: 'dark',
+                ),
+              ),
+            ),
+        ]),
+        const SizedBox(height: 8),
+
+        // highlight: a tiny preview of each style
+        _row(height: 36, children: [
+          for (final (key, label) in captionHighlights)
+            _chip(
+              active: key == widget.highlight,
+              onTap: () => widget.onHighlightChanged(key),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CaptionBubble(
+                    text: 'Aa',
+                    fontKey: widget.fontKey,
+                    color: widget.color,
+                    highlight: key,
+                    size: 10,
                   ),
-                  decoration: BoxDecoration(
-                    color: isActive
-                        ? EfocColors.accent.withValues(alpha: 0.12)
-                        : EfocColors.surface,
-                    borderRadius: BorderRadius.circular(17),
-                    border: Border.all(
-                      color: isActive
-                          ? EfocColors.accent
-                          : Colors.transparent,
-                      width: 1.5,
-                    ),
-                  ),
-                  child: Text(
+                  const SizedBox(width: 6),
+                  Text(
                     label,
                     style: TextStyle(
-                      color: isActive
+                      color: key == widget.highlight
                           ? EfocColors.accentBright
                           : Colors.white60,
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
-                ),
-              );
-            },
-          ),
-        ),
+                ],
+              ),
+            ),
+        ]),
         const SizedBox(height: 8),
 
-        // colors
-        SizedBox(
-          height: 28,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            itemCount: _colors.length,
-            separatorBuilder: (_, _) => const SizedBox(width: 8),
-            itemBuilder: (context, i) {
-              final c = _colors[i];
-              final isActive = c.toARGB32() == widget.color.toARGB32();
-              return GestureDetector(
-                onTap: () => widget.onColorChanged(c),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 150),
-                  width: isActive ? 28 : 24,
-                  height: isActive ? 28 : 24,
-                  decoration: BoxDecoration(
-                    color: c,
-                    shape: BoxShape.circle,
-                    // Black needs a rim or it vanishes on the black screen.
-                    border: Border.all(
-                      color: isActive
-                          ? Colors.white
-                          : c.computeLuminance() < 0.1
-                              ? Colors.white38
-                              : Colors.transparent,
-                      width: isActive ? 2 : 1.5,
-                    ),
+        // colours
+        _row(height: 30, children: [
+          for (final c in captionColors)
+            GestureDetector(
+              onTap: () => widget.onColorChanged(c),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                width: c.toARGB32() == widget.color.toARGB32() ? 28 : 24,
+                height: c.toARGB32() == widget.color.toARGB32() ? 28 : 24,
+                decoration: BoxDecoration(
+                  color: c,
+                  shape: BoxShape.circle,
+                  // Dark swatches need a rim or they vanish on black.
+                  border: Border.all(
+                    color: c.toARGB32() == widget.color.toARGB32()
+                        ? Colors.white
+                        : c.computeLuminance() < 0.1
+                            ? Colors.white38
+                            : Colors.transparent,
+                    width: c.toARGB32() == widget.color.toARGB32() ? 2 : 1.5,
                   ),
                 ),
-              );
-            },
-          ),
-        ),
+              ),
+            ),
+        ]),
       ],
     );
   }
