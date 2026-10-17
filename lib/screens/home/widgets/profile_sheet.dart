@@ -12,6 +12,7 @@ import '../../../services/auth_service.dart';
 import '../../../services/profile_service.dart';
 import '../../../services/reminder_service.dart';
 import '../../../theme/colors.dart';
+import '../../../theme/theme_controller.dart';
 import '../../../version.dart';
 import '../../../widgets/update_check_dialog.dart';
 import 'profile/account_sheet.dart';
@@ -33,8 +34,7 @@ class _ProfileSheetState extends State<ProfileSheet> {
   bool _reminders = false;
   bool _remindersBusy = false;
 
-  // Still local only, not saved anywhere yet.
-  String _theme = 'Purple';
+  String _theme = ThemeController.instance.name;
   bool _autoStitch = true;
 
   String _displayName = 'You';
@@ -147,7 +147,8 @@ class _ProfileSheetState extends State<ProfileSheet> {
       builder: (_) => ThemeSheet(current: _theme),
     );
     if (result != null && mounted) {
-      setState(() => _theme = result);
+      await ThemeController.instance.set(result);
+      if (mounted) setState(() => _theme = result);
     }
   }
 
@@ -264,7 +265,7 @@ class _ProfileSheetState extends State<ProfileSheet> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text(
+            child: Text(
               'OK',
               style: TextStyle(color: EfocColors.accentBright),
             ),
@@ -580,7 +581,7 @@ class _IdentityRow extends StatelessWidget {
         // Name + handle
         Expanded(
           child: loading
-              ? const SizedBox(
+              ? SizedBox(
                   height: 40,
                   child: Center(
                     child: SizedBox(
@@ -634,7 +635,7 @@ class _IdentityRow extends StatelessWidget {
                 width: 1.5,
               ),
             ),
-            child: const Icon(
+            child: Icon(
               Icons.qr_code_rounded,
               size: 20,
               color: EfocColors.accentBright,

@@ -8,6 +8,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'app.dart';
 import 'firebase_options.dart';
 import 'state/app_state.dart';
+import 'theme/theme_controller.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -20,6 +21,9 @@ Future<void> main() async {
     url: 'https://rctvstoosbrgmjmedjwh.supabase.co',
     publishableKey: 'sb_publishable_c2Qee8sVEyIcc3abpx-_WQ_0ssBJQ_4',
   );
+
+  // Saved accent colour, before the first frame.
+  await ThemeController.instance.load();
 
   final appState = AppState();
 

@@ -1,12 +1,36 @@
 import 'package:flutter/material.dart';
 
+/// One accent colour family, picked in Profile → Theme.
+class EfocAccent {
+  final String name;
+  final Color accent;
+  final Color bright;
+  final Color dark;
+
+  const EfocAccent(this.name, this.accent, this.bright, this.dark);
+}
+
 class EfocColors {
   EfocColors._();
 
-  // Brand
-  static const Color accent       = Color(0xFFA855F7);
-  static const Color accentBright = Color(0xFFC77DFF);
-  static const Color accentDark   = Color(0xFF6D28D9);
+  static const List<EfocAccent> accents = [
+    EfocAccent('Purple', Color(0xFFA855F7), Color(0xFFC77DFF), Color(0xFF6D28D9)),
+    EfocAccent('Blue', Color(0xFF3B82F6), Color(0xFF60A5FA), Color(0xFF1D4ED8)),
+    EfocAccent('Pink', Color(0xFFEC4899), Color(0xFFF472B6), Color(0xFFBE185D)),
+    EfocAccent('Green', Color(0xFF10B981), Color(0xFF34D399), Color(0xFF047857)),
+    EfocAccent('Orange', Color(0xFFF97316), Color(0xFFFB923C), Color(0xFFC2410C)),
+  ];
+
+  static EfocAccent _current = accents.first;
+  static EfocAccent get current => _current;
+
+  /// Only ThemeController calls this; it also repaints the app.
+  static void use(EfocAccent a) => _current = a;
+
+  // Brand (switchable, so not const)
+  static Color get accent => _current.accent;
+  static Color get accentBright => _current.bright;
+  static Color get accentDark => _current.dark;
 
   // Backgrounds
   static const Color bg           = Color(0xFF0A0A0A);

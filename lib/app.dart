@@ -18,7 +18,7 @@ class EfocApp extends StatelessWidget {
         useMaterial3: true,
         brightness: Brightness.dark,
         scaffoldBackgroundColor: EfocColors.bg,
-        colorScheme: const ColorScheme.dark(
+        colorScheme: ColorScheme.dark(
           primary: EfocColors.accent,
           secondary: EfocColors.accentBright,
           surface: EfocColors.surface,

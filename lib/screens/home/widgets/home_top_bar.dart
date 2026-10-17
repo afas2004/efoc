@@ -95,7 +95,7 @@ class _MyAvatar extends StatelessWidget {
       }
     }
 
-    final hasAvatar = avatarUrl != null && avatarUrl!.isNotEmpty;
+    final hasAvatar = avatarUrl != null && avatarUrl.isNotEmpty;
 
     return Container(
       width: 38,
@@ -108,7 +108,7 @@ class _MyAvatar extends StatelessWidget {
       alignment: Alignment.center,
       child: hasAvatar
           ? Image.network(
-              avatarUrl!,
+              avatarUrl,
               fit: BoxFit.cover,
               width: 38,
               height: 38,

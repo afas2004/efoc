@@ -1,0 +1,28 @@
+name: Keep scheduled jobs alive
+
+# GitHub pauses scheduled workflows in a repo with no activity for 60
+# days, which would silently stop the nightly stitch and the hourly
+# reminders. Re-enabling them through the API resets that timer, no
+# commits needed. Runs monthly (and re-enables itself too).
+on:
+  schedule:
+    - cron: "0 3 1 * *"
+  workflow_dispatch:
+
+permissions:
+  actions: write
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Re-enable scheduled workflows
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          for wf in stitch.yml remind.yml keepalive.yml; do
+            gh api -X PUT "repos/$REPO/actions/workflows/$wf/enable" \
+              && echo "Re-enabled $wf"
+          done

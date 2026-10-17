@@ -166,7 +166,7 @@ class _PersonalNotice extends StatelessWidget {
               color: EfocColors.accent.withValues(alpha: 0.12),
               shape: BoxShape.circle,
             ),
-            child: const Icon(
+            child: Icon(
               Icons.lock_outline_rounded,
               size: 24,
               color: EfocColors.accentBright,

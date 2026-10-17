@@ -112,7 +112,7 @@ class _ChatComposerState extends State<ChatComposer> {
                         children: [
                           Text(
                             'Replying to ${widget.replySenderName}',
-                            style: const TextStyle(
+                            style: TextStyle(
                               color: EfocColors.accentBright,
                               fontSize: 11,
                               fontWeight: FontWeight.w700,
@@ -260,7 +260,7 @@ class _ChatComposerState extends State<ChatComposer> {
                               ? 1.20
                               : 1.0),
                     ),
-                    categoryViewConfig: const CategoryViewConfig(
+                    categoryViewConfig: CategoryViewConfig(
                       backgroundColor: EfocColors.sheetBg,
                       iconColor: Colors.white54,
                       iconColorSelected: EfocColors.accentBright,

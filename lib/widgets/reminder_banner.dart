@@ -79,7 +79,7 @@ class _ReminderBannerState extends State<ReminderBanner>
                     shape: BoxShape.circle,
                   ),
                   alignment: Alignment.center,
-                  child: const Icon(
+                  child: Icon(
                     Icons.videocam_rounded,
                     size: 17,
                     color: EfocColors.accentBright,

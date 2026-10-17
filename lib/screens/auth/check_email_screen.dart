@@ -124,7 +124,7 @@ class _CheckEmailScreenState extends State<CheckEmailScreen> {
                   color: EfocColors.accent.withValues(alpha: 0.15),
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.mail_outline_rounded,
                   size: 40,
                   color: EfocColors.accentBright,
@@ -192,7 +192,7 @@ class _CheckEmailScreenState extends State<CheckEmailScreen> {
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(14),
-                    borderSide: const BorderSide(
+                    borderSide: BorderSide(
                       color: EfocColors.accent,
                       width: 1.5,
                     ),

@@ -68,7 +68,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 Center(
                   child: Column(
                     children: [
-                      const Icon(
+                      Icon(
                         Icons.auto_awesome,
                         size: 64,
                         color: EfocColors.accent,
@@ -131,7 +131,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(14),
-                      borderSide: const BorderSide(
+                      borderSide: BorderSide(
                         color: EfocColors.accent,
                         width: 1.5,
                       ),

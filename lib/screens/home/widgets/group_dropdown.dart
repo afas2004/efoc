@@ -89,14 +89,14 @@ class GroupDropdown extends StatelessWidget {
                                   .withValues(alpha: 0.15),
                               shape: BoxShape.circle,
                             ),
-                            child: const Icon(
+                            child: Icon(
                               Icons.add,
                               size: 16,
                               color: EfocColors.accentBright,
                             ),
                           ),
                           const SizedBox(width: 10),
-                          const Text(
+                          Text(
                             'Create or join a Log',
                             style: TextStyle(
                               color: EfocColors.accentBright,
@@ -202,7 +202,7 @@ class _GroupRow extends StatelessWidget {
                         if (hints.isNotEmpty)
                           TextSpan(
                             text: ' · ${hints.join(' · ')}',
-                            style: const TextStyle(
+                            style: TextStyle(
                               color: EfocColors.accentBright,
                               fontWeight: FontWeight.w700,
                             ),
@@ -228,7 +228,7 @@ class _GroupRow extends StatelessWidget {
                 ),
               ),
             if (isActive)
-              const Icon(
+              Icon(
                 Icons.check_rounded,
                 size: 14,
                 color: EfocColors.accentBright,

@@ -95,7 +95,7 @@ class ChatService {
           : null;
 
       final String? replyPreviewText =
-          hasReply ? (reply?['text'] as String?) : null;
+          hasReply ? (reply['text'] as String?) : null;
 
       return EfocMessage(
         id: row['id'] as String,

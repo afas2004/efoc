@@ -313,7 +313,7 @@ class _VlogViewerScreenState extends State<VlogViewerScreen> {
                           style: const TextStyle(color: Colors.white54),
                         )
                       : !ready
-                          ? const SizedBox(
+                          ? SizedBox(
                               width: 22,
                               height: 22,
                               child: CircularProgressIndicator(

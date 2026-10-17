@@ -408,7 +408,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     if (needsInitialLoad) {
       return _withUpdateBanner(
-        const Scaffold(
+        Scaffold(
           backgroundColor: EfocColors.bg,
           body: Center(
             child: SizedBox(
@@ -460,7 +460,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         color: EfocColors.accent.withValues(alpha: 0.12),
                         shape: BoxShape.circle,
                       ),
-                      child: const Icon(
+                      child: Icon(
                         Icons.group_add_outlined,
                         color: EfocColors.accentBright,
                         size: 28,

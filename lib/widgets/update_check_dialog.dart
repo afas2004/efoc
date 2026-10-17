@@ -53,7 +53,7 @@ class _UpdateCheckDialogState extends State<_UpdateCheckDialog> {
     VoidCallback? onPrimary;
 
     if (result == null) {
-      icon = const SizedBox(
+      icon = SizedBox(
         width: 26,
         height: 26,
         child: CircularProgressIndicator(
@@ -74,7 +74,7 @@ class _UpdateCheckDialogState extends State<_UpdateCheckDialog> {
           title = "You're up to date";
           message = 'v$kAppVersion ($kAppBuild) is the latest version.';
         case UpdateStatus.updateAvailable:
-          icon = const Icon(
+          icon = Icon(
             Icons.system_update_alt_rounded,
             color: EfocColors.accentBright,
             size: 30,

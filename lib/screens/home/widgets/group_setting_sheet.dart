@@ -117,7 +117,7 @@ class _GroupSettingsSheetState extends State<GroupSettingsSheet> {
           ),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
-            child: const Text(
+            child: Text(
               'Rename',
               style: TextStyle(color: EfocColors.accentBright),
             ),
@@ -222,7 +222,7 @@ class _GroupSettingsSheetState extends State<GroupSettingsSheet> {
                 ),
               ),
               ListTile(
-                leading: const Icon(
+                leading: Icon(
                   Icons.workspace_premium_outlined,
                   color: EfocColors.accentBright,
                 ),
@@ -554,7 +554,7 @@ class _GroupSettingsSheetState extends State<GroupSettingsSheet> {
                             color: EfocColors.accent.withValues(alpha: 0.15),
                             borderRadius: BorderRadius.circular(8),
                           ),
-                          child: const Text(
+                          child: Text(
                             'OWNER',
                             style: TextStyle(
                               color: EfocColors.accentBright,

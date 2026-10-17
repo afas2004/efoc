@@ -96,7 +96,7 @@ class _UpdateBannerState extends State<UpdateBanner>
                       shape: BoxShape.circle,
                     ),
                     alignment: Alignment.center,
-                    child: const Icon(
+                    child: Icon(
                       Icons.system_update_alt_rounded,
                       size: 17,
                       color: EfocColors.accentBright,

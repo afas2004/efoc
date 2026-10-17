@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../theme/colors.dart';
 
+/// Accent colour picker. Pops with the chosen accent's name.
 class ThemeSheet extends StatelessWidget {
   final String current;
   const ThemeSheet({super.key, required this.current});
@@ -34,18 +35,72 @@ class ThemeSheet extends StatelessWidget {
               fontWeight: FontWeight.w800,
             ),
           ),
-          const SizedBox(height: 20),
-          for (final theme in ['Purple', 'Dark', 'Auto'])
-            ListTile(
-              title: Text(
-                theme,
-                style: const TextStyle(color: Colors.white),
-              ),
-              trailing: theme == current
-                  ? const Icon(Icons.check, color: EfocColors.accent)
-                  : null,
-              onTap: () => Navigator.of(context).pop(theme),
-            ),
+          const SizedBox(height: 6),
+          const Text(
+            'Accent colour for buttons, dots and highlights. Saved on this device.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: EfocColors.textMuted, fontSize: 12),
+          ),
+          const SizedBox(height: 18),
+          Wrap(
+            spacing: 18,
+            runSpacing: 14,
+            alignment: WrapAlignment.center,
+            children: [
+              for (final a in EfocColors.accents)
+                GestureDetector(
+                  onTap: () => Navigator.of(context).pop(a.name),
+                  behavior: HitTestBehavior.opaque,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 150),
+                        width: 48,
+                        height: 48,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [a.bright, a.dark],
+                          ),
+                          border: Border.all(
+                            color: a.name == current
+                                ? Colors.white
+                                : Colors.transparent,
+                            width: 3,
+                          ),
+                          boxShadow: a.name == current
+                              ? [
+                                  BoxShadow(
+                                    color: a.accent.withValues(alpha: 0.6),
+                                    blurRadius: 14,
+                                  ),
+                                ]
+                              : null,
+                        ),
+                        child: a.name == current
+                            ? const Icon(Icons.check_rounded,
+                                color: Colors.white, size: 22)
+                            : null,
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        a.name,
+                        style: TextStyle(
+                          color: a.name == current
+                              ? Colors.white
+                              : EfocColors.textMuted,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
         ],
       ),
     );

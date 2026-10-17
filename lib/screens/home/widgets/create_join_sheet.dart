@@ -483,7 +483,7 @@ class _PreviewCard extends StatelessWidget {
           ],
           if (isMember) ...[
             const SizedBox(height: 10),
-            const Text(
+            Text(
               "You're already in this group",
               style: TextStyle(
                 color: EfocColors.accentBright,

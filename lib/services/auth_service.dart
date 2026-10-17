@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'reminder_service.dart';
@@ -40,15 +39,5 @@ class AuthService {
     // While still signed in, so RLS lets us delete our own token row.
     await ReminderService.instance.forgetThisDevice();
     await _client.auth.signOut();
-  }
-
-  // Kept for compatibility — no longer used but might be referenced elsewhere.
-  // Can delete once you've confirmed nothing else calls it.
-  String _redirectUrl() {
-    if (kIsWeb) {
-      final origin = Uri.base.origin;
-      return origin.isEmpty ? 'http://localhost:3000' : origin;
-    }
-    return 'io.supabase.efoc://login-callback';
   }
 }
