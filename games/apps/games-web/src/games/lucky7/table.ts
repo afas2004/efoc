@@ -85,7 +85,6 @@ interface Geo {
 }
 
 const SLOTS = lucky7.SLOTS;
-const PEEK_RESULT_MS = 3500;
 const FLY_MS = 460;
 const RATIO = 1.4;
 const key = (seat: SeatId, slot: number): string => `${seat}:${slot}`;
@@ -182,8 +181,6 @@ export class LuckySevenTable {
   private qMine: number | null = null;
   /** A move sent and not yet confirmed by the host: no double taps. */
   private sent = false;
-  /** My own cards, face up, during a J (null where locked). */
-  private ownPeek: { cards: (Card | null)[]; until: number } | null = null;
   /** A card I peeked at, shown face up in its slot for a moment. */
   private peekShown: { target: Target; card: Card; until: number } | null = null;
   private turnTotal = 20000;
@@ -306,11 +303,10 @@ export class LuckySevenTable {
       this.resultsOpen = false;
       this.revealedSeats.clear();
       this.overlay.className = 'overlay hidden';
-      this.ownPeek = null;
       this.peekShown = null;
     }
     if (view.turn !== this.me || view.phase !== 'play') this.resetMode();
-    else if (view.step === 'peek' && this.mode !== 'peek') this.mode = this.ownPeek ? 'none' : 'peek';
+    else if (view.step === 'peek') this.mode = 'peek';
     else if (view.step !== 'act' && this.mode !== 'peek') this.resetMode();
     const mine = events.filter((e) => e.to === undefined || e.to === this.me);
     // Set up what must wait for its flight before drawing the new state.
@@ -723,7 +719,6 @@ export class LuckySevenTable {
   private renderCards(v: View): void {
     const g = this.geo;
     const now = Date.now();
-    const own = this.ownPeek && now < this.ownPeek.until ? this.ownPeek : null;
     place(this.mineEl, g.mine);
     for (let seat = 0; seat < v.players; seat++) {
       for (let i = 0; i < SLOTS; i++) {
@@ -745,7 +740,10 @@ export class LuckySevenTable {
         const locked = v.locked[seat]![i]! && !this.hideLocks.has(k);
         const peeked = this.peekShown && this.peekShown.target.seat === seat && this.peekShown.target.slot === i && now < this.peekShown.until ? this.peekShown.card : null;
         const revealed = this.revealedSeats.has(seat) ? v.revealed?.[seat]?.[i] ?? null : null;
-        const face = revealed ?? (seat === this.me ? own?.cards[i] ?? null : peeked);
+        const face = revealed ?? peeked;
+        // The peeked card counts down, only on my screen.
+        if (peeked) c.dataset.peekLeft = `👀 ${Math.max(1, Math.ceil((this.peekShown!.until - now) / 1000))}s`;
+        else delete c.dataset.peekLeft;
         const want = `${face ?? 'back'}|${locked}`;
         if (c.dataset.paint !== want) {
           c.dataset.paint = want;
@@ -769,10 +767,6 @@ export class LuckySevenTable {
         c.setAttribute('aria-label', `${seat === this.me ? L().l7.yourCards : this.seatMeta[seat]?.name ?? ''} ${i + 1}${locked ? ', ' + L().l7.locked : ''}${face ? ', ' + cardLabel(face) : ''}`);
       }
     }
-    if (own) {
-      const left = Math.ceil((own.until - now) / 1000);
-      this.mineEl.dataset.peek = `${L().l7.ownPeek} · ${left}s`;
-    } else delete this.mineEl.dataset.peek;
   }
 
   private renderCentre(v: View): void {
@@ -837,7 +831,6 @@ export class LuckySevenTable {
     chip.classList.remove('hidden');
     let text: string;
     if (v.turn !== this.me) text = fmt(u.waitingFor, { name: this.nameOf(v.turn) });
-    else if (this.ownPeek && Date.now() < this.ownPeek.until) text = u.remember;
     else if (v.step === 'draw') text = u.drawPrompt;
     else if (v.step === 'peek') text = u.pickPeek;
     else
@@ -865,13 +858,8 @@ export class LuckySevenTable {
     }
     if (!this.myTurn || v.phase !== 'play') return;
     if (v.step === 'peek') {
-      if (this.ownPeek && Date.now() < this.ownPeek.until) {
-        button(bar, 'btn btn-primary', L().ui.gotIt, L().ui.gotIt).addEventListener('click', () => {
-          this.ownPeek = null;
-          this.mode = 'peek';
-          this.render();
-        });
-      } else if (!this.anyOpponentOpen(v)) {
+      // Every card on the table locked: nothing to look at.
+      if (!v.locked.some((row) => row.some((l) => !l))) {
         button(bar, 'btn btn-primary', u.skip, u.skip).addEventListener('click', () => this.send({ type: 'peek', target: null }));
       }
       return;
@@ -918,7 +906,7 @@ export class LuckySevenTable {
     if (!v || !this.myTurn) return false;
     const locked = v.locked[t.seat]![t.slot]!;
     const mine = t.seat === this.me;
-    if (v.step === 'peek') return this.mode === 'peek' && !mine && !locked;
+    if (v.step === 'peek') return this.mode === 'peek' && !locked; // any one card, mine or theirs
     if (v.step !== 'act') return false;
     switch (this.mode) {
       case 'none':
@@ -1111,27 +1099,15 @@ export class LuckySevenTable {
         haptic(target === this.me ? 'strong' : 'light');
         break;
       }
-      case 'peek_own': {
-        const ms = ((e.seconds as number) ?? v.config.peekSeconds) * 1000;
-        this.ownPeek = { cards: e.cards as (Card | null)[], until: Date.now() + ms };
-        this.mode = 'none';
-        haptic('medium');
-        window.setTimeout(() => {
-          if (!this.ownPeek) return;
-          this.ownPeek = null;
-          if (this.view?.step === 'peek' && this.view.turn === this.me) this.mode = 'peek';
-          this.render();
-        }, ms);
-        break;
-      }
       case 'peek_card': {
         const t = e.target as Target;
-        this.peekShown = { target: t, card: e.card as Card, until: Date.now() + PEEK_RESULT_MS };
+        const ms = ((e.seconds as number) || v.config.peekSeconds) * 1000;
+        this.peekShown = { target: t, card: e.card as Card, until: Date.now() + ms };
         this.feel.play(2, 'peek', (ctx) => {
           banner(this.fx, `👀 ${L().l7.peekResult}`, 'info', 'pop', ctx, this.seatCentre(t.seat));
           haptic('medium');
         });
-        window.setTimeout(() => this.render(), PEEK_RESULT_MS + 50);
+        window.setTimeout(() => this.render(), ms + 50);
         break;
       }
       case 'final_lap':
@@ -1268,10 +1244,10 @@ export class LuckySevenTable {
   private tick = (): void => {
     requestAnimationFrame(this.tick);
     const v = this.view;
-    if (this.ownPeek && v) {
-      const left = Math.ceil((this.ownPeek.until - Date.now()) / 1000);
-      if (this.mineEl.dataset.peekLeft !== String(left)) {
-        this.mineEl.dataset.peekLeft = String(left);
+    if (this.peekShown && v) {
+      const left = String(Math.ceil((this.peekShown.until - Date.now()) / 1000));
+      if (this.mineEl.dataset.peekLeft !== left) {
+        this.mineEl.dataset.peekLeft = left;
         this.renderCards(v);
       }
     }

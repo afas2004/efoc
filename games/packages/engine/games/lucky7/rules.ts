@@ -7,8 +7,8 @@
 // The round ends when a turn finishes with the centre deck empty; lowest
 // total wins.
 //
-// Powers: J peek (see your own cards for peekSeconds, then one opponent
-// card), Q swap one of yours with one of theirs, K lock a card (no peek,
+// Powers: J peek at ONE card, one of yours or someone else's (playtest
+// 18 Oct), Q swap one of yours with one of theirs, K lock a card (no peek,
 // swap or shuffle; the K sits on it), 9 unlock (the K goes to Used) or skip,
 // 10 shuffle one seat's unlocked slots. Used powers go to Used for good.
 //
@@ -56,7 +56,7 @@ export type LuckyMove =
    * 10: `seat`.
    */
   | { type: 'use'; mine?: number; target?: Target | null; seat?: SeatId }
-  /** After a J: one opponent's unlocked card, or null when there is none. */
+  /** After a J: one unlocked card, yours or another player's (null only when every card is locked). */
   | { type: 'peek'; target: Target | null };
 
 export interface LuckyState {
@@ -143,8 +143,11 @@ function allSlots(s: LuckyState, filter: (t: Target) => boolean): Target[] {
   return out;
 }
 
-/** Opponent slots a J may peek at or a Q may swap with. */
+/** Opponent slots a Q may swap with. */
 const openOpponentSlots = (s: LuckyState, me: SeatId): Target[] => allSlots(s, (t) => t.seat !== me && unlocked(s, t));
+
+/** Any unlocked slot: what a J may peek at. */
+const openSlots = (s: LuckyState): Target[] => allSlots(s, (t) => unlocked(s, t));
 
 export function legalMoves(state: LuckyState, seat: SeatId): LuckyMove[] {
   if (state.phase !== 'play' || seat !== state.turn) return [];
@@ -155,7 +158,7 @@ export function legalMoves(state: LuckyState, seat: SeatId): LuckyMove[] {
     return out;
   }
   if (state.step === 'peek') {
-    const targets = openOpponentSlots(state, seat);
+    const targets = openSlots(state);
     return targets.length ? targets.map((target) => ({ type: 'peek', target })) : [{ type: 'peek', target: null }];
   }
   for (let slot = 0; slot < SLOTS; slot++) if (state.locks[seat]![slot] === null) out.push({ type: 'swap', slot });
@@ -192,9 +195,9 @@ export function validate(state: LuckyState, seat: SeatId, move: unknown): Valida
   }
   if (state.step === 'peek') {
     if (m.type !== 'peek') return no('Pick a card to peek at');
-    const open = openOpponentSlots(state, seat);
+    const open = openSlots(state);
     if (m.target === null) return open.length === 0 ? { ok: true } : no('Pick a card to peek at');
-    if (!isTarget(m.target) || m.target.seat === seat || !unlocked(state, m.target)) return no("You can't peek at that card");
+    if (!isTarget(m.target) || !unlocked(state, m.target)) return no("You can't peek at that card");
     return { ok: true };
   }
   // step 'act'
@@ -241,6 +244,8 @@ function applyTrusted(state: LuckyState, seat: SeatId, move: LuckyMove, rng: Rng
   const s = clone(state);
   const events: GameEvent[] = [];
   const endTurn = (): void => {
+    // Did this turn take a card from the centre deck? (Discard draws leave the count as it was.)
+    const fromDeck = s.drawnFrom === 'deck';
     s.drawn = null;
     s.drawnFrom = null;
     s.turns++;
@@ -250,9 +255,9 @@ function applyTrusted(state: LuckyState, seat: SeatId, move: LuckyMove, rng: Rng
     }
     s.turn = (s.turn + 1) % s.players;
     s.step = 'draw';
-    events.push({ type: 'turn', seat: s.turn, deck: s.deck.length });
-    // Final lap: one card per player left in the centre deck.
-    if (s.deck.length === s.players) events.push({ type: 'final_lap' });
+    events.push({ type: 'turn', seat: s.turn, deck: s.deck.length, fromDeck });
+    // Final lap: one card per player left in the centre deck (said once, when it gets there).
+    if (fromDeck && s.deck.length === s.players) events.push({ type: 'final_lap' });
   };
 
   switch (move.type) {
@@ -303,11 +308,6 @@ function applyTrusted(state: LuckyState, seat: SeatId, move: LuckyMove, rng: Rng
         s.drawn = null;
         s.step = 'peek';
         events.push({ type: 'power', seat, power, card });
-        if (s.slots[seat]![0] !== HIDDEN) {
-          // Your own cards, except locked ones (they stay hidden even from you).
-          const own = s.slots[seat]!.map((c, i) => (s.locks[seat]![i] === null ? c : null));
-          events.push({ type: 'peek_own', to: seat, cards: own, seconds: s.config.peekSeconds });
-        }
         return { state: s, events };
       }
       if (power === 'Q') {
@@ -349,7 +349,7 @@ function applyTrusted(state: LuckyState, seat: SeatId, move: LuckyMove, rng: Rng
       if (move.target) {
         const card = s.slots[move.target.seat]![move.target.slot]!;
         events.push({ type: 'peeked', seat, target: move.target });
-        if (card !== HIDDEN) events.push({ type: 'peek_card', to: seat, target: move.target, card });
+        if (card !== HIDDEN) events.push({ type: 'peek_card', to: seat, target: move.target, card, seconds: s.config.peekSeconds });
       }
       endTurn();
       return { state: s, events };

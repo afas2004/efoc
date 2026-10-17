@@ -1,18 +1,56 @@
-// Lucky 7's Jester: the host picks at most one line per log entry from the
-// public events, so every phone shows the same line. Peeks and drawn cards
-// are private and never reach here.
+// Lucky 7's Jester: the host picks at most one line per log entry, so every
+// phone shows the same line. Only public facts feed it: thrown and
+// swapped-out cards (face up on Discard), powers used, locks, whose turn is
+// next, the deck count. Hidden cards, drawn cards and peeks never do.
+//
+// Beyond the big moments it watches for the table's stories: a good card
+// thrown away, a 9 thrown right when the next player is locked, a power
+// left on Discard for the next player, a good card swapped out by mistake,
+// revenge and grudges, the deck's halfway point and last card, close wins.
 
 import { lucky7, type GameEvent } from '@efoc/engine';
 import { JesterDirector, type JesterEvent } from '../../feel/jester';
+import { L } from '../../strings';
 
 type State = lucky7.LuckyState;
+type Target = lucky7.Target;
 
 /** Big moments always speak; the rest wait for the Jester's gap. */
-const MAJOR = new Set(['l7_gift', 'l7_lock', 'l7_lock_self', 'l7_unlock', 'l7_shuffle', 'l7_final_lap', 'l7_win', 'l7_zero']);
-const PRIORITY = ['l7_zero', 'l7_win', 'l7_final_lap', 'l7_gift', 'l7_unlock', 'l7_lock', 'l7_lock_self', 'l7_shuffle', 'l7_swap', 'l7_peek', 'l7_dump'];
+const MAJOR = new Set(['l7_bait_9', 'l7_revenge', 'l7_last_card', 'l7_final_lap', 'l7_win', 'l7_zero', 'l7_close', 'l7_unlock']);
+/** When several things happen at once, the best story wins. */
+const PRIORITY = [
+  'l7_zero',
+  'l7_close',
+  'l7_win',
+  'l7_last_card',
+  'l7_final_lap',
+  'l7_bait_9',
+  'l7_revenge',
+  'l7_bait_power',
+  'l7_swap_out_good',
+  'l7_gift',
+  'l7_grudge',
+  'l7_unlock',
+  'l7_lock',
+  'l7_lock_self',
+  'l7_shuffle',
+  'l7_swap',
+  'l7_dump',
+  'l7_swap_out_high',
+  'l7_halfway',
+  'l7_dump_low',
+  'l7_peek',
+];
+
+const short = (c: string): string => (c[0] === 'T' ? '10' : c[0]!) + ({ d: '♦', c: '♣', h: '♥', s: '♠' } as Record<string, string>)[c[1]!]!;
 
 export class LuckySevenCommentator {
   readonly director: JesterDirector;
+  /** Who last used a power on each seat (for revenge). */
+  private lastAttacker = new Map<number, number>();
+  /** The last seat targeted by anyone's power (for grudges). */
+  private lastVictim: number | null = null;
+  private deckAtStart = 0;
 
   constructor(
     private readonly names: string[],
@@ -22,34 +60,72 @@ export class LuckySevenCommentator {
     this.director = new JesterDirector(rand, now);
   }
 
-  comment(events: GameEvent[], _state: State): JesterEvent[] {
+  comment(events: GameEvent[], state: State): JesterEvent[] {
     const name = (s: number): string => this.names[s] ?? '';
+    const n = state.players;
     const candidates: [string, number | null, Record<string, string | number>][] = [];
+    // The deck at the deal (the first entry sees it whole).
+    if (state.turns === 0) this.deckAtStart = state.deck.length;
+    const nextSeat = (seat: number): number => (seat + 1) % n;
+    const lockedCount = (seat: number): number => state.locks[seat]!.filter((k) => k !== null).length;
+
     for (const e of events) {
       const seat = typeof e.seat === 'number' ? e.seat : null;
       switch (e.type) {
-        case 'gift_grabbed':
-          candidates.push(['l7_gift', e.from as number, { name: name(seat!), giver: name(e.from as number) }]);
+        case 'discarded': {
+          const card = e.card as string;
+          const next = nextSeat(seat!);
+          const p = lucky7.powerOf(card);
+          if (p === '9' && lockedCount(next) > 0) candidates.push(['l7_bait_9', next, { name: name(seat!), next: name(next) }]);
+          else if (p) candidates.push(['l7_bait_power', seat, { name: name(seat!), next: name(next), power: L().l7.powers[p], card: short(card) }]);
+          else if (lucky7.cardPoints(card) <= 1) candidates.push(['l7_dump', seat, { name: name(seat!), card: short(card), next: name(next) }]);
+          else if (lucky7.cardPoints(card) <= 3) candidates.push(['l7_dump_low', seat, { name: name(seat!), card: short(card) }]);
           break;
+        }
+        case 'swapped': {
+          // The card that came out is public now: a good one swapped away by mistake, or a big one finally gone.
+          const out = e.out as string;
+          if (lucky7.cardPoints(out) <= 1) candidates.push(['l7_swap_out_good', seat, { name: name(seat!), card: short(out) }]);
+          else if (lucky7.cardPoints(out) >= 10) candidates.push(['l7_swap_out_high', seat, { name: name(seat!), card: short(out) }]);
+          break;
+        }
+        case 'gift_grabbed':
+          candidates.push(['l7_gift', e.from as number, { name: name(seat!), giver: name(e.from as number), card: short(e.card as string) }]);
+          break;
+        case 'power': {
+          const t = (e.target ?? null) as Target | null;
+          const victim = e.power === 'T' || e.power === 'Q' || e.power === 'K' ? (t?.seat ?? null) : null;
+          if (victim !== null && victim !== seat) {
+            if (this.lastAttacker.get(seat!) === victim) candidates.push(['l7_revenge', seat, { name: name(seat!), victim: name(victim) }]);
+            else if (this.lastVictim === victim) candidates.push(['l7_grudge', victim, { victim: name(victim) }]);
+            this.lastAttacker.set(victim, seat!);
+            this.lastVictim = victim;
+          }
+          if (e.power === 'Q' && t) candidates.push(['l7_swap', t.seat, { name: name(seat!), victim: name(t.seat) }]);
+          if (e.power === 'J') candidates.push(['l7_peek', seat, { name: name(seat!) }]);
+          break;
+        }
         case 'card_locked': {
-          const t = e.target as lucky7.Target;
+          const t = e.target as Target;
           if (t.seat === seat) candidates.push(['l7_lock_self', seat, { name: name(seat!) }]);
           else candidates.push(['l7_lock', t.seat, { name: name(seat!), victim: name(t.seat) }]);
           break;
         }
-        case 'lock_broken':
-          candidates.push(['l7_unlock', seat, { name: name(seat!) }]);
+        case 'lock_broken': {
+          const t = e.target as Target;
+          candidates.push(['l7_unlock', seat, { name: name(seat!), victim: name(t.seat) }]);
           break;
+        }
         case 'shuffled':
           candidates.push(['l7_shuffle', e.target as number, { name: name(seat!), victim: name(e.target as number) }]);
           break;
-        case 'power':
-          if (e.power === 'Q') candidates.push(['l7_swap', (e.target as lucky7.Target).seat, { name: name(seat!), victim: name((e.target as lucky7.Target).seat) }]);
-          if (e.power === 'J') candidates.push(['l7_peek', seat, { name: name(seat!) }]);
+        case 'turn': {
+          if (!e.fromDeck) break; // the count didn't move
+          const deck = e.deck as number;
+          if (deck === 1) candidates.push(['l7_last_card', e.seat as number, { name: name(e.seat as number) }]);
+          else if (this.deckAtStart > 8 && deck === Math.floor(this.deckAtStart / 2)) candidates.push(['l7_halfway', null, { left: deck }]);
           break;
-        case 'discarded':
-          if (lucky7.cardPoints(e.card as string) <= 1) candidates.push(['l7_dump', seat, { name: name(seat!) }]);
-          break;
+        }
         case 'final_lap':
           candidates.push(['l7_final_lap', null, {}]);
           break;
@@ -58,7 +134,12 @@ export class LuckySevenCommentator {
           const placings = e.placings as number[];
           const best = points[placings[0]!]!;
           const winners = placings.filter((p) => points[p] === best);
-          candidates.push([best === 0 ? 'l7_zero' : 'l7_win', placings[0]!, { name: winners.map(name).join(' & '), total: best }]);
+          const runnerUp = placings.find((p) => points[p]! > best);
+          const last = placings[placings.length - 1]!;
+          const vars = { name: winners.map(name).join(' & '), total: best, last: name(last), worst: points[last]! };
+          if (best === 0) candidates.push(['l7_zero', placings[0]!, vars]);
+          else if (runnerUp !== undefined && points[runnerUp]! - best === 1) candidates.push(['l7_close', placings[0]!, { ...vars, second: name(runnerUp) }]);
+          else candidates.push(['l7_win', placings[0]!, vars]);
           break;
         }
         default:

@@ -67,6 +67,9 @@ The spec's rules stand. Clarified with Fahmi:
 - Fully blind: nobody sees their own cards at the start; only a J shows them.
 - Full deck: play until the centre deck is empty, however many players.
 - A locked card stays hidden even from its owner's J peek.
+- **Playtest 18 Oct:** a J peeks at **one** card only: one of your own, or one of another player's (not your own cards plus one of theirs). The card shows face up for you for `peekSeconds` (now 5 s). Locked cards still can't be peeked.
+- Power cards are single use: a used power goes to Used for good. One thrown away unused can still be taken off Discard and used (17 Oct decision).
+- The Jester reacts to public stories: a 7 or A thrown away, a 9 thrown when the next player is locked, a power left on Discard, a good card swapped out by mistake, revenge, grudges, halfway and the last card, close wins. It never repeats a line soon after itself.
 
 ## Left for later (as the spec says)
 

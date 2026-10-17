@@ -423,12 +423,21 @@
     ],
     "l7_gift": [
       {
-        "text": "{name} grabs what {giver} threw away. Thanks for the gift!",
+        "text": "{name} grabs the {card} {giver} threw away. Thanks for the gift!",
         "tone": "tease"
       },
       {
-        "text": "{giver} gave that away for free? {name} says thank you!",
+        "text": "{giver} gave away a {card} for free? {name} says terima kasih!",
         "tone": "tease"
+      },
+      {
+        "text": "Finders keepers! {name} takes {giver}'s {card}.",
+        "tone": "neutral"
+      },
+      {
+        "text": "{name} was waiting for that {card}. {giver}, why like that?",
+        "tone": "tease",
+        "spicy": true
       }
     ],
     "l7_lock": [
@@ -437,15 +446,23 @@
         "tone": "neutral"
       },
       {
-        "text": "Padlock! {victim}'s card is stuck. Hope it's a K, {victim}.",
+        "text": "Padlock! {victim}'s card is stuck. Hope it's a good one, {victim}.",
         "tone": "tease",
         "spicy": true
+      },
+      {
+        "text": "{name} slaps a K on {victim}'s card. Locked in!",
+        "tone": "neutral"
       }
     ],
     "l7_lock_self": [
       {
         "text": "{name} locks their own card. Confident or desperate?",
         "tone": "tease"
+      },
+      {
+        "text": "{name} is protecting something. Must be a good card… right?",
+        "tone": "neutral"
       }
     ],
     "l7_unlock": [
@@ -454,8 +471,12 @@
         "tone": "cheer"
       },
       {
-        "text": "A 9! {name} breaks the padlock.",
+        "text": "A 9! {name} breaks {victim}'s padlock.",
         "tone": "neutral"
+      },
+      {
+        "text": "Lock gone. {name} wasn't having it.",
+        "tone": "cheer"
       }
     ],
     "l7_shuffle": [
@@ -466,11 +487,19 @@
       {
         "text": "Spin spin spin! {victim}, whatever you remembered is gone.",
         "tone": "tease"
+      },
+      {
+        "text": "{name} mixed up {victim}'s cards. Chaos!",
+        "tone": "neutral"
       }
     ],
     "l7_swap": [
       {
         "text": "{name} swaps a card with {victim}. Nobody knows what moved. Nobody!",
+        "tone": "neutral"
+      },
+      {
+        "text": "A blind swap between {name} and {victim}. Did someone just win or lose big?",
         "tone": "neutral"
       }
     ],
@@ -478,21 +507,42 @@
       {
         "text": "{name} is peeking. Act natural, everyone.",
         "tone": "neutral"
+      },
+      {
+        "text": "{name} takes a sneaky look. Poker face on!",
+        "tone": "neutral"
       }
     ],
     "l7_dump": [
       {
-        "text": "{name} threw away a lucky card. Whyyy?",
+        "text": "{name} threw away a {card}! That's practically zero points, lah.",
         "tone": "tease"
       },
       {
-        "text": "That card was worth almost nothing, {name}. You threw it away.",
-        "tone": "tease"
+        "text": "A {card} on Discard… {next}, are you seeing this?",
+        "tone": "neutral"
+      },
+      {
+        "text": "{name} tossed a {card}. Somebody grab it before it's gone!",
+        "tone": "neutral"
+      },
+      {
+        "text": "Throwing away a {card}? Bold, {name}. Very bold.",
+        "tone": "tease",
+        "spicy": true
       }
     ],
     "l7_final_lap": [
       {
         "text": "Final lap! One card each left in the deck. Make it count!",
+        "tone": "neutral"
+      },
+      {
+        "text": "Last round of draws! Timers are halved. Panic!",
+        "tone": "neutral"
+      },
+      {
+        "text": "Final lap. Whatever you're hiding, it's almost reveal time.",
         "tone": "neutral"
       }
     ],
@@ -504,12 +554,145 @@
       {
         "text": "Lowest total: {name} with {total}. Steady lah.",
         "tone": "cheer"
+      },
+      {
+        "text": "{name} takes it with {total}. {last}, {worst} points… better luck next time!",
+        "tone": "tease"
       }
     ],
     "l7_zero": [
       {
         "text": "ZERO points! {name} is the luckiest person alive!",
         "tone": "cheer"
+      },
+      {
+        "text": "A perfect zero for {name}. Somebody check their sleeves!",
+        "tone": "tease"
+      }
+    ],
+    "l7_dump_low": [
+      {
+        "text": "A {card} goes to Discard. Not bad, not great.",
+        "tone": "neutral"
+      },
+      {
+        "text": "{name} lets go of a {card}. Hmm, they must have better.",
+        "tone": "neutral"
+      }
+    ],
+    "l7_bait_9": [
+      {
+        "text": "{name} throws a 9 right when {next} needs one for that lock. Generous!",
+        "tone": "tease"
+      },
+      {
+        "text": "A 9 on Discard and {next} is locked… {name}, are you two friends?",
+        "tone": "tease"
+      },
+      {
+        "text": "{next}, the 9 you prayed for is right there. Thank {name} later.",
+        "tone": "cheer"
+      }
+    ],
+    "l7_bait_power": [
+      {
+        "text": "{name} threw away a {power} card! {next}, it's all yours.",
+        "tone": "neutral"
+      },
+      {
+        "text": "A free {power} on Discard. {next} is smiling already.",
+        "tone": "tease"
+      },
+      {
+        "text": "{name} didn't want the {power}? {next} definitely does.",
+        "tone": "tease"
+      }
+    ],
+    "l7_swap_out_good": [
+      {
+        "text": "{name} just swapped OUT a {card}! That was a good one…",
+        "tone": "tease"
+      },
+      {
+        "text": "Oops! {name} gave up a {card} without knowing. Pain.",
+        "tone": "tease",
+        "spicy": true
+      },
+      {
+        "text": "A {card} lands on Discard from {name}'s own hand. Unlucky!",
+        "tone": "neutral"
+      }
+    ],
+    "l7_swap_out_high": [
+      {
+        "text": "Bye bye {card}! {name} finally got rid of it.",
+        "tone": "cheer"
+      },
+      {
+        "text": "{name} swaps out a {card}. Good riddance!",
+        "tone": "cheer"
+      }
+    ],
+    "l7_revenge": [
+      {
+        "text": "Revenge! {name} hits back at {victim}.",
+        "tone": "neutral"
+      },
+      {
+        "text": "{victim} started it, {name} finishes it. Payback time!",
+        "tone": "tease"
+      },
+      {
+        "text": "What goes around comes around, {victim}. {name} remembers.",
+        "tone": "tease"
+      }
+    ],
+    "l7_grudge": [
+      {
+        "text": "{victim} again?! Somebody has a grudge.",
+        "tone": "tease"
+      },
+      {
+        "text": "Everybody's picking on {victim}. Leave them alone lah!",
+        "tone": "cheer"
+      },
+      {
+        "text": "{victim} is the table's favourite target tonight.",
+        "tone": "tease"
+      }
+    ],
+    "l7_halfway": [
+      {
+        "text": "Halfway through the deck. {left} cards to go. Remember your cards?",
+        "tone": "neutral"
+      },
+      {
+        "text": "{left} cards left. Who's actually winning? Nobody knows!",
+        "tone": "neutral"
+      }
+    ],
+    "l7_last_card": [
+      {
+        "text": "Last card in the deck! {name} gets the final say.",
+        "tone": "neutral"
+      },
+      {
+        "text": "One card left, and it's {name}'s. No pressure.",
+        "tone": "tease"
+      },
+      {
+        "text": "This is it, {name}. The very last card. Make it count!",
+        "tone": "cheer"
+      }
+    ],
+    "l7_close": [
+      {
+        "text": "By ONE point! {name} edges out {second}. So close!",
+        "tone": "cheer"
+      },
+      {
+        "text": "{name} wins by a single point. {second} is in pain.",
+        "tone": "tease"
       }
     ]
   },
@@ -541,7 +724,7 @@
       "T": "Shuffle"
     },
     "powerHelp": {
-      "J": "See your own cards for {n} s, then peek at one card of someone else's.",
+      "J": "Peek at one card for {n} s: one of yours, or someone else's. Only you see it.",
       "Q": "Swap one of your cards with one of theirs. Nobody sees them.",
       "K": "Lock any card. Locked cards can't be peeked, swapped or shuffled.",
       "9": "Remove a lock, or skip.",
@@ -552,8 +735,7 @@
     "pickAny": "Pick a card to lock",
     "pickLocked": "Pick a locked card to free, or skip",
     "pickSeat": "Pick whose cards to shuffle",
-    "pickPeek": "Pick a card to peek at",
-    "ownPeek": "Your cards · only you see this",
+    "pickPeek": "Peek at one card: one of yours, or someone else's",
     "peekResult": "Only you see this",
     "locked": "Locked",
     "stamps": {
@@ -573,7 +755,6 @@
     "winner": "Lowest wins",
     "tie": "Shared win!",
     "setupHint": "Lowest total wins. 7 = 0, A = 1, J Q K = 10.",
-    "me": "Me",
-    "remember": "Remember them!"
+    "me": "Me"
   }
 }

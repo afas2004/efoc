@@ -140,22 +140,26 @@ describe('powers', () => {
   const drawPower = (card: string, over: Partial<LuckyState> = {}) =>
     run(table(['Kd 2c Kh', '2d 3d 4d', '5h 6h 8h'], `5d 6d ${card}`, over), [[0, { type: 'draw', from: 'deck' }]]).s;
 
-  it('J: see your own unlocked cards (privately), then peek at one opponent card', () => {
-    const s0 = drawPower('Jc', { locks: [[null, 'Ks', null], [null, null, null], [null, null, null]] });
+  it("J: peek at ONE card, someone else's or one of your own; only you see it", () => {
+    const s0 = drawPower('Jc');
     let { s, events } = run(s0, [[0, { type: 'use' }]]);
     expect(s.step).toBe('peek');
-    expect(events).toContainEqual({ type: 'peek_own', to: 0, cards: ['Kd', null, 'Kh'], seconds: 10 });
-    expect(validate(s, 0, { type: 'peek', target: { seat: 0, slot: 0 } }).ok).toBe(false); // not your own
+    expect(events.some((e) => e.type === 'peek_own')).toBe(false); // no free look at all your cards
     ({ s, events } = run(s, [[0, { type: 'peek', target: { seat: 2, slot: 1 } }]]));
-    expect(events).toContainEqual({ type: 'peek_card', to: 0, target: { seat: 2, slot: 1 }, card: '6h' });
+    expect(events).toContainEqual({ type: 'peek_card', to: 0, target: { seat: 2, slot: 1 }, card: '6h', seconds: 5 });
     expect(events).toContainEqual({ type: 'peeked', seat: 0, target: { seat: 2, slot: 1 } });
     expect(s.used).toContain('Jc');
     expect(s.turn).toBe(1);
+    // Or one of your own.
+    const own = run(drawPower('Jc'), [[0, { type: 'use' }], [0, { type: 'peek', target: { seat: 0, slot: 2 } }]]).events;
+    expect(own).toContainEqual({ type: 'peek_card', to: 0, target: { seat: 0, slot: 2 }, card: 'Kh', seconds: 5 });
   });
-  it("J: a locked card can't be peeked", () => {
-    const s0 = drawPower('Jc', { locks: [[null, null, null], ['Ks', null, null], [null, null, null]] });
+  it("J: a locked card can't be peeked, yours or theirs", () => {
+    const s0 = drawPower('Jc', { locks: [[null, 'Ks', null], ['Kd', null, null], [null, null, null]] });
     const { s } = run(s0, [[0, { type: 'use' }]]);
     expect(validate(s, 0, { type: 'peek', target: { seat: 1, slot: 0 } }).ok).toBe(false);
+    expect(validate(s, 0, { type: 'peek', target: { seat: 0, slot: 1 } }).ok).toBe(false);
+    expect(validate(s, 0, { type: 'peek', target: { seat: 0, slot: 0 } }).ok).toBe(true);
     expect(validate(s, 0, { type: 'peek', target: null }).ok).toBe(false); // there are open cards
   });
   it('Q: swaps one of yours with one of theirs, unseen; not locked ones', () => {
@@ -221,6 +225,19 @@ describe('the end', () => {
     const moves: [number, LuckyMove][] = [];
     for (let t = 0; t < 4; t++) moves.push([t % 2, { type: 'draw', from: 'discard' }], [t % 2, { type: 'discard' }]);
     expect(run(s0, moves).s.phase).toBe('over');
+  });
+  it('final lap is announced once, even if the next turns take from Discard', () => {
+    const s0 = table(['Kd Kc Kh', '2d 3d 4d'], '5d 6d 8d');
+    const { events } = run(s0, [
+      [0, { type: 'draw', from: 'deck' }],
+      [0, { type: 'discard' }],
+      [1, { type: 'draw', from: 'discard' }],
+      [1, { type: 'discard' }],
+      [0, { type: 'draw', from: 'discard' }],
+      [0, { type: 'discard' }],
+    ]);
+    expect(events.filter((e) => e.type === 'final_lap')).toHaveLength(1);
+    expect(events.filter((e) => e.type === 'turn').map((e) => e.fromDeck)).toEqual([true, false, false]);
   });
   it('final lap: one card per player left', () => {
     const s0 = table(['Kd Kc Kh', '2d 3d 4d'], '5d 6d 8d');

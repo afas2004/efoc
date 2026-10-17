@@ -1903,3 +1903,23 @@ table.stats tr.me {
   opacity: 0.5;
   text-decoration: line-through;
 }
+
+/* A card I peeked at (J): face up for a few seconds, only on my screen. */
+.l7-card[data-peek-left]::before {
+  content: attr(data-peek-left);
+  position: absolute;
+  top: -22px;
+  left: 50%;
+  z-index: 3;
+  transform: translateX(-50%);
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--info);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+.l7-card[data-peek-left] {
+  box-shadow: 0 0 0 3px var(--info), 0 0 22px rgba(59, 130, 246, 0.9);
+}

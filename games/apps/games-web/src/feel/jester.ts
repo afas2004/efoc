@@ -64,6 +64,16 @@ const STYLE: Record<string, { mood: Mood; emoji: string | null }> = {
   l7_peek: { mood: 'talk', emoji: null },
   l7_dump: { mood: 'shock', emoji: 'grimace' },
   l7_final_lap: { mood: 'shock', emoji: 'fire' },
+  l7_bait_9: { mood: 'laugh', emoji: 'laugh' },
+  l7_bait_power: { mood: 'shock', emoji: 'explode' },
+  l7_dump_low: { mood: 'shock', emoji: 'grimace' },
+  l7_swap_out_good: { mood: 'laugh', emoji: 'laugh' },
+  l7_swap_out_high: { mood: 'cheer', emoji: 'party' },
+  l7_revenge: { mood: 'shock', emoji: 'fire' },
+  l7_grudge: { mood: 'laugh', emoji: 'eyeroll' },
+  l7_halfway: { mood: 'talk', emoji: 'cool' },
+  l7_last_card: { mood: 'shock', emoji: 'scream' },
+  l7_close: { mood: 'shock', emoji: 'explode' },
   l7_win: { mood: 'cheer', emoji: 'party' },
   l7_zero: { mood: 'shock', emoji: 'party' },
   cheer: { mood: 'cheer', emoji: null },
@@ -76,6 +86,8 @@ export class JesterDirector {
   private lastKey = '';
   private teased = new Map<number, number>();
   private cheered = new Map<number, number>();
+  /** The last few lines said (key:index), so none repeats soon. */
+  private recent: string[] = [];
 
   constructor(
     private readonly rand: () => number,
@@ -92,6 +104,10 @@ export class JesterDirector {
     let useKey = key;
     let pool = (banks[key] ?? []).map((line, idx) => ({ line, idx }));
     pool = pool.filter(({ line }) => this.humour === 'spicy' || !line.spicy);
+    // Never the same line twice in a row (or within the last few).
+    const fresh = pool.filter(({ idx }) => !this.recent.includes(`${key}:${idx}`));
+    if (fresh.length) pool = fresh;
+    else if (!major && pool.length) return null; // said it all lately: stay quiet
     if (target !== null && (this.teased.get(target) ?? 0) > (this.cheered.get(target) ?? 0)) {
       // Owed a cheer: this event's cheering lines, or the generic bank.
       const cheers = pool.filter(({ line }) => line.tone === 'cheer');
@@ -103,6 +119,7 @@ export class JesterDirector {
     }
     if (pool.length === 0) return null;
     const { line, idx } = pool[Math.floor(this.rand() * pool.length)]!;
+    this.recent = [...this.recent.slice(-5), `${useKey}:${idx}`];
     this.lastAt = t;
     this.lastTarget = target;
     this.lastKey = useKey;
