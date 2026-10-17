@@ -52,4 +52,43 @@ jobs:
           [ -n "${{ inputs.date }}" ] && args+=(--date "${{ inputs.date }}")
           [ -n "${{ inputs.group_id }}" ] && args+=(--group "${{ inputs.group_id }}")
           [ "${{ inputs.force }}" = "true" ] && args+=(--force)
-          python worker/stitch.py "${args[@]}"
+          python worker/stitch.py --no-cleanup "${args[@]}"
+
+      # Copies every stitched vlog that isn't backed up yet to Google Drive
+      # (My Drive/efoc/<Log name>/<date>.mp4), then marks it backed up.
+      # Only marked vlogs may be deleted by the cleanup below.
+      - name: Back up to Google Drive
+        if: ${{ !cancelled() }}
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          GDRIVE_TOKEN: ${{ secrets.GDRIVE_TOKEN }}
+        run: |
+          if [ -z "$GDRIVE_TOKEN" ]; then
+            echo "::warning::GDRIVE_TOKEN secret not set, skipping the Drive backup"
+            exit 0
+          fi
+          sudo apt-get update -qq && sudo apt-get install -y -qq rclone
+          mkdir -p ~/.config/rclone
+          {
+            echo "[gdrive]"
+            echo "type = drive"
+            echo "scope = drive"
+            echo "token = $GDRIVE_TOKEN"
+          } > ~/.config/rclone/rclone.conf
+
+          python worker/backup.py --dest out --no-mark --manifest manifest.json
+          if [ -n "$(ls -A out 2>/dev/null)" ]; then
+            rclone copy out gdrive:efoc --transfers 4
+            python worker/backup.py --mark-from manifest.json
+          fi
+
+      # Free-tier retention (see cleanup() in stitch.py). Skipped for a
+      # manual re-stitch of a specific date.
+      - name: Clean up old clips and vlogs
+        if: ${{ !cancelled() && inputs.date == '' }}
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          APP_TZ: ${{ vars.APP_TZ || 'Asia/Kuala_Lumpur' }}
+        run: python worker/stitch.py --cleanup-only

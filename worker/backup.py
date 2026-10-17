@@ -1,24 +1,28 @@
-"""Efoc laptop backup for stitched vlogs.
+"""Efoc backup for stitched vlogs.
 
 Downloads every stitched vlog that hasn't been backed up yet into
-BACKUP_DIR/<Log name>/<yyyy-mm-dd>.mp4, then marks it in Supabase
-(vlogs.backed_up_at) so the nightly cleanup is allowed to delete it.
+<dest>/<Log name>/<yyyy-mm-dd>.mp4 and marks it in Supabase
+(vlogs.backed_up_at), which allows the nightly cleanup to delete it.
 
-Supabase keeps a vlog for at most 7 days without a backup, so run this at
-least every few days. backup.bat runs it; schedule that daily.
+The nightly GitHub job (.github/workflows/stitch.yml) uses it in two steps
+around an rclone upload to Google Drive, so a vlog only counts as backed
+up once it's actually on Drive:
+
+    python worker/backup.py --dest out --no-mark --manifest out.json
+    rclone copy out gdrive:efoc
+    python worker/backup.py --mark-from out.json
+
+Run on its own (no flags) it downloads into BACKUP_DIR and marks right
+away, which is fine for a local folder.
 
 Standard library only: no pip install needed.
 
-Settings come from environment variables or a file next to the efoc
-folder, named efoc-backup.env (see worker/backup.env.example):
-
-    SUPABASE_URL=https://<project>.supabase.co
-    SUPABASE_SERVICE_ROLE_KEY=...
-    BACKUP_DIR=D:/efoc-backups
+Needs SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in the environment.
 """
 
 from __future__ import annotations
 
+import argparse
 import datetime as dt
 import json
 import os
@@ -29,26 +33,9 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-
-def load_env_file(path: Path) -> None:
-    if not path.is_file():
-        return
-    for line in path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        os.environ.setdefault(key.strip(), value.strip().strip('"'))
-
-
-# Kept outside the repo on purpose (the service role key is a secret):
-# <folder containing efoc>/efoc-backup.env
-REPO = Path(__file__).resolve().parents[1]
-load_env_file(REPO.parent / "efoc-backup.env")
-
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
 SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
-BACKUP_DIR = Path(os.environ.get("BACKUP_DIR", str(Path.home() / "efoc-backups")))
+BACKUP_DIR = os.environ.get("BACKUP_DIR", str(Path.home() / "efoc-backups"))
 
 
 def request(method: str, path: str, params: dict | None = None,
@@ -71,18 +58,23 @@ def get_json(path: str, params: dict) -> list[dict]:
         return json.load(r)
 
 
+def mark_backed_up(ids: list[str]) -> None:
+    if not ids:
+        return
+    request(
+        "PATCH", "/rest/v1/vlogs",
+        params={"id": f"in.({','.join(ids)})"},
+        body={"backed_up_at": dt.datetime.now(dt.timezone.utc).isoformat()},
+    ).close()
+
+
 def safe_name(name: str) -> str:
     cleaned = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", name).strip(" .")
     return cleaned or "Log"
 
 
-def main() -> int:
-    print(f"--- {dt.datetime.now():%Y-%m-%d %H:%M}")
-    if not SUPABASE_URL or not SERVICE_KEY:
-        print("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required "
-              "(put them in efoc-backup.env)", file=sys.stderr)
-        return 2
-
+def download_pending(dest_root: Path) -> tuple[list[str], int]:
+    """Returns (ids downloaded, failures)."""
     pending = get_json("/rest/v1/vlogs", {
         "select": "id,group_id,vlog_date,storage_path",
         "backed_up_at": "is.null",
@@ -90,7 +82,7 @@ def main() -> int:
     })
     if not pending:
         print("Nothing new to back up.")
-        return 0
+        return [], 0
 
     group_ids = sorted({v["group_id"] for v in pending})
     names = {
@@ -101,9 +93,10 @@ def main() -> int:
         })
     }
 
+    done: list[str] = []
     failed = 0
     for v in pending:
-        folder = BACKUP_DIR / safe_name(names.get(v["group_id"], v["group_id"]))
+        folder = dest_root / safe_name(names.get(v["group_id"], v["group_id"]))
         folder.mkdir(parents=True, exist_ok=True)
         dest = folder / f"{v['vlog_date']}.mp4"
         tmp = dest.with_suffix(".part")
@@ -115,21 +108,43 @@ def main() -> int:
             if tmp.stat().st_size == 0:
                 raise RuntimeError("empty download")
             tmp.replace(dest)
-
-            # Only after the file is safely on disk.
-            request(
-                "PATCH", "/rest/v1/vlogs",
-                params={"id": f"eq.{v['id']}"},
-                body={"backed_up_at": dt.datetime.now(dt.timezone.utc).isoformat()},
-            ).close()
-            print(f"Saved {dest}")
+            done.append(v["id"])
+            print(f"Downloaded {dest}")
         except Exception as e:
             failed += 1
             tmp.unlink(missing_ok=True)
             print(f"FAILED {v['vlog_date']} {v['group_id']}: {e}", file=sys.stderr)
+    return done, failed
 
-    print(f"Backed up {len(pending) - failed}, failed {failed}.")
-    return 1 if failed else 0
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--dest", help=f"download folder (default BACKUP_DIR={BACKUP_DIR})")
+    ap.add_argument("--no-mark", action="store_true",
+                    help="download only; don't mark as backed up yet")
+    ap.add_argument("--manifest", help="write the downloaded vlog ids here (JSON)")
+    ap.add_argument("--mark-from", help="only mark the ids in this manifest")
+    args = ap.parse_args()
+
+    if not SUPABASE_URL or not SERVICE_KEY:
+        print("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required", file=sys.stderr)
+        return 2
+
+    if args.mark_from:
+        ids = json.loads(Path(args.mark_from).read_text(encoding="utf-8"))
+        mark_backed_up(ids)
+        print(f"Marked {len(ids)} vlog(s) as backed up.")
+        return 0
+
+    done, failed = download_pending(Path(args.dest or BACKUP_DIR))
+    if args.manifest:
+        Path(args.manifest).write_text(json.dumps(done), encoding="utf-8")
+    if not args.no_mark:
+        mark_backed_up(done)
+    print(f"Downloaded {len(done)}, failed {failed}.")
+    # In the two-step Drive flow, a vlog that failed to download mustn't
+    # stop the others from being uploaded; it's retried the next night.
+    return 1 if failed and not args.manifest else 0
 
 
 if __name__ == "__main__":
