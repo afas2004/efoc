@@ -91,4 +91,8 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           APP_TZ: ${{ vars.APP_TZ || 'Asia/Kuala_Lumpur' }}
+          # Data from before this date is never deleted. To apply the
+          # policy to everything, add a repo variable RETENTION_START with
+          # an early date (e.g. 2000-01-01).
+          RETENTION_START: ${{ vars.RETENTION_START || '2026-10-16' }}
         run: python worker/stitch.py --cleanup-only

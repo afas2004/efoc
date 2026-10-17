@@ -1,0 +1,45 @@
+name: Archive everything to Drive
+
+# Run by hand. Copies every raw clip and stitched vlog currently in
+# Supabase to My Drive/efoc/archive. Changes and deletes nothing.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: archive
+  cancel-in-progress: false
+
+jobs:
+  archive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Download from Supabase
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python worker/archive.py --dest archive
+
+      - name: Upload to Google Drive
+        env:
+          GDRIVE_TOKEN: ${{ secrets.GDRIVE_TOKEN }}
+        run: |
+          if [ -z "$GDRIVE_TOKEN" ]; then
+            echo "::error::GDRIVE_TOKEN secret is not set"
+            exit 1
+          fi
+          sudo apt-get update -qq && sudo apt-get install -y -qq rclone
+          mkdir -p ~/.config/rclone
+          {
+            echo "[gdrive]"
+            echo "type = drive"
+            echo "scope = drive"
+            echo "token = $GDRIVE_TOKEN"
+          } > ~/.config/rclone/rclone.conf
+          rclone copy archive gdrive:efoc/archive --transfers 4 --stats-one-line -v

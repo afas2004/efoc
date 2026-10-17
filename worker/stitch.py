@@ -59,6 +59,12 @@ HEX_COLOR = re.compile(r"^#?([0-9a-fA-F]{6})$")
 RAW_GRACE_DAYS = int(os.environ.get("RAW_GRACE_DAYS", "3"))
 VLOG_MAX_DAYS = int(os.environ.get("VLOG_MAX_DAYS", "7"))
 
+# Nothing dated before this is ever deleted, so data from before the
+# retention policy existed stays until you decide what to do with it
+# (it's copied to Drive by worker/archive.py). Clear it to apply the
+# policy to everything.
+RETENTION_START = os.environ.get("RETENTION_START", "").strip()
+
 VIDEO_EXT = re.compile(r"\.(mp4|webm|mov)$")
 
 
@@ -326,9 +332,18 @@ def cleanup(today: dt.date, dry_run: bool) -> None:
     verb = "would delete" if dry_run else "deleting"
 
     # ---- raw clips from before today ----
+    clip_filter = {"recorded_on": f"lt.{today.isoformat()}"}
+    vlog_filter = {"vlog_date": f"lt.{yesterday.isoformat()}"}
+    if RETENTION_START:
+        print(f"Leaving anything before {RETENTION_START} alone (RETENTION_START)")
+        clip_filter = {"and": f"(recorded_on.lt.{today.isoformat()},"
+                              f"recorded_on.gte.{RETENTION_START})"}
+        vlog_filter = {"and": f"(vlog_date.lt.{yesterday.isoformat()},"
+                              f"vlog_date.gte.{RETENTION_START})"}
+
     old_clips = rest_get("clips", {
         "select": "id,group_id,recorded_on,storage_path",
-        "recorded_on": f"lt.{today.isoformat()}",
+        **clip_filter,
     })
     stitched = {
         (v["group_id"], v["vlog_date"])
@@ -362,7 +377,7 @@ def cleanup(today: dt.date, dry_run: bool) -> None:
     # ---- stitched vlogs older than yesterday ----
     old_vlogs = rest_get("vlogs", {
         "select": "id,group_id,vlog_date,storage_path,thumbnail_path,backed_up_at",
-        "vlog_date": f"lt.{yesterday.isoformat()}",
+        **vlog_filter,
     })
     hard_cutoff = (today - dt.timedelta(days=VLOG_MAX_DAYS)).isoformat()
     gone = [
