@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../../../models/member.dart';
 import 'profile/qr_sheet.dart';
 import '../../../services/group_service.dart';
 import '../../../state/app_state.dart';
@@ -12,6 +13,20 @@ class GroupSettingsSheet extends StatefulWidget {
 
   @override
   State<GroupSettingsSheet> createState() => _GroupSettingsSheetState();
+}
+
+/// Turns an exception into something a person can read. The raw text
+/// still goes to the debug console.
+String _friendly(Object e, String fallback) {
+  debugPrint('Group settings error: $e');
+  final msg = '$e'.toLowerCase();
+  if (msg.contains('socket') ||
+      msg.contains('network') ||
+      msg.contains('failed host lookup') ||
+      msg.contains('clientexception')) {
+    return 'No connection. Check your internet and try again.';
+  }
+  return fallback;
 }
 
 class _GroupSettingsSheetState extends State<GroupSettingsSheet> {
@@ -40,7 +55,7 @@ class _GroupSettingsSheetState extends State<GroupSettingsSheet> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = '$e';
+        _error = _friendly(e, "Couldn't load the invite code.");
         _loading = false;
       });
     }
@@ -111,10 +126,14 @@ class _GroupSettingsSheetState extends State<GroupSettingsSheet> {
       ),
     );
 
+    controller.dispose();
     if (newName == null || newName.isEmpty) return;
     if (newName == state.currentGroup.name) return;
 
-    setState(() => _busy = true);
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
     try {
       await state.renameCurrentGroup(newName);
       if (!mounted) return;
@@ -123,7 +142,7 @@ class _GroupSettingsSheetState extends State<GroupSettingsSheet> {
       if (!mounted) return;
       setState(() {
         _busy = false;
-        _error = '$e';
+        _error = _friendly(e, "Couldn't rename the Log. Try again.");
       });
     }
   }
@@ -146,7 +165,7 @@ class _GroupSettingsSheetState extends State<GroupSettingsSheet> {
       if (!mounted) return;
       setState(() {
         _busy = false;
-        _error = '$e';
+        _error = _friendly(e, "Couldn't leave the Log. Try again.");
       });
     }
   }
@@ -170,7 +189,7 @@ class _GroupSettingsSheetState extends State<GroupSettingsSheet> {
       if (!mounted) return;
       setState(() {
         _busy = false;
-        _error = '$e';
+        _error = _friendly(e, "Couldn't delete the Log. Try again.");
       });
     }
   }
@@ -403,15 +422,17 @@ class _GroupSettingsSheetState extends State<GroupSettingsSheet> {
                         color: m.color,
                         shape: BoxShape.circle,
                       ),
+                      clipBehavior: Clip.antiAlias,
                       alignment: Alignment.center,
-                      child: Text(
-                        m.isMe ? 'Y' : m.name[0].toUpperCase(),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
+                      child: (m.avatarUrl?.isNotEmpty ?? false)
+                          ? Image.network(
+                              m.avatarUrl!,
+                              width: 30,
+                              height: 30,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, _, _) => _MemberInitial(m),
+                            )
+                          : _MemberInitial(m),
                     ),
                     const SizedBox(width: 10),
                     Expanded(
@@ -475,6 +496,25 @@ class _GroupSettingsSheetState extends State<GroupSettingsSheet> {
             ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _MemberInitial extends StatelessWidget {
+  final EfocMember member;
+
+  const _MemberInitial(this.member);
+
+  @override
+  Widget build(BuildContext context) {
+    final name = member.name;
+    return Text(
+      member.isMe ? 'Y' : (name.isEmpty ? '?' : name[0].toUpperCase()),
+      style: const TextStyle(
+        color: Colors.white,
+        fontSize: 12,
+        fontWeight: FontWeight.w800,
       ),
     );
   }

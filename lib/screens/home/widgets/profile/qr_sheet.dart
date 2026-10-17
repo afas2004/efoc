@@ -26,7 +26,7 @@ class _QrSheetState extends State<QrSheet> {
   String get _inviteUrl => 'https://efoc.party/join?code=${_code ?? ''}';
 
   String get _shareMessage =>
-      'Join me on Efoc — hourly 2-second vlogs, stitched daily.\n\n$_inviteUrl';
+      'Join me on Efoc — hourly 3-second vlogs, stitched daily.\n\n$_inviteUrl';
 
   @override
   void initState() {

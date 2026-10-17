@@ -7,12 +7,12 @@ import 'dart:typed_data';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../../../services/update_service.dart';
 import '../../../state/app_state.dart';
 import '../../../services/auth_service.dart';
 import '../../../services/profile_service.dart';
 import '../../../theme/colors.dart';
 import '../../../version.dart';
+import '../../../widgets/update_check_dialog.dart';
 import 'profile/account_sheet.dart';
 import 'profile/avatar_crop_sheet.dart';
 import 'profile/avatar_source_sheet.dart';
@@ -33,13 +33,12 @@ class _ProfileSheetState extends State<ProfileSheet> {
   String _theme = 'Purple';
   bool _autoStitch = true;
 
-  String _displayName = 'Ali';
-  String _handle = '@ali';
+  String _displayName = 'You';
+  String _handle = '';
   String? _avatarUrl;
 
   bool _loadingProfile = true;
-
-  bool _checkingUpdate = false;
+  bool _uploadingAvatar = false;
 
   @override
   void initState() {
@@ -123,7 +122,7 @@ class _ProfileSheetState extends State<ProfileSheet> {
       bytes = await file.readAsBytes();
     } catch (e) {
       if (!mounted) return;
-      _showSnack('Could not read image');
+      _showNotice('Could not read that image', 'Try a different photo.');
       return;
     }
     if (!mounted) return;
@@ -141,6 +140,7 @@ class _ProfileSheetState extends State<ProfileSheet> {
     final userId = Supabase.instance.client.auth.currentUser?.id;
     if (userId == null) return;
 
+    setState(() => _uploadingAvatar = true);
     try {
       final url = await ProfileService.instance.uploadAvatar(
         targetUserId: userId,
@@ -148,23 +148,57 @@ class _ProfileSheetState extends State<ProfileSheet> {
       );
       if (!mounted) return;
       if (url == null) {
-        _showSnack('Could not save avatar');
+        _showNotice('Could not save your photo', 'Please try again.');
         return;
       }
       setState(() => _avatarUrl = url);
-      if (!mounted) return;
       context.read<AppState>().refresh();
     } catch (e) {
+      debugPrint('Avatar upload error: $e');
       if (!mounted) return;
-      _showSnack('Upload failed: $e');
+      _showNotice(
+        'Upload failed',
+        'Check your connection and try again.',
+      );
+    } finally {
+      if (mounted) setState(() => _uploadingAvatar = false);
     }
   }
 
-  void _showSnack(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(msg),
-        duration: const Duration(milliseconds: 1600),
+  /// A popup, not a snackbar: snackbars render underneath this sheet.
+  void _showNotice(String title, String message) {
+    showDialog(
+      context: context,
+      barrierColor: Colors.black.withValues(alpha: 0.75),
+      builder: (ctx) => AlertDialog(
+        backgroundColor: EfocColors.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        title: Text(
+          title,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 16,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        content: Text(
+          message,
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.6),
+            fontSize: 13,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text(
+              'OK',
+              style: TextStyle(color: EfocColors.accentBright),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -176,39 +210,6 @@ class _ProfileSheetState extends State<ProfileSheet> {
       isScrollControlled: true,
       builder: (_) => const QrSheet(),
     );
-  }
-
-  Future<void> _checkForUpdates() async {
-    if (_checkingUpdate) return;
-    setState(() => _checkingUpdate = true);
-
-    final result = await UpdateService.instance.check();
-
-    if (!mounted) return;
-    setState(() => _checkingUpdate = false);
-
-    switch (result.status) {
-      case UpdateStatus.upToDate:
-        _showSnack("You're on the latest version");
-        break;
-
-      case UpdateStatus.updateAvailable:
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Version ${result.latestVersion} is available'),
-            duration: const Duration(seconds: 6),
-            action: SnackBarAction(
-              label: 'UPDATE',
-              onPressed: () => UpdateService.instance.reload(),
-            ),
-          ),
-        );
-        break;
-
-      case UpdateStatus.failed:
-        _showSnack("Couldn't reach the update server");
-        break;
-    }
   }
 
   Future<void> _confirmLogout() async {
@@ -259,7 +260,8 @@ class _ProfileSheetState extends State<ProfileSheet> {
                 displayName: _displayName,
                 handle: _handle,
                 avatarUrl: _avatarUrl,
-                onAvatarTap: _openAvatarPicker,
+                uploading: _uploadingAvatar,
+                onAvatarTap: _uploadingAvatar ? null : _openAvatarPicker,
                 onQrTap: _openQrSheet,
               ),
               const SizedBox(height: 26),
@@ -341,23 +343,16 @@ class _ProfileSheetState extends State<ProfileSheet> {
                   _SettingRow(
                     icon: Icons.system_update_alt_rounded,
                     label: 'Check for updates',
-                    trailing: _checkingUpdate
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: EfocColors.textMuted,
-                            ),
-                          )
-                        : Text(
-                            'v$kAppVersion ($kAppBuild)',
-                            style: const TextStyle(
-                              color: EfocColors.textMuted,
-                              fontSize: 12,
-                            ),
-                          ),
-                    onTap: kIsWeb ? _checkForUpdates : null,
+                    trailing: Text(
+                      'v$kAppVersion ($kAppBuild)',
+                      style: const TextStyle(
+                        color: EfocColors.textMuted,
+                        fontSize: 12,
+                      ),
+                    ),
+                    onTap: kIsWeb
+                        ? () => showUpdateCheckDialog(context)
+                        : null,
                     isLast: true,
                   ),
                 ],
@@ -394,7 +389,8 @@ class _IdentityRow extends StatelessWidget {
   final String displayName;
   final String handle;
   final String? avatarUrl;
-  final VoidCallback onAvatarTap;
+  final bool uploading;
+  final VoidCallback? onAvatarTap;
   final VoidCallback onQrTap;
 
   const _IdentityRow({
@@ -402,6 +398,7 @@ class _IdentityRow extends StatelessWidget {
     required this.displayName,
     required this.handle,
     required this.avatarUrl,
+    required this.uploading,
     required this.onAvatarTap,
     required this.onQrTap,
   });
@@ -422,6 +419,8 @@ class _IdentityRow extends StatelessWidget {
         GestureDetector(
           onTap: onAvatarTap,
           child: Stack(
+            // The edit badge sits slightly outside the circle.
+            clipBehavior: Clip.none,
             children: [
               Container(
                 width: 64,
@@ -448,6 +447,24 @@ class _IdentityRow extends StatelessWidget {
                       )
                     : null,
               ),
+              if (uploading)
+                Container(
+                  width: 64,
+                  height: 64,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.black.withValues(alpha: 0.55),
+                  ),
+                  alignment: Alignment.center,
+                  child: const SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
               Positioned(
                 right: -2,
                 bottom: -2,
@@ -502,15 +519,17 @@ class _IdentityRow extends StatelessWidget {
                         letterSpacing: -0.3,
                       ),
                     ),
-                    const SizedBox(height: 3),
-                    Text(
-                      handle,
+                    if (handle.isNotEmpty) ...[
+                      const SizedBox(height: 3),
+                      Text(
+                        handle,
                       style: const TextStyle(
                         color: EfocColors.textMuted,
                         fontSize: 12,
-                        fontWeight: FontWeight.w500,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
-                    ),
+                    ],
                   ],
                 ),
         ),
