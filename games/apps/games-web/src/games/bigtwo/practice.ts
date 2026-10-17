@@ -74,7 +74,7 @@ export function startPractice(root: HTMLElement, o: PracticeOptions): { host: Ho
       seed: o.tutorial ? tutorialSeed(players, o.config) : o.seed,
       commentate: (events, state) => commentator.comment(events, state as bigtwo.BigTwoState),
       dwell: dwellMs,
-      previewMs: o.previewMs ?? 5000,
+      previewMs: o.previewMs ?? 15000,
     },
   );
   const settings: TableSettings = { humour: o.humour, sound: true, reducedMotion: false, fourColour: false, ...o.settings };
@@ -99,6 +99,7 @@ export function startPractice(root: HTMLElement, o: PracticeOptions): { host: Ho
         : undefined,
       setHumour: (h) => (commentator.director.humour = h),
       back: () => host.back(me),
+      ready: () => host.ready(me),
       exit: () => {
         host.stop();
         o.onExit();

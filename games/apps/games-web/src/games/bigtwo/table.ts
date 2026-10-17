@@ -41,6 +41,8 @@ export interface TableHooks {
   /** Humour is a room setting the host owns. */
   setHumour?: (h: Humour) => void;
   back(): void;
+  /** "I'm ready" during the look-at-your-cards pause. */
+  ready?: () => void;
   exit(): void;
 }
 
@@ -94,7 +96,9 @@ export class BigTwoTable {
   private countdown: HTMLElement;
   /** No moves until this time: the look-at-your-cards pause. */
   private previewUntil = 0;
+  private imReady = false;
   private lastCount = -1;
+  private wasHolding = false;
   /** True while this update's events include a legendary play. */
   private legendNow = false;
   private turnChip: HTMLElement;
@@ -196,7 +200,11 @@ export class BigTwoTable {
         continue;
       }
       if (e.type === 'round_started' && e.round === 1) this.stats.reset(view.players);
-      if (e.type === 'round_started') this.previewUntil = Date.now() + ((e.previewMs as number) ?? 0);
+      if (e.type === 'round_started') {
+        this.previewUntil = Date.now() + ((e.previewMs as number) ?? 0);
+        this.imReady = false;
+      }
+      if (e.type === 'preview_ended') this.previewUntil = Date.now();
       this.stats.feed(e, view.players);
       this.trackTrick(e);
     }
@@ -557,9 +565,20 @@ export class BigTwoTable {
     this.seatEls.length = v.players - 1;
   }
 
+  /** When the current turn's clock really starts (after any hold). */
+  private get turnStartsAt(): number {
+    const turnMs = Number(this.root.dataset.turnMs || 20000);
+    return this.meta.deadline ? this.meta.deadline - turnMs : 0;
+  }
+
+  /** True while a big moment or the opening pause holds the table. */
+  private get holding(): boolean {
+    return Date.now() < Math.max(this.previewUntil, this.turnStartsAt);
+  }
+
   private selectionPlay(): bigtwo.Combo | null {
     const v = this.view;
-    if (!v || v.phase !== 'play' || v.turn !== this.me || this.pending || Date.now() < this.previewUntil) return null;
+    if (!v || v.phase !== 'play' || v.turn !== this.me || this.pending || this.holding) return null;
     const cards = [...this.selected];
     const combo = bigtwo.classify(cards, v.config);
     if (!combo) return null;
@@ -577,12 +596,12 @@ export class BigTwoTable {
     const combo = this.selectionPlay();
     this.playBtn.disabled = !combo;
     this.playBtn.textContent = combo ? `${L().ui.play} ${(L().ui.combo as Record<string, string>)[combo.kind]}` : L().ui.play;
-    this.passBtn.disabled = !(myTurn && v.lead) || Date.now() < this.previewUntil;
+    this.passBtn.disabled = !(myTurn && v.lead) || this.holding;
     const afk = this.meta.afk[this.me] === true;
     this.backBtn.classList.toggle('hidden', !afk);
     this.passBtn.classList.toggle('hidden', afk);
     this.actionBar.classList.toggle('my-turn', myTurn);
-    this.timerBar.classList.toggle('hidden', !(v.phase === 'play' && this.meta.deadline));
+    this.timerBar.classList.toggle('hidden', !(v.phase === 'play' && this.meta.deadline) || this.holding);
     this.sortBtn.textContent = this.sortMode === 'suit' ? L().ui.sortSuit : L().ui.sortRank;
   }
 
@@ -1167,7 +1186,17 @@ export class BigTwoTable {
     c.style.height = `${st.h}px`;
     c.innerHTML = '<div class="countdown-title"></div><div class="countdown-num tick"></div>';
     c.firstElementChild!.textContent = n > 0 ? L().ui.lookAtCards : '';
-    c.lastElementChild!.textContent = n > 0 ? String(n) : L().ui.go;
+    c.children[1]!.textContent = n > 0 ? String(n) : L().ui.go;
+    if (n > 0 && this.hooks.ready) {
+      const b = button(c, `btn btn-turn countdown-ready${this.imReady ? ' done' : ''}`, this.imReady ? L().ui.waitingOthers : L().ui.imReady, L().ui.imReady);
+      b.disabled = this.imReady;
+      b.addEventListener('click', () => {
+        this.imReady = true;
+        sound.click();
+        this.hooks.ready!();
+        this.lastCount = -2; // redraw with the waiting label
+      });
+    }
     if (n > 0) sound.tick();
     else sound.chime();
     if (this.view) this.renderTurn(this.view);
@@ -1179,6 +1208,18 @@ export class BigTwoTable {
     if (this.previewUntil > 0) this.renderCountdown();
     const v = this.view;
     if (!v || !this.meta.deadline || v.phase !== 'play') return;
+    if (this.holding) {
+      this.wasHolding = true;
+      for (const s of this.seatEls) {
+        const fg = s.querySelector('.ring-fg') as SVGCircleElement | null;
+        if (fg) fg.style.strokeDashoffset = '100.5';
+      }
+      return;
+    }
+    if (this.wasHolding) {
+      this.wasHolding = false;
+      this.renderButtons();
+    }
     const total = this.meta.deadline - Date.now();
     const left = Math.max(0, total);
     const turnMs = Number(this.root.dataset.turnMs || 20000);

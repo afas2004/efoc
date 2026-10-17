@@ -55,6 +55,8 @@ efoc/                         (this repo)
 
 - **Playtest 3:** a single 2♠ or any straight/royal flush gets a *legendary* moment (thrown up spinning with a rainbow edge, slammed down with a shockwave, then a big announcement with rays, sparkles, confetti and Noto emoji). It runs 3.8 s, longer than the spec's 1.5 s T3 cap, at Fahmi's request; it never blocks input and a tap skips it, and the auto-passed play stays on the table until it is done. 2s spent inside a combo in the first half of a hand get a "BIG SPENDER!" moment. Every deal is followed by a 5 s look-at-your-cards countdown (no moves until it ends). Results show a pedestal for the top three.
 
+- **Playtest 4:** a big moment (legendary play, bomb, auto-pass, "Double it!") holds the next turn: the clock, the timer bar and moves wait until its animation has played, and the host refuses moves until then. The look-at-your-cards pause is **15 s**, with an "I'm ready" button that starts the game as soon as every human is ready.
+
 ## Left for later (as the spec says)
 
 - Pressure-rule numbers get tuned in beta.

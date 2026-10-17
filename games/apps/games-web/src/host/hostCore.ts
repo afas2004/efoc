@@ -65,6 +65,13 @@ const BOT_DELAY: Record<Personality, [number, number]> = {
   slowpoke: [2800, 4200],
 };
 
+/**
+ * A pause at least this long (a legendary play, a bomb, an auto-pass) holds
+ * the turn clock and blocks moves until the animation has played, so nobody
+ * loses time watching it.
+ */
+const HOLD_FROM_MS = 1800;
+
 /** Auto-selects in a row before a seat is marked AFK. */
 const AFK_AFTER = 2;
 /** Slowpoke stamps in one match that trigger "Double it!". */
@@ -88,8 +95,11 @@ export class HostCore<Config, State, Move, View> {
   private listeners: ((e: LogEntry<Move>) => void)[] = [];
   private stopped = false;
   private lastDwell = 0;
-  /** No moves before this time: everyone is looking at their new hand. */
-  private previewUntil = 0;
+  /** No moves before this time: the look-at-your-cards pause or a big moment. */
+  private holdUntil = 0;
+  /** True during the look-at-your-cards pause. */
+  private previewing = false;
+  private readySeats = new Set<SeatId>();
 
   constructor(
     readonly game: GameModule<Config, State, Move, View> & { nextRound?: (s: State, rng: Rng) => State },
@@ -119,9 +129,14 @@ export class HostCore<Config, State, Move, View> {
     this.listeners.push(fn);
   }
 
+  /** Adds the Jester's line and works out how long the table should pause. */
+  private decorate(events: GameEvent[]): GameEvent[] {
+    const all = this.opts.commentate ? [...events, ...this.opts.commentate(events, this.state)] : events;
+    this.lastDwell = this.opts.dwell ? this.opts.dwell(all) : 0;
+    return all;
+  }
+
   private emit(seat: SeatId | null, move: Move | null, events: GameEvent[]): void {
-    if (this.opts.commentate) events = [...events, ...this.opts.commentate(events, this.state)];
-    this.lastDwell = this.opts.dwell ? this.opts.dwell(events) : 0;
     const entry: LogEntry<Move> = { n: this.n++, seat, move, events, deadline: this.deadline };
     for (const l of this.listeners) l(entry);
   }
@@ -163,10 +178,34 @@ export class HostCore<Config, State, Move, View> {
   /** After a deal: a look-at-your-cards pause, then the first turn. */
   private dealt(): void {
     const preview = this.opts.previewMs ?? 0;
-    this.previewUntil = this.now() + preview;
-    this.armTurn(preview);
-    this.emit(null, null, [{ type: 'round_started', round: this.round, previewMs: preview }]);
+    this.previewing = preview > 0;
+    this.readySeats.clear();
+    this.holdUntil = this.now() + preview;
+    const events = this.decorate([{ type: 'round_started', round: this.round, previewMs: preview }]);
     this.lastDwell = Math.max(this.lastDwell, preview);
+    this.armTurn(preview);
+    this.emit(null, null, events);
+    this.scheduleBot();
+  }
+
+  /**
+   * A player tapped "I'm ready" during the look-at-your-cards pause. When
+   * every human is ready the game starts at once.
+   */
+  ready(seat: SeatId): void {
+    if (!this.previewing || this.stopped) return;
+    this.readySeats.add(seat);
+    const humans = this.seats.map((s, i) => (s.bot ? -1 : i)).filter((i) => i >= 0);
+    const allReady = humans.every((i) => this.readySeats.has(i));
+    if (!allReady) {
+      this.emit(null, null, [{ type: 'ready', seat }]);
+      return;
+    }
+    this.previewing = false;
+    this.holdUntil = this.now();
+    this.lastDwell = 0;
+    this.armTurn(0);
+    this.emit(null, null, [{ type: 'ready', seat }, { type: 'preview_ended' }]);
     this.scheduleBot();
   }
 
@@ -174,7 +213,7 @@ export class HostCore<Config, State, Move, View> {
   submit(seat: SeatId, move: Move, madeAt?: number): string | null {
     if (this.stopped) return 'The match has ended';
     if (madeAt !== undefined && madeAt !== this.n - 1) return 'The table moved on; try again';
-    if (this.now() < this.previewUntil) return 'Get ready…';
+    if (this.now() < this.holdUntil) return 'Get ready…';
     const check = this.game.validate(this.state, seat, move);
     if (!check.ok) return check.reason;
     this.consecutive[seat] = 0;
@@ -187,6 +226,7 @@ export class HostCore<Config, State, Move, View> {
     if (!this.afk[seat]) return;
     this.afk[seat] = false;
     this.consecutive[seat] = 0;
+    this.lastDwell = 0;
     this.emit(null, null, [{ type: 'afk_cleared', seat }]);
     this.scheduleBot();
   }
@@ -199,7 +239,7 @@ export class HostCore<Config, State, Move, View> {
   private commit(seat: SeatId, move: Move, extra: GameEvent[]): void {
     const { state, events } = this.game.apply(this.state, seat, move, this.rng);
     this.state = state;
-    const all = [...extra, ...events];
+    let all = [...extra, ...events];
     const result = this.game.result(state);
     if (result) {
       this.deadline = null;
@@ -207,8 +247,14 @@ export class HostCore<Config, State, Move, View> {
       const points = result.points.map((p, i) => (this.doubled[i] ? p * 2 : p));
       points.forEach((p, i) => (this.totals[i] = this.totals[i]! + p));
       all.push({ type: 'match_points', points, totals: this.totals.slice(), doubled: this.doubled.slice(), placings: result.placings });
+      all = this.decorate(all);
     } else {
-      this.armTurn();
+      all = this.decorate(all);
+      // A big moment holds the next turn's clock until it has played.
+      this.previewing = false;
+      const hold = this.lastDwell >= HOLD_FROM_MS ? this.lastDwell : 0;
+      this.holdUntil = this.now() + hold;
+      this.armTurn(hold);
     }
     this.emit(seat, move, all);
     if (!result) this.scheduleBot();

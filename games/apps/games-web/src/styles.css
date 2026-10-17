@@ -1274,3 +1274,14 @@ table.stats tr.me {
 .reduced-motion .podium-block,
 .reduced-motion .podium-step.p1 .podium-avatar { animation: none; }
 .standings.rest .standing { min-height: 40px; }
+
+.countdown-ready {
+  margin-top: 10px;
+  min-width: 160px;
+  pointer-events: auto;
+  font-size: 17px;
+}
+.countdown-ready.done {
+  background: rgba(15, 23, 42, 0.7);
+  color: var(--ink);
+}

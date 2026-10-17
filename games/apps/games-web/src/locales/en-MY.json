@@ -143,7 +143,9 @@
     "lookAtCards": "Look at your cards",
     "startingIn": "Starting in {n}…",
     "go": "GO!",
-    "getReady": "Get ready…"
+    "getReady": "Get ready…",
+    "imReady": "I'm ready",
+    "waitingOthers": "Waiting for others…"
   },
   "tutorial": {
     "lead3d": "You hold 3♦, so you start. Tap the 3♦ (you can add cards that make a pair, triple or 5-card hand), then tap Play.",

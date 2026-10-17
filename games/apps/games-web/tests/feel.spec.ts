@@ -133,3 +133,54 @@ test('the first visit runs the tutorial; Play again starts a new match', async (
   await expect(page.locator('.overlay.results')).toBeHidden();
   await expect(page.locator('.card.in-hand')).not.toHaveCount(0);
 });
+
+test('a big moment holds my turn clock until it has played', async ({ page }) => {
+  await page.goto('/bigtwo/?preview=0&players=2&seed=8&tutorial=0&mute=1&speed=50');
+  await page.waitForTimeout(600);
+  // Seat 1 drops four 5s (a bomb); then it is my turn.
+  const t0 = await page.evaluate(() => {
+    const { host } = (window as any).__efoc;
+    const s = host.state;
+    const give = (seat: number, cards: string[]) => {
+      for (const c of cards) {
+        s.hands = s.hands.map((h: string[]) => h.filter((x) => x !== c));
+        s.out = s.out.filter((x: string) => x !== c);
+        s.hands[seat].push(c);
+      }
+    };
+    const bomb = ['5c', '5d', '5h', '5s', '3c'];
+    give(1, bomb);
+    // Keep 13 cards: move seat 1's spares to the out pile.
+    while (s.hands[1].length > 13) {
+      const i = s.hands[1].findIndex((c: string) => !bomb.includes(c));
+      s.out.push(s.hands[1].splice(i, 1)[0]);
+    }
+    s.turn = 1;
+    s.lead = null;
+    s.mustInclude = null;
+    const r = host.submit(1, { type: 'play', cards: ['5c', '5d', '5h', '5s', '3c'] });
+    if (r) throw new Error(r);
+    return Date.now();
+  });
+  await expect.poll(() => page.evaluate(() => (window as any).__efoc.table.view.turn)).toBe(0);
+  // During the hold: no timer, no moves, and the host refuses an early pass.
+  await expect(page.locator('.timer-bar')).toBeHidden();
+  await expect(page.getByRole('button', { name: 'Pass' })).toBeDisabled();
+  const early = await page.evaluate(() => (window as any).__efoc.host.submit(0, { type: 'pass' }));
+  expect(early).toBe('Get ready…');
+  // After it: the clock runs and I can act.
+  await expect(page.locator('.timer-bar')).toBeVisible({ timeout: 4000 });
+  await expect(page.getByRole('button', { name: 'Pass' })).toBeEnabled();
+  expect(Date.now() - t0).toBeGreaterThanOrEqual(1700);
+});
+
+test("the look-at-your-cards pause ends early when everyone is ready", async ({ page }) => {
+  await page.goto('/bigtwo/?preview=15000&players=3&seed=4&tutorial=0&mute=1');
+  await expect(page.locator('.countdown-num')).toBeVisible();
+  await expect(page.locator('.timer-bar')).toBeHidden();
+  const t0 = Date.now();
+  await page.getByRole('button', { name: "I'm ready" }).click();
+  await expect(page.locator('.countdown')).toBeHidden({ timeout: 2500 });
+  expect(Date.now() - t0).toBeLessThan(3000);
+  await expect(page.locator('.turn-chip')).not.toContainText('Starting in');
+});
