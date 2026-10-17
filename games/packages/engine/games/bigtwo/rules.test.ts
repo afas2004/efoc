@@ -43,6 +43,7 @@ function state(hands: string[], over: Partial<BigTwoState> = {}, config = cfg())
     players: n,
     hands: hs,
     out: fullDeck().filter((x) => !used.has(x)),
+    onTwo: [],
     pile: [],
     turn: 0,
     lead: null,
@@ -408,6 +409,51 @@ describe('Fight Till The End', () => {
     // places: 0 first (0), 1 second (1), 2 last (2 + 1 card left)
     expect(result(s)!.placings).toEqual([0, 1, 2]);
     expect(result(s)!.points).toEqual([0, 1, 3]);
+  });
+});
+
+describe('finishing on a 2 puts you last', () => {
+  it('Standard: the round goes on, the next to go out wins, the 2-finisher scores as 13 cards', () => {
+    const s0 = state(['2h', '4d 9d', '5d Td'], { turn: 0 });
+    let { s, events } = run(s0, [[0, play('2h')]]);
+    expect(s.phase).toBe('play');
+    expect(events.find((e) => e.type === 'player_out')).toMatchObject({ seat: 0, onTwo: true, place: 3 });
+    ({ s } = run(s, [[1, PASS], [2, PASS], [1, play('4d')], [2, play('5d')], [1, play('9d')]]));
+    expect(s.phase).toBe('matchOver');
+    expect(result(s)!.placings).toEqual([1, 2, 0]);
+    expect(result(s)!.points).toEqual([39, 0, 1]);
+  });
+  it('Standard, 2 players: the other player wins', () => {
+    const { s } = run(state(['2h', '4d 9d'], { turn: 0 }), [[0, play('2h')]]);
+    expect(s.phase).toBe('matchOver');
+    expect(result(s)!.placings).toEqual([1, 0]);
+    expect(result(s)!.points).toEqual([39, 0]);
+  });
+  it('counts a 2 anywhere in the last play (a pair, a straight)', () => {
+    const { s } = run(state(['2h 2s', '4d 9d', '5d Td'], { turn: 0 }), [[0, play('2h 2s')]]);
+    expect(s.onTwo).toEqual([0]);
+  });
+  it('Fight Till The End: 2-finishers fill the bottom places, the first one very last', () => {
+    const ftte = cfg({ mode: 'fightTillTheEnd' });
+    const s0 = state(['2s', '2h', '5d Td', '3c'], { turn: 0 }, ftte);
+    let { s } = run(s0, [[0, play('2s')]]); // 0 out on a 2 (unbeatable): lead passes on
+    expect(s.turn).toBe(1);
+    ({ s } = run(s, [[1, play('2h')], [2, PASS], [3, PASS]])); // 1 out on a 2 too
+    ({ s } = run(s, [[2, play('5d')], [3, PASS], [2, play('Td')]])); // 2 goes out properly; 3 holds
+    expect(s.phase).toBe('matchOver');
+    expect(result(s)!.placings).toEqual([2, 3, 1, 0]);
+    // places 0..3; seat 3 (left holding 1 card) also pays 1
+    expect(result(s)!.points).toEqual([3, 2, 0, 1 + 1]);
+  });
+  it('can be switched off', () => {
+    const { s } = run(state(['2h', '4d 9d'], { turn: 0 }, cfg({ twoFinishLoses: false })), [[0, play('2h')]]);
+    expect(result(s)!.placings).toEqual([0, 1]);
+  });
+  it('bots avoid it when they can', () => {
+    // Leading with 2h and 5d left: a bot must not play the 2 last.
+    const s0 = state(['5d 2h', '4d 9d 9c'], { turn: 0 });
+    const move = bot(view(s0, 0), 'normal', createRng(1));
+    expect(move).toEqual(play('5d'));
   });
 });
 

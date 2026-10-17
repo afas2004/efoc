@@ -45,6 +45,8 @@ efoc/                         (this repo)
 | Opening play (playtest 2) | **3♦ can't be the throw card.** In two pair, three of a kind or four of a kind + 1, the 3♦ (or the burned-3♦ fallback card) must be in the main group, not the kicker. | — |
 | Unbeatable plays (playtest 2) | **Auto-pass.** A play nothing can beat (single 2♠, a pair with 2♠, three or four 2s, J-Q-K-A-2 of spades) makes everyone else pass at once, and the player leads again. In Fight Till The End, if they went out with it, the lead goes to the next player still in. | `autoPassUnbeatable: true` |
 
+| Finishing on a 2 (online playtest, 18 Oct) | **Always on: going out with a 2 anywhere in your last play puts you last.** Standard: the round carries on until someone goes out properly (they win); the 2-finisher scores as if holding all 13 cards (39). If everyone else went out on a 2, the player left wins. Fight Till The End: 2-finishers fill the bottom places, the first of them very last. Bots avoid it; the Play button warns before you do it. | `twoFinishLoses: true` (no switch in the app) |
+
 ## Playtest changes (17 Oct)
 
 - **The Jester is host-driven.** The host picks every line and sends it in the log as a `jester` event, so every player and spectator sees the same line at the same time. Lines describe what happened ("Mei played a pair of Ks…"). Big moments (bomb, last card, going out, win, round start) always speak; smaller ones keep the 15 s gap. He is a large animated original mascot with Noto animated emoji reactions.

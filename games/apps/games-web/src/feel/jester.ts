@@ -52,6 +52,7 @@ const STYLE: Record<string, { mood: Mood; emoji: string | null }> = {
   double_it: { mood: 'laugh', emoji: 'laugh' },
   one_card: { mood: 'shock', emoji: 'scream' },
   player_out: { mood: 'cheer', emoji: 'party' },
+  out_on_two: { mood: 'laugh', emoji: 'laugh' },
   win: { mood: 'cheer', emoji: 'party' },
   last_place: { mood: 'sad', emoji: 'grimace' },
   cheer: { mood: 'cheer', emoji: null },

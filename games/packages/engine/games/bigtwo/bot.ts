@@ -24,7 +24,12 @@ const playOf = (p: Play): BigTwoMove => ({ type: 'play', cards: p.cards });
 export function bot(view: BigTwoView, level: BotLevel, rng: Rng): BigTwoMove {
   if (view.seat === 'public') throw new Error('A bot needs a seat view');
   const lead = view.lead ? classify(view.lead.cards, view.config) : null;
-  const plays = legalPlays(view.hand, lead, view.mustInclude, view.config);
+  let plays = legalPlays(view.hand, lead, view.mustInclude, view.config);
+  // Going out on a 2 puts you last: never do it unless there's no choice.
+  if (view.config.twoFinishLoses) {
+    const safe = plays.filter((p) => !(p.cards.length === view.hand.length && usesTwo(p)));
+    if (safe.length > 0 || lead !== null) plays = safe;
+  }
   if (plays.length === 0) return PASS; // only possible when following
   return level === 'easy' ? easy(plays, lead !== null, rng) : normal(view, plays, lead !== null);
 }

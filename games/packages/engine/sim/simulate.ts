@@ -87,7 +87,11 @@ function checkResult(s: BigTwoState): string | null {
   if (new Set(r.placings).size !== s.players || r.placings.length !== s.players) return 'placings are not one per seat';
   if (r.points.some((p) => p < 0 || !Number.isInteger(p))) return 'negative or fractional points';
   if (r.points[r.placings[0]!] !== 0) return 'the winner took points';
-  if (s.config.mode === 'standard' && s.hands[r.placings[0]!]!.length !== 0) return 'winner still holds cards';
+  // The winner went out, unless everyone else went out on a 2 (they come last).
+  const onTwo = s.onTwo ?? [];
+  if (s.config.mode === 'standard' && s.hands[r.placings[0]!]!.length !== 0 && onTwo.length !== s.players - 1) return 'winner still holds cards';
+  if (onTwo.some((seat) => r.placings.indexOf(seat) < s.players - onTwo.length)) return 'a 2-finisher is not at the bottom';
+  if (!s.config.twoFinishLoses && onTwo.length > 0) return 'a 2-finisher without the rule';
   if (s.config.mode === 'fightTillTheEnd' && s.hands.filter((h) => h.length > 0).length > 1) {
     return 'more than one player still holds cards at the end';
   }
@@ -107,6 +111,7 @@ function randomConfig(base: BigTwoConfig, rng: Rng): BigTwoConfig {
     passLocksOut: coin(),
     pokerHands: coin(),
     autoPassUnbeatable: coin(),
+    twoFinishLoses: coin(),
     roundsToPlay: 1 + rng.int(3),
   };
 }

@@ -246,6 +246,8 @@ export interface BigTwoState {
   mustInclude: Card | null;
   /** Seats that went out, in order. */
   finished: SeatId[];
+  /** Seats that went out on a 2 (twoFinishLoses): placed last, in this order. */
+  onTwo: SeatId[];
   phase: 'play' | 'roundOver' | 'matchOver';
   round: number;
   /** Cumulative penalty points for the match. */
@@ -263,6 +265,7 @@ function clone(s: BigTwoState): BigTwoState {
     lead: s.lead && { ...s.lead, cards: s.lead.cards.slice(), combo: { ...s.lead.combo, key: s.lead.combo.key.slice() } },
     passed: s.passed.slice(),
     finished: s.finished.slice(),
+    onTwo: (s.onTwo ?? []).slice(),
     scores: s.scores.slice(),
     roundPoints: s.roundPoints && s.roundPoints.slice(),
     placings: s.placings && s.placings.slice(),
@@ -287,6 +290,7 @@ function dealRound(players: number, config: BigTwoConfig, rng: Rng, round: numbe
     passed: new Array<boolean>(players).fill(false),
     mustInclude: opening,
     finished: [],
+    onTwo: [],
     phase: 'play',
     round,
     scores,
@@ -354,19 +358,31 @@ function penaltyFor(cardsLeft: number): number {
 function endRound(s: BigTwoState, events: GameEvent[]): void {
   const n = s.players;
   const points = new Array<number>(n).fill(0);
+  // 2-finishers fill the bottom places: the first of them is very last.
+  const losers = s.onTwo.slice().reverse();
   let placings: SeatId[];
   if (s.config.mode === 'standard') {
-    const winner = s.finished[0]!;
+    // Normally the first out. If only 2-finishers went out, the player
+    // with the fewest cards left wins.
+    const holders: SeatId[] = [];
+    for (let i = 0; i < n; i++) if (!losers.includes(i)) holders.push(i);
+    const winner = s.finished[0] ?? holders.slice().sort((a, b) => s.hands[a]!.length - s.hands[b]!.length)[0]!;
     const rest: SeatId[] = [];
-    for (let i = 1; i < n; i++) rest.push((winner + i) % n);
+    for (let i = 1; i < n; i++) {
+      const seat = (winner + i) % n;
+      if (!losers.includes(seat)) rest.push(seat);
+    }
     rest.sort((a, b) => s.hands[a]!.length - s.hands[b]!.length); // stable: ties keep seat order from the winner
-    placings = [winner, ...rest];
+    placings = [winner, ...rest, ...losers];
     for (const seat of rest) points[seat] = penaltyFor(s.hands[seat]!.length);
+    for (const seat of losers) points[seat] = penaltyFor(13);
   } else {
-    placings = s.finished.slice();
+    placings = [...s.finished, ...losers];
     placings.forEach((seat, place) => (points[seat] = place));
-    const last = placings[n - 1]!;
-    points[last] = points[last]! + s.hands[last]!.length;
+    // The one left holding cards also pays for them, unless 2-finishers
+    // dropped below them and they came out on top.
+    const holder = s.finished[s.finished.length - 1]!;
+    if (holder !== placings[0]) points[holder] = points[holder]! + s.hands[holder]!.length;
   }
   const doubled = s.config.roundsToPlay > 1 && s.round === s.config.roundsToPlay;
   if (doubled) for (let i = 0; i < n; i++) points[i] = points[i]! * 2;
@@ -445,14 +461,20 @@ export function applyTrusted(state: BigTwoState, seat: SeatId, move: BigTwoMove)
   if (isBomb(combo.kind)) events.push({ type: 'bomb', seat, kind: combo.kind });
 
   if (s.hands[seat]!.length === 0) {
-    s.finished.push(seat);
-    events.push({ type: 'player_out', seat, place: s.finished.length });
+    const onTwo = s.config.twoFinishLoses && cards.some((c) => c[0] === '2');
+    if (onTwo) {
+      s.onTwo.push(seat);
+      events.push({ type: 'player_out', seat, place: s.players - s.onTwo.length + 1, onTwo: true });
+    } else {
+      s.finished.push(seat);
+      events.push({ type: 'player_out', seat, place: s.finished.length });
+    }
     const stillIn = s.hands.map((_, i) => i).filter((i) => isActive(s, i));
-    if (s.config.mode === 'standard') {
+    if (s.config.mode === 'standard' && (!onTwo || stillIn.length <= 1)) {
       endRound(s, events);
       return { state: s, events };
     }
-    if (stillIn.length === 1) {
+    if (s.config.mode !== 'standard' && stillIn.length === 1) {
       s.finished.push(stillIn[0]!);
       endRound(s, events);
       return { state: s, events };
@@ -528,6 +550,7 @@ export type BigTwoView = {
   pile: Card[];
   outCount: number;
   finished: SeatId[];
+  onTwo: SeatId[];
   phase: BigTwoState['phase'];
   round: number;
   scores: number[];
@@ -551,6 +574,7 @@ export function view(state: BigTwoState, seat: SeatId | 'public'): BigTwoView {
     pile: state.pile.slice(),
     outCount: state.out.length,
     finished: state.finished.slice(),
+    onTwo: (state.onTwo ?? []).slice(),
     phase: state.phase,
     round: state.round,
     scores: state.scores.slice(),

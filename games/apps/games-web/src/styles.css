@@ -453,6 +453,27 @@ body {
   background: var(--turn);
   color: #052e16;
 }
+.action-bar .btn-primary.btn-warn {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+}
+.lobby-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.lobby-head h2 {
+  flex: 1;
+  margin: 0;
+}
+.lobby-head .btn {
+  min-height: 40px;
+  padding: 0 14px;
+  font-size: 14px;
+  white-space: nowrap;
+}
 .action-bar .btn-primary {
   white-space: nowrap;
   overflow: hidden;
@@ -849,6 +870,12 @@ body {
   min-height: 56px;
   margin-top: 6px;
   font-size: 20px;
+}
+/* In the waiting room Start stays in view while the host scrolls the rules. */
+.overlay.lobby .btn-start {
+  position: sticky;
+  bottom: 0;
+  box-shadow: 0 -10px 18px var(--sheet-bg);
 }
 
 /* ------------------------------------------------------------ stats */

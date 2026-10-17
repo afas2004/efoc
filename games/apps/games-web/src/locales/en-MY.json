@@ -24,6 +24,8 @@
     "pass_chip": "Pass",
     "out": "Out",
     "place": "#{n}",
+    "outOnTwo": "OUT ON A 2 = LAST!",
+    "lastOnTwo": "you'll come last!",
     "unfinished": "Unfinished",
     "humour": "Humour",
     "humourOff": "Off",
@@ -330,6 +332,20 @@
       {
         "text": "Champion {name}! Everyone else counts their leftover cards.",
         "tone": "cheer"
+      }
+    ],
+    "out_on_two": [
+      {
+        "text": "{name} finished on a 2! House rule: that's LAST place. Ouch.",
+        "tone": "tease"
+      },
+      {
+        "text": "A 2 to finish, {name}? Bold. Also: last. Very last.",
+        "tone": "tease"
+      },
+      {
+        "text": "{name} goes out with a 2… straight to the bottom of the table!",
+        "tone": "tease"
       }
     ],
     "last_place": [

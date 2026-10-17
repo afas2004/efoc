@@ -597,6 +597,10 @@ export class BigTwoTable {
     const combo = this.selectionPlay();
     this.playBtn.disabled = !combo;
     this.playBtn.textContent = combo ? `${L().ui.play} ${(L().ui.combo as Record<string, string>)[combo.kind]}` : L().ui.play;
+    // Warn before going out on a 2 (house rule: you come last).
+    const lastOnTwo = !!combo && v.config.twoFinishLoses && this.selected.size === v.hand.length && [...this.selected].some((c) => c[0] === '2');
+    if (lastOnTwo) this.playBtn.textContent = `${this.playBtn.textContent} · ${L().ui.lastOnTwo}`;
+    this.playBtn.classList.toggle('btn-warn', lastOnTwo);
     this.passBtn.disabled = !(myTurn && v.lead) || this.holding;
     const afk = this.meta.afk[this.me] === true;
     this.backBtn.classList.toggle('hidden', !afk);
@@ -868,6 +872,16 @@ export class BigTwoTable {
         break;
       }
       case 'player_out': {
+        if (e.onTwo) {
+          // House rule: going out on a 2 puts you last.
+          this.feel.play(2, 'out_on_two', (ctx) => {
+            haptic(seat === this.me ? 'error' : 'medium');
+            const at = this.seatCentre(seat!);
+            banner(this.fx, L().ui.outOnTwo, 'danger', 'pop', ctx, at);
+            burst(this.fx, at.x, at.y, 14, 'danger', ctx, 70);
+          });
+          break;
+        }
         this.feel.play(2, 'player_out', (ctx) => {
           sound.chime();
           haptic('medium');

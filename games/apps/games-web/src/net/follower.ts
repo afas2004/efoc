@@ -45,6 +45,7 @@ export function reviveState(raw: Json, players: number): State {
     pile: arr<string>(s.pile),
     passed: fill<boolean>(s.passed, players, () => false).map(Boolean),
     finished: arr<number>(s.finished),
+    onTwo: arr<number>(s.onTwo),
     scores: fill<number>(s.scores, players, () => 0),
     roundPoints: s.roundPoints ? arr<number>(s.roundPoints) : null,
     placings: s.placings ? arr<number>(s.placings) : null,

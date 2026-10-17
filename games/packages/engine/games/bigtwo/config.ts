@@ -24,6 +24,12 @@ export interface BigTwoConfig {
    * the top straight flush) ends the trick at once: everyone auto-passes.
    */
   autoPassUnbeatable: boolean;
+  /**
+   * Going out with a 2 in your last play puts you last (house rule, always
+   * on in the app). Standard: the round goes on until someone finishes
+   * properly; the 2-finisher scores as if they held all 13 cards.
+   */
+  twoFinishLoses: boolean;
   /** Rounds in a match. When over 1, the last round counts double. */
   roundsToPlay: number;
 }
@@ -37,6 +43,7 @@ export const defaultConfig: BigTwoConfig = {
   flushCompare: 'suitFirst',
   pokerHands: true,
   autoPassUnbeatable: true,
+  twoFinishLoses: true,
   passLocksOut: false,
   roundsToPlay: 1,
 };

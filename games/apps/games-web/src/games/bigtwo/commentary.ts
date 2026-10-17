@@ -36,9 +36,9 @@ function straightTopRank(cards: readonly Card[]): string {
   return cards.find((c) => bigtwo.rankIndex(c) === idx[4])![0]!;
 }
 
-const MAJOR = new Set(['unstoppable', 'unbeatable', 'bomb', 'one_card', 'player_out', 'win', 'double_it', 'round_start']);
+const MAJOR = new Set(['out_on_two', 'unstoppable', 'unbeatable', 'bomb', 'one_card', 'player_out', 'win', 'double_it', 'round_start']);
 /** When several big things happen at once, the rarest wins the line. */
-const PRIORITY = ['unstoppable', 'unbeatable', 'bomb', 'win', 'double_it', 'player_out', 'one_card', 'round_start'];
+const PRIORITY = ['out_on_two', 'unstoppable', 'unbeatable', 'bomb', 'win', 'double_it', 'player_out', 'one_card', 'round_start'];
 
 export class BigTwoCommentator {
   readonly director: JesterDirector;
@@ -100,7 +100,8 @@ export class BigTwoCommentator {
           break;
         }
         case 'player_out':
-          if (state.phase === 'play') candidates.push(['player_out', seat, { name: name(seat!), place: e.place as number }]);
+          if (e.onTwo) candidates.push(['out_on_two', seat, { name: name(seat!) }]);
+          else if (state.phase === 'play') candidates.push(['player_out', seat, { name: name(seat!), place: e.place as number }]);
           break;
         case 'too_slow':
           candidates.push(['too_slow', seat, { name: name(seat!) }]);

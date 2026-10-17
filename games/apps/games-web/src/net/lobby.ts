@@ -53,9 +53,18 @@ export function renderLobby(root: HTMLElement, st: LobbyState, act: LobbyActions
   const sheet = document.createElement('div');
   sheet.className = 'sheet setup-sheet';
   overlay.appendChild(sheet);
+  // Title, with Leave (or the host's Close table) always in view at the top.
+  const head = document.createElement('div');
+  head.className = 'lobby-head';
+  sheet.appendChild(head);
   const h = document.createElement('h2');
-  h.textContent = `🃏 ${u.setupTitle} · ${u.waitingRoom}`;
-  sheet.appendChild(h);
+  h.textContent = `🃏 ${u.waitingRoom}`;
+  head.appendChild(h);
+  head.appendChild(
+    isHost
+      ? twoTap('close', 'btn btn-secondary btn-close-table', u.closeTable, () => act.closeTable())
+      : twoTap('leave', 'btn btn-secondary btn-leave-table', u.leaveTable, () => act.leave()),
+  );
 
   const seats = lobbySeats(st.meta, st.members);
   const list = document.createElement('ol');
@@ -173,11 +182,6 @@ export function renderLobby(root: HTMLElement, st: LobbyState, act: LobbyActions
   count.textContent = fmt(u.onlineCount, { n: seats.length });
   sheet.appendChild(count);
 
-  // Leaving: a player just goes; the host leaving closes the table.
-  const out = document.createElement('div');
-  out.className = 'sheet-actions lobby-leave';
-  out.appendChild(isHost ? twoTap('close', 'btn btn-secondary btn-close-table', u.closeTable, () => act.closeTable()) : twoTap('leave', 'btn btn-secondary btn-leave-table', u.leaveTable, () => act.leave()));
-  sheet.appendChild(out);
 }
 
 /** Which two-tap button is waiting for its second tap, and until when. */
