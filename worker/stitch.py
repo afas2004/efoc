@@ -11,6 +11,10 @@ from a laptop:
     python worker/stitch.py                       # yesterday, all groups
     python worker/stitch.py --date 2026-10-16     # a specific day
     python worker/stitch.py --group <uuid> --force
+    python worker/stitch.py --cleanup-only --dry-run   # what would be deleted
+
+After stitching it applies the free-tier retention policy (see cleanup()):
+only today's raw clips and yesterday's stitched vlog stay in Supabase.
 
 Requires ffmpeg/ffprobe on PATH and a TTF font (see FONT_FILE).
 """
@@ -48,6 +52,15 @@ MAX_CLIP_SECONDS = 4  # clips are 3s; cap guards against odd uploads
 
 HEX_COLOR = re.compile(r"^#?([0-9a-fA-F]{6})$")
 
+# Retention. Raw clips go once their day is stitched; if stitching keeps
+# failing they still go after RAW_GRACE_DAYS so storage can't pile up.
+# Stitched vlogs older than yesterday go once backed up to the laptop
+# (worker/backup.py), or after VLOG_MAX_DAYS even without a backup.
+RAW_GRACE_DAYS = int(os.environ.get("RAW_GRACE_DAYS", "3"))
+VLOG_MAX_DAYS = int(os.environ.get("VLOG_MAX_DAYS", "7"))
+
+VIDEO_EXT = re.compile(r"\.(mp4|webm|mov)$")
+
 
 # ============================================================
 # Supabase REST helpers
@@ -80,6 +93,36 @@ def rest_upsert(table: str, row: dict, on_conflict: str) -> None:
         timeout=30,
     )
     r.raise_for_status()
+
+
+def rest_delete_ids(table: str, ids: list[str]) -> None:
+    for i in range(0, len(ids), 100):
+        r = requests.delete(
+            f"{SUPABASE_URL}/rest/v1/{table}",
+            headers=_headers({"Prefer": "return=minimal"}),
+            params={"id": f"in.({','.join(ids[i:i + 100])})"},
+            timeout=30,
+        )
+        r.raise_for_status()
+
+
+def storage_delete(bucket: str, paths: list[str]) -> None:
+    """Bulk delete. Paths that don't exist are ignored by Storage."""
+    for i in range(0, len(paths), 100):
+        r = requests.delete(
+            f"{SUPABASE_URL}/storage/v1/object/{bucket}",
+            headers=_headers({"Content-Type": "application/json"}),
+            data=json.dumps({"prefixes": paths[i:i + 100]}),
+            timeout=60,
+        )
+        r.raise_for_status()
+
+
+def thumb_path_for(storage_path: str) -> str:
+    """Same rule as ClipService.publicThumbnailUrl in the app."""
+    if VIDEO_EXT.search(storage_path):
+        return VIDEO_EXT.sub(".jpg", storage_path)
+    return storage_path  # old extensionless web uploads
 
 
 def storage_download(bucket: str, path: str, dest: Path) -> None:
@@ -274,6 +317,72 @@ def stitch_group(group_id: str, date: str, clips: list[dict],
         print(f"  -> {video_path} ({len(segments)} clips)")
 
 
+# ============================================================
+# Retention
+# ============================================================
+
+def cleanup(today: dt.date, dry_run: bool) -> None:
+    yesterday = today - dt.timedelta(days=1)
+    verb = "would delete" if dry_run else "deleting"
+
+    # ---- raw clips from before today ----
+    old_clips = rest_get("clips", {
+        "select": "id,group_id,recorded_on,storage_path",
+        "recorded_on": f"lt.{today.isoformat()}",
+    })
+    stitched = {
+        (v["group_id"], v["vlog_date"])
+        for v in rest_get("vlogs", {
+            "select": "group_id,vlog_date",
+            "vlog_date": f"lt.{today.isoformat()}",
+        })
+    }
+    grace_cutoff = (today - dt.timedelta(days=RAW_GRACE_DAYS)).isoformat()
+
+    doomed: list[dict] = []
+    for c in old_clips:
+        if (c["group_id"], c["recorded_on"]) in stitched:
+            doomed.append(c)
+        elif c["recorded_on"] < grace_cutoff:
+            print(f"  [{c['group_id']}] {c['recorded_on']} never stitched, "
+                  f"dropping raw clips anyway", file=sys.stderr)
+            doomed.append(c)
+
+    kept = len(old_clips) - len(doomed)
+    print(f"Raw clips before {today}: {verb} {len(doomed)}, keeping {kept} "
+          f"(not stitched yet)")
+    if doomed and not dry_run:
+        # Rows first: if that fails the files are still there; a leftover
+        # file with no row is only wasted space.
+        rest_delete_ids("clips", [c["id"] for c in doomed])
+        paths = [c["storage_path"] for c in doomed]
+        storage_delete("clips", paths)
+        storage_delete("thumbnails", [thumb_path_for(p) for p in paths])
+
+    # ---- stitched vlogs older than yesterday ----
+    old_vlogs = rest_get("vlogs", {
+        "select": "id,group_id,vlog_date,storage_path,thumbnail_path,backed_up_at",
+        "vlog_date": f"lt.{yesterday.isoformat()}",
+    })
+    hard_cutoff = (today - dt.timedelta(days=VLOG_MAX_DAYS)).isoformat()
+    gone = [
+        v for v in old_vlogs
+        if v.get("backed_up_at") or v["vlog_date"] < hard_cutoff
+    ]
+    for v in gone:
+        if not v.get("backed_up_at"):
+            print(f"  [{v['group_id']}] {v['vlog_date']} was never backed up, "
+                  f"deleting after {VLOG_MAX_DAYS} days", file=sys.stderr)
+    waiting = len(old_vlogs) - len(gone)
+    print(f"Stitched vlogs before {yesterday}: {verb} {len(gone)}, keeping "
+          f"{waiting} (waiting for laptop backup)")
+    if gone and not dry_run:
+        files = [v["storage_path"] for v in gone]
+        files += [v["thumbnail_path"] for v in gone if v.get("thumbnail_path")]
+        rest_delete_ids("vlogs", [v["id"] for v in gone])
+        storage_delete("vlogs", files)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--date", help="YYYY-MM-DD (default: yesterday in APP_TZ)")
@@ -281,13 +390,35 @@ def main() -> int:
     ap.add_argument("--force", action="store_true",
                     help="re-stitch even if a vlog already exists")
     ap.add_argument("--dry-run", action="store_true",
-                    help="list what would be stitched, change nothing")
+                    help="list what would be stitched/deleted, change nothing")
+    ap.add_argument("--no-cleanup", action="store_true",
+                    help="skip the retention cleanup")
+    ap.add_argument("--cleanup-only", action="store_true",
+                    help="only run the retention cleanup")
     args = ap.parse_args()
 
     if not SUPABASE_URL or not SERVICE_KEY:
         print("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set", file=sys.stderr)
         return 2
 
+    today = dt.datetime.now(APP_TZ).date()
+
+    failed = 0 if args.cleanup_only else stitch_day(args)
+
+    if not args.no_cleanup and not args.date:
+        # Only for the normal nightly run: a manual --date re-stitch of an
+        # old day shouldn't trigger deletes.
+        try:
+            cleanup(today, args.dry_run)
+        except Exception as e:
+            failed += 1
+            print(f"Cleanup FAILED: {e}", file=sys.stderr)
+
+    return 1 if failed else 0
+
+
+def stitch_day(args: argparse.Namespace) -> int:
+    """Stitches one day. Returns the number of groups that failed."""
     date = args.date or (dt.datetime.now(APP_TZ).date() - dt.timedelta(days=1)).isoformat()
     print(f"Stitching {date} ({APP_TZ.key})")
 
@@ -333,7 +464,7 @@ def main() -> int:
             failed += 1
             print(f"[{group_id}] FAILED: {e}", file=sys.stderr)
 
-    return 1 if failed else 0
+    return failed
 
 
 if __name__ == "__main__":
