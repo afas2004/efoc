@@ -110,7 +110,16 @@ export class OnlineGame {
       const existing = (await this.store.get(P.member(this.room, this.me.uid))) as Member | null;
       if (!existing) await this.store.set(P.member(this.room, this.me.uid), { name: this.me.name, avatar: this.me.avatar, ready: false, joinedAt: this.store.now() });
     } else if (meta && !arr<SeatEntry>(meta.seats).some((s) => s.uid === this.me.uid)) {
-      await this.store.set(P.spectator(this.room, this.me.uid), { name: this.me.name, avatar: this.me.avatar });
+      // Claim a free spectator slot (at most 8 watch).
+      const slots = ((await this.store.get(P.spectatorSlots(this.room))) as Record<string, string> | null) ?? {};
+      const mine = Object.entries(slots).find(([, u]) => u === this.me.uid)?.[0];
+      const free = mine ?? ['0', '1', '2', '3', '4', '5', '6', '7'].find((k) => !slots[k]);
+      if (free !== undefined) {
+        await this.store.update({
+          [`${P.spectatorSlots(this.room)}/${free}`]: this.me.uid,
+          [P.spectator(this.room, this.me.uid)]: { name: this.me.name, avatar: this.me.avatar, slot: Number(free) },
+        });
+      }
     }
     this.store.watch(P.members(this.room), (v) => {
       this.members = (v as unknown as Record<string, Member>) ?? {};
@@ -291,9 +300,11 @@ export class OnlineGame {
   private checkHost(): void {
     const m = this.meta;
     if (!m || m.status !== 'playing' || m.hostUid === this.me.uid || this.claiming || this.mySeat === 'public') return;
+    // Same test as the security rule: the host's presence says offline and
+    // it has been silent for migrateAfterMs.
     const hp = this.presence[m.hostUid];
     const silentFor = this.store.now() - (hp?.lastSeen ?? 0);
-    if (silentFor < m.migrateAfterMs) return;
+    if (hp?.online !== false || silentFor < m.migrateAfterMs) return;
     const hostSeat = this.seats.findIndex((s) => s.uid === m.hostUid);
     for (let k = 1; k <= this.seats.length; k++) {
       const s = this.seats[(Math.max(hostSeat, 0) + k) % this.seats.length]!;

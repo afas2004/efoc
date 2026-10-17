@@ -6,22 +6,39 @@
       "$room": {
         "allowed": {
           ".read": "root.child('rooms').child($room).child('meta/hostUid').val() === auth.uid",
-          ".write": "auth != null && !data.exists() && newData.parent().child('meta/hostUid').val() === auth.uid"
+          ".write": "auth != null && !data.exists() && newData.parent().child('meta/hostUid').val() === auth.uid",
+          "$uid": {
+            ".validate": "newData.val() === true"
+          }
         },
         "meta": {
-          ".read": "root.child('rooms').child($room).child('members').child(auth.uid).exists() || root.child('rooms').child($room).child('spectators').child(auth.uid).exists()",
-          ".write": "auth != null && ((!data.exists() && newData.child('hostUid').val() === auth.uid) || data.child('hostUid').val() === auth.uid || (data.exists() && newData.child('hostUid').val() === auth.uid && root.child('rooms').child($room).child('members').child(auth.uid).exists() && root.child('presence').child($room).child(data.child('hostUid').val()).child('online').val() === false && root.child('presence').child($room).child(data.child('hostUid').val()).child('lastSeen').val() < now - 60000))"
+          ".read": "root.child('rooms').child($room).child('allowed').child(auth.uid).exists()",
+          ".write": "auth != null && ((!data.exists() && newData.child('hostUid').val() === auth.uid) || data.child('hostUid').val() === auth.uid)",
+          "hostUid": {
+            ".write": "auth != null && newData.val() === auth.uid && root.child('rooms').child($room).child('members').child(auth.uid).exists() && root.child('presence').child($room).child(data.val()).child('online').val() === false && root.child('presence').child($room).child(data.val()).child('lastSeen').val() < now - 60000"
+          }
         },
         "members": {
-          ".read": "root.child('rooms').child($room).child('members').child(auth.uid).exists() || root.child('rooms').child($room).child('spectators').child(auth.uid).exists()",
+          ".read": "root.child('rooms').child($room).child('allowed').child(auth.uid).exists()",
           "$uid": {
-            ".write": "(auth.uid === $uid && root.child('rooms').child($room).child('allowed').child(auth.uid).exists()) || root.child('rooms').child($room).child('meta/hostUid').val() === auth.uid"
+            ".write": "(auth.uid === $uid && root.child('rooms').child($room).child('allowed').child(auth.uid).exists()) || root.child('rooms').child($room).child('meta/hostUid').val() === auth.uid",
+            ".validate": "!newData.exists() || (newData.child('name').isString() && newData.child('name').val().length <= 40 && newData.child('avatar').isString() && newData.child('avatar').val().length <= 16)",
+            "ready": {
+              ".validate": "newData.isBoolean()"
+            }
           }
         },
         "spectators": {
-          ".read": "root.child('rooms').child($room).child('members').child(auth.uid).exists() || root.child('rooms').child($room).child('spectators').child(auth.uid).exists()",
+          ".read": "root.child('rooms').child($room).child('allowed').child(auth.uid).exists()",
           "$uid": {
-            ".write": "auth.uid === $uid && root.child('rooms').child($room).child('allowed').child(auth.uid).exists() && (data.exists() || !newData.exists() || root.child('rooms').child($room).child('spectators').numChildren() < 8)"
+            ".write": "auth.uid === $uid && root.child('rooms').child($room).child('allowed').child(auth.uid).exists()",
+            ".validate": "!newData.exists() || (newData.child('name').isString() && newData.child('name').val().length <= 40 && newData.parent().parent().child('spectatorSlots').child(newData.child('slot').val() + '').val() === $uid)"
+          }
+        },
+        "spectatorSlots": {
+          ".read": "root.child('rooms').child($room).child('allowed').child(auth.uid).exists()",
+          "$slot": {
+            ".write": "$slot.matches(/^[0-7]$/) && root.child('rooms').child($room).child('allowed').child(auth.uid).exists() && ((!data.exists() && newData.val() === auth.uid) || (data.val() === auth.uid && !newData.exists()))"
           }
         },
         "intents": {
@@ -31,13 +48,13 @@
           }
         },
         "log": {
-          ".read": "root.child('rooms').child($room).child('members').child(auth.uid).exists() || root.child('rooms').child($room).child('spectators').child(auth.uid).exists()",
+          ".read": "root.child('rooms').child($room).child('allowed').child(auth.uid).exists()",
           "$n": {
             ".write": "!data.exists() && root.child('rooms').child($room).child('meta/hostUid').val() === auth.uid"
           }
         },
         "snapshot": {
-          ".read": "root.child('rooms').child($room).child('members').child(auth.uid).exists() || root.child('rooms').child($room).child('spectators').child(auth.uid).exists()",
+          ".read": "root.child('rooms').child($room).child('allowed').child(auth.uid).exists()",
           ".write": "root.child('rooms').child($room).child('meta/hostUid').val() === auth.uid"
         },
         "hands": {
@@ -57,16 +74,16 @@
           }
         },
         "results": {
-          ".read": "root.child('rooms').child($room).child('members').child(auth.uid).exists() || root.child('rooms').child($room).child('spectators').child(auth.uid).exists()",
+          ".read": "root.child('rooms').child($room).child('allowed').child(auth.uid).exists()",
           ".write": "root.child('rooms').child($room).child('meta/hostUid').val() === auth.uid"
         }
       }
     },
     "presence": {
       "$room": {
-        ".read": "root.child('rooms').child($room).child('members').child(auth.uid).exists() || root.child('rooms').child($room).child('spectators').child(auth.uid).exists()",
+        ".read": "root.child('rooms').child($room).child('allowed').child(auth.uid).exists()",
         "$uid": {
-          ".write": "auth.uid === $uid"
+          ".write": "auth.uid === $uid && root.child('rooms').child($room).child('allowed').child(auth.uid).exists()"
         }
       }
     },

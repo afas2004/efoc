@@ -3,7 +3,8 @@
 //   rooms/{id}/allowed/{uid}    true                      host writes once, at creation
 //   rooms/{id}/meta             RoomMeta                  host (or a migrating member: hostUid only)
 //   rooms/{id}/members/{uid}    Member                    that uid, if allowed
-//   rooms/{id}/spectators/{uid} {name, avatar}            that uid, if allowed
+//   rooms/{id}/spectators/{uid} {name, avatar, slot}      that uid, if allowed, with a slot
+//   rooms/{id}/spectatorSlots/{0-7} uid                   at most 8 spectators
 //   rooms/{id}/intents/{push}   Intent                    members, own uid, new entries only
 //   rooms/{id}/log/{000123}     Entry                     host, append only
 //   rooms/{id}/snapshot         {n, state}                host: masked public state at round start and every 20 entries
@@ -80,6 +81,8 @@ export const P = {
   members: (id: string) => `rooms/${id}/members`,
   member: (id: string, uid: string) => `rooms/${id}/members/${uid}`,
   spectator: (id: string, uid: string) => `rooms/${id}/spectators/${uid}`,
+  /** 8 numbered slots cap the spectators (rules can't count children). */
+  spectatorSlots: (id: string) => `rooms/${id}/spectatorSlots`,
   intents: (id: string) => `rooms/${id}/intents`,
   log: (id: string) => `rooms/${id}/log`,
   entry: (id: string, n: number) => `rooms/${id}/log/${logKey(n)}`,
