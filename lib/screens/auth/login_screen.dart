@@ -52,6 +52,12 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  void _openUsername(bool signUp) {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => UsernameScreen(signUp: signUp)),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -151,7 +157,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ).hasMatch(value);
                     if (!ok) return 'Enter a valid email';
                     if (AuthService.isUsernameEmail(value)) {
-                      return 'Use "No email? Use a username" below';
+                      return 'Use "No email?" below';
                     }
                     return null;
                   },
@@ -209,18 +215,24 @@ class _LoginScreenState extends State<LoginScreen> {
 
                 Center(
                   child: TextButton(
-                    onPressed: _loading
-                        ? null
-                        : () => Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => const UsernameScreen(),
-                              ),
-                            ),
+                    onPressed: _loading ? null : () => _openUsername(true),
                     child: Text(
-                      'No email? Use a username',
+                      'No email? Join with just a username',
                       style: TextStyle(
                         color: EfocColors.accentBright,
                         fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+                Center(
+                  child: TextButton(
+                    onPressed: _loading ? null : () => _openUsername(false),
+                    child: Text(
+                      'Have a recovery code? Sign in',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.6),
+                        fontSize: 13,
                       ),
                     ),
                   ),

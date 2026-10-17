@@ -9,9 +9,9 @@ class WhatWeStoreScreen extends StatelessWidget {
   static const _items = [
     (
       'Your login',
-      'Either your email or a username and password. The password is stored '
-          'scrambled (hashed); nobody can read it. Your email is never shown '
-          'to other members.',
+      'Either your email, or just a username with a recovery code. The code '
+          'is stored scrambled (hashed), so nobody can read it, not even us. '
+          'Your email is never shown to other members.',
     ),
     (
       'Your profile',

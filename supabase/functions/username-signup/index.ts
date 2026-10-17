@@ -1,12 +1,14 @@
 // POST /functions/v1/username-signup
-// Creates an account with a username and password, no email. Only people
-// holding a Log invite code can sign up.
+// Creates an account with just a username, no email. Only people holding
+// a Log invite code can sign up.
 //
-// Body: { username, password, display_name?, invite_code }
+// Body: { username, display_name?, invite_code }
 // Creates the user, sets their profile name, adds them to the Log as a
-// member, and answers { ok: true }. The app then signs in with
-// signInWithPassword (email = `${username}@users.efoc.party`), so the Log
-// is already there when the home screen loads.
+// member, and answers { ok: true, recovery_code }. The recovery code is
+// the account's password: we make it here, store only its hash (Supabase
+// Auth), and the app shows it once. The app then signs in with
+// signInWithPassword (email = `${username}@users.efoc.party`, password =
+// the code without dashes), so the Log is already there on the home screen.
 //
 // The address is internal only: users.efoc.party has no mail server, so
 // nothing is ever sent to it, and the email login refuses that domain.
@@ -19,6 +21,19 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 const DOMAIN = "users.efoc.party";
 const USERNAME = /^[a-z0-9_]{3,20}$/;
 const CODE = /^[A-Z0-9]{6}$/;
+// Same alphabet as invite codes: no 0/O, 1/I/L.
+const ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+
+// 12 characters ≈ 59 bits, shown as XXXX-XXXX-XXXX.
+function recoveryCode(): string {
+  const out: string[] = [];
+  const bytes = new Uint8Array(1);
+  while (out.length < 12) {
+    crypto.getRandomValues(bytes);
+    if (bytes[0] < 248) out.push(ALPHABET[bytes[0] % ALPHABET.length]); // 248 = 8 × 31, no bias
+  }
+  return out.join("");
+}
 
 const ORIGINS = [/^https:\/\/(www\.)?efoc\.party$/, /^http:\/\/localhost(:\d+)?$/, /^http:\/\/127\.0\.0\.1(:\d+)?$/];
 
@@ -47,15 +62,11 @@ Deno.serve(async (req) => {
     // fall through to the checks below
   }
   const username = String(body.username ?? "").trim().toLowerCase();
-  const password = String(body.password ?? "");
   const code = String(body.invite_code ?? "").trim().toUpperCase();
   const displayName = String(body.display_name ?? "").trim().slice(0, 40) || username;
 
   if (!USERNAME.test(username)) {
     return json(400, { error: "Username: 3–20 letters, numbers or _" });
-  }
-  if (password.length < 8 || password.length > 72) {
-    return json(400, { error: "Password must be at least 8 characters" });
   }
   if (!CODE.test(code)) return json(400, { error: "Invite code must be 6 characters" });
 
@@ -77,6 +88,7 @@ Deno.serve(async (req) => {
     .ilike("username", username.replaceAll("_", "\\_")); // _ is a LIKE wildcard
   if ((count ?? 0) > 0) return json(409, { error: "That username is taken" });
 
+  const password = recoveryCode();
   const { data: created, error } = await admin.auth.admin.createUser({
     email: `${username}@${DOMAIN}`,
     password,
@@ -106,8 +118,8 @@ Deno.serve(async (req) => {
   if (joinError) {
     // The account works; they can still join with the code from the app.
     console.error("username-signup join:", joinError);
-    return json(200, { ok: true, joined: false });
+    return json(200, { ok: true, joined: false, recovery_code: password });
   }
 
-  return json(200, { ok: true, joined: true });
+  return json(200, { ok: true, joined: true, recovery_code: password });
 });

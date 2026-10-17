@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'reminder_service.dart';
@@ -30,39 +32,69 @@ class AuthService {
 
   static final usernamePattern = RegExp(r'^[a-z0-9_]{3,20}$');
 
+  /// Recovery codes are the password of a username account: 12 characters
+  /// from the invite-code alphabet, shown as XXXX-XXXX-XXXX. Spaces, dashes
+  /// and case don't matter when typing one in.
+  static String normalizeRecoveryCode(String code) =>
+      code.toUpperCase().replaceAll(RegExp(r'[^A-Z0-9]'), '');
+
+  static String formatRecoveryCode(String code) {
+    final c = normalizeRecoveryCode(code);
+    final parts = <String>[];
+    for (var i = 0; i < c.length; i += 4) {
+      parts.add(c.substring(i, i + 4 > c.length ? c.length : i + 4));
+    }
+    return parts.join('-');
+  }
+
+  static String newRecoveryCode() {
+    const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+    final rand = Random.secure();
+    return List.generate(12, (_) => chars[rand.nextInt(chars.length)]).join();
+  }
+
   Future<void> signInWithUsername({
     required String username,
-    required String password,
+    required String recoveryCode,
   }) async {
     await _client.auth.signInWithPassword(
       email: '${username.trim().toLowerCase()}@$usernameDomain',
-      password: password,
+      password: normalizeRecoveryCode(recoveryCode),
     );
   }
 
   /// Creates a username account (needs a Log invite code; the server adds
-  /// them to that Log) and signs in. Throws [AuthFlowException] with a
-  /// message fit to show.
-  Future<void> signUpWithUsername({
+  /// them to that Log) and returns its recovery code. Doesn't sign in, so
+  /// the code can be shown first; call [signInWithUsername] after.
+  /// Throws [AuthFlowException] with a message fit to show.
+  Future<String> signUpWithUsername({
     required String username,
-    required String password,
     required String inviteCode,
     String? displayName,
   }) async {
     try {
-      await _client.functions.invoke('username-signup', body: {
+      final res = await _client.functions.invoke('username-signup', body: {
         'username': username.trim().toLowerCase(),
-        'password': password,
         'invite_code': inviteCode.trim().toUpperCase(),
         if (displayName != null && displayName.trim().isNotEmpty)
           'display_name': displayName.trim(),
       });
+      final code = (res.data as Map?)?['recovery_code'] as String?;
+      if (code == null) throw AuthFlowException("Couldn't create the account");
+      return code;
     } on FunctionException catch (e) {
       final details = e.details;
       final msg = details is Map ? details['error'] as String? : null;
       throw AuthFlowException(msg ?? "Couldn't create the account");
     }
-    await signInWithUsername(username: username, password: password);
+  }
+
+  /// Replaces the recovery code of the signed-in username account; the old
+  /// one stops working. Returns the new code to show once.
+  Future<String> resetRecoveryCode() async {
+    final code = newRecoveryCode();
+    await _client.auth.updateUser(UserAttributes(password: code));
+    return code;
   }
 
   /// Deletes the account and everything in it, then signs out locally.

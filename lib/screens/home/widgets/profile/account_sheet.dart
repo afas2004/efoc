@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../../screens/auth/recovery_code_screen.dart';
 import '../../../../screens/auth/what_we_store_screen.dart';
 import '../../../../services/auth_service.dart';
 import '../../../../services/profile_service.dart';
@@ -144,6 +145,57 @@ class _AccountSheetState extends State<AccountSheet> {
       if (!mounted) return;
       if (_saveVersion != myVersion) return;
       setState(() => _status = _SaveStatus.error);
+    }
+  }
+
+  Future<void> _newRecoveryCode() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: EfocColors.surface,
+        title: const Text(
+          'Make a new recovery code?',
+          style: TextStyle(color: Colors.white),
+        ),
+        content: const Text(
+          'Your old code stops working. Other devices stay signed in.',
+          style: TextStyle(color: EfocColors.textMuted, height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Make new code'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final code = await AuthService.instance.resetRecoveryCode();
+      if (!mounted) return;
+      await navigator.push(
+        MaterialPageRoute(
+          builder: (ctx) => RecoveryCodeScreen(
+            code: code,
+            username: _username.isEmpty ? null : _username,
+            onDone: () async => Navigator.of(ctx).pop(),
+          ),
+        ),
+      );
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text("Couldn't make a new code: $e"),
+          backgroundColor: EfocColors.danger,
+        ),
+      );
     }
   }
 
@@ -346,7 +398,7 @@ class _AccountSheetState extends State<AccountSheet> {
               ),
               child: Text(
                 _usernameAccount
-                    ? 'Username and password · no email'
+                    ? 'Username + recovery code · no email'
                     : (_email ?? '—'),
                 style: const TextStyle(
                   color: EfocColors.textMuted,
@@ -357,13 +409,27 @@ class _AccountSheetState extends State<AccountSheet> {
             const SizedBox(height: 10),
             Text(
               _usernameAccount
-                  ? "Only you see this. There's no email, so keep your password safe."
+                  ? 'Only you see this. Lost your recovery code? Make a new one '
+                      'while you’re still signed in.'
                   : 'Only you see this. Signed in via one-time code.',
               style: const TextStyle(
                 color: EfocColors.textFaint,
                 fontSize: 11,
               ),
             ),
+            if (_usernameAccount)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: _newRecoveryCode,
+                  icon: Icon(Icons.key_rounded,
+                      size: 16, color: EfocColors.accentBright),
+                  label: Text(
+                    'Make a new recovery code',
+                    style: TextStyle(color: EfocColors.accentBright),
+                  ),
+                ),
+              ),
             const SizedBox(height: 18),
             Row(
               children: [

@@ -5,12 +5,16 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../services/auth_service.dart';
 import '../../state/app_state.dart';
 import '../../theme/colors.dart';
+import 'recovery_code_screen.dart';
 import 'what_we_store_screen.dart';
 
-/// Sign in or sign up with a username and password, no email.
-/// Signing up needs a Log invite code.
+/// Sign up with just a username (needs a Log invite code), or sign in on
+/// another device with username + recovery code. No email either way.
 class UsernameScreen extends StatefulWidget {
-  const UsernameScreen({super.key});
+  const UsernameScreen({super.key, this.signUp = true});
+
+  /// Open on "join" (true) or "sign in with recovery code" (false).
+  final bool signUp;
 
   @override
   State<UsernameScreen> createState() => _UsernameScreenState();
@@ -19,28 +23,25 @@ class UsernameScreen extends StatefulWidget {
 class _UsernameScreenState extends State<UsernameScreen> {
   final _formKey = GlobalKey<FormState>();
   final _username = TextEditingController();
-  final _password = TextEditingController();
+  final _recovery = TextEditingController();
   final _name = TextEditingController();
   final _code = TextEditingController();
   bool _signUp = false;
   bool _loading = false;
-  bool _showPassword = false;
 
   @override
   void initState() {
     super.initState();
-    // Arrived through an invite link: they're most likely new.
+    _signUp = widget.signUp;
+    // Arrived through an invite link: fill the code in for them.
     final pending = context.read<AppState>().pendingInviteCode;
-    if (pending != null && pending.isNotEmpty) {
-      _code.text = pending;
-      _signUp = true;
-    }
+    if (pending != null && pending.isNotEmpty) _code.text = pending;
   }
 
   @override
   void dispose() {
     _username.dispose();
-    _password.dispose();
+    _recovery.dispose();
     _name.dispose();
     _code.dispose();
     super.dispose();
@@ -53,9 +54,9 @@ class _UsernameScreenState extends State<UsernameScreen> {
     final appState = context.read<AppState>();
     try {
       if (_signUp) {
-        await AuthService.instance.signUpWithUsername(
-          username: _username.text,
-          password: _password.text,
+        final username = _username.text.trim().toLowerCase();
+        final code = await AuthService.instance.signUpWithUsername(
+          username: username,
           inviteCode: _code.text,
           displayName: _name.text,
         );
@@ -64,16 +65,30 @@ class _UsernameScreenState extends State<UsernameScreen> {
             _code.text.trim().toUpperCase()) {
           appState.clearPendingInviteCode();
         }
+        if (!mounted) return;
+        // Show the code before signing in: signing in swaps to home.
+        await Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => RecoveryCodeScreen(
+              code: code,
+              username: username,
+              onDone: () => AuthService.instance.signInWithUsername(
+                username: username,
+                recoveryCode: code,
+              ),
+            ),
+          ),
+        );
       } else {
         await AuthService.instance.signInWithUsername(
           username: _username.text,
-          password: _password.text,
+          recoveryCode: _recovery.text,
         );
       }
       // AuthGate takes over from here.
     } on AuthException catch (e) {
       _fail(e.message.toLowerCase().contains('invalid login')
-          ? 'Wrong username or password'
+          ? 'Wrong username or recovery code'
           : e.message);
     } catch (e) {
       _fail('$e');
@@ -141,7 +156,7 @@ class _UsernameScreenState extends State<UsernameScreen> {
               ),
               const SizedBox(height: 32),
               Text(
-                _signUp ? 'Join without email' : 'Sign in with username',
+                _signUp ? 'Join with a username' : 'Sign in on a new device',
                 style: const TextStyle(
                   color: Colors.white,
                   fontSize: 26,
@@ -151,8 +166,8 @@ class _UsernameScreenState extends State<UsernameScreen> {
               const SizedBox(height: 8),
               Text(
                 _signUp
-                    ? 'No email needed. You\'ll need an invite code from a friend.'
-                    : 'For accounts made without an email.',
+                    ? 'Just pick a username. You\'ll need an invite code from a friend.'
+                    : 'Use the recovery code you saved when you joined.',
                 style: TextStyle(
                   color: Colors.white.withValues(alpha: 0.5),
                   fontSize: 13,
@@ -192,54 +207,28 @@ class _UsernameScreenState extends State<UsernameScreen> {
               ),
               const SizedBox(height: 12),
 
-              TextFormField(
-                controller: _password,
-                style: input,
-                cursorColor: EfocColors.accent,
-                obscureText: !_showPassword,
-                autofillHints: [
-                  _signUp ? AutofillHints.newPassword : AutofillHints.password,
-                ],
-                decoration: _field(
-                  'Password',
-                  suffix: IconButton(
-                    icon: Icon(
-                      _showPassword ? Icons.visibility_off : Icons.visibility,
-                      color: EfocColors.textMuted,
-                      size: 20,
-                    ),
-                    onPressed: () =>
-                        setState(() => _showPassword = !_showPassword),
-                  ),
+              if (!_signUp)
+                TextFormField(
+                  controller: _recovery,
+                  style: input,
+                  cursorColor: EfocColors.accent,
+                  autocorrect: false,
+                  textCapitalization: TextCapitalization.characters,
+                  autofillHints: const [AutofillHints.password],
+                  decoration: _field('Recovery code (XXXX-XXXX-XXXX)'),
+                  validator: (v) =>
+                      AuthService.normalizeRecoveryCode(v ?? '').length == 12
+                          ? null
+                          : 'Recovery codes are 12 letters and numbers',
                 ),
-                validator: (v) {
-                  final value = v ?? '';
-                  if (value.isEmpty) return 'Enter a password';
-                  if (_signUp && value.length < 8) {
-                    return 'At least 8 characters';
-                  }
-                  return null;
-                },
-              ),
 
-              if (_signUp) ...[
-                const SizedBox(height: 12),
+              if (_signUp)
                 TextFormField(
                   controller: _name,
                   style: input,
                   cursorColor: EfocColors.accent,
                   decoration: _field('Display name (optional)'),
                 ),
-                const SizedBox(height: 12),
-                Text(
-                  'There\'s no email to reset your password, so keep it '
-                  'somewhere safe. If you forget it, ask whoever runs Efoc.',
-                  style: TextStyle(
-                    color: EfocColors.warning.withValues(alpha: 0.8),
-                    fontSize: 12,
-                  ),
-                ),
-              ],
 
               const SizedBox(height: 20),
               SizedBox(
@@ -266,7 +255,7 @@ class _UsernameScreenState extends State<UsernameScreen> {
                           ),
                         )
                       : Text(
-                          _signUp ? 'Create account' : 'Sign in',
+                          _signUp ? 'Join' : 'Sign in',
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 15,
@@ -283,7 +272,7 @@ class _UsernameScreenState extends State<UsernameScreen> {
                       : () => setState(() => _signUp = !_signUp),
                   child: Text(
                     _signUp
-                        ? 'Already have an account? Sign in'
+                        ? 'New phone? Sign in with your recovery code'
                         : 'New here? Join with an invite code',
                     style: TextStyle(color: EfocColors.accentBright),
                   ),
