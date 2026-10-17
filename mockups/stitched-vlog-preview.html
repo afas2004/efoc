@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stitched Vlog Preview</title>
+<style>
+  :root {
+    --bg: #0a0a0a;
+    --surface: #1c1c1e;
+    --text: #fff;
+    --muted: #888;
+    --accent: #a855f7;
+    --accent-bright: #c77dff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 24px 16px 40px;
+  }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .sub { color: var(--muted); font-size: 13px; margin: 0 0 20px; text-align: center; max-width: 420px; }
+
+  /* The video frame: 720x1280 in the real file, scaled down here. */
+  .frame {
+    position: relative;
+    width: min(340px, 86vw);
+    aspect-ratio: 9 / 16;
+    border-radius: 18px;
+    overflow: hidden;
+    background: #000;
+    box-shadow: 0 20px 60px rgba(0,0,0,.6);
+    container-type: inline-size;
+  }
+  .clip { position: absolute; inset: 0; opacity: 0; }
+  .clip.on { opacity: 1; }
+
+  /* "Footage": a moving gradient stand-in for the real camera clip. */
+  .scene { position: absolute; inset: 0; background-size: 200% 200%; animation: drift 3s linear infinite; }
+  @keyframes drift { from { background-position: 0% 0%; } to { background-position: 100% 100%; } }
+  .subject {
+    position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    font-size: 34cqw; filter: drop-shadow(0 6px 18px rgba(0,0,0,.35));
+    animation: bob 3s ease-in-out infinite;
+  }
+  @keyframes bob { 50% { transform: translate(-50%, -54%) rotate(-3deg); } }
+
+  /* Square clips are fitted over a blurred copy of themselves (no black bars). */
+  .blurbg { position: absolute; inset: -20px; filter: blur(18px) brightness(.7); background-size: 200% 200%; }
+  .square {
+    position: absolute; left: 0; right: 0; top: 50%; transform: translateY(-50%);
+    aspect-ratio: 1; overflow: hidden;
+  }
+
+  /* Burned-in label: name · hour, top-left (stitch.py: size 30 on 720 wide). */
+  .label {
+    position: absolute; left: 5%; top: 5%;
+    font: 700 4.2cqw/1.2 "DejaVu Sans", Verdana, sans-serif;
+    background: rgba(0,0,0,.35); padding: 1.7cqw 1.7cqw; color: #fff;
+  }
+
+  /* Burned-in caption, at the saved Alignment, in the chosen font. */
+  .cap-wrap { position: absolute; inset: 6.7cqw; }
+  .cap {
+    position: absolute; width: max-content;
+    background: rgba(0,0,0,.55); padding: 2.5cqw; max-width: 100%;
+    text-align: center; line-height: 1.15;
+  }
+  .classic { font: 700 7.8cqw "DejaVu Sans", Verdana, sans-serif; }
+  .bold    { font: 700 8.9cqw "DejaVu Sans Condensed", "Arial Narrow", Impact, sans-serif; letter-spacing: -.02em; }
+  .elegant { font: italic 400 8.1cqw "DejaVu Serif", Georgia, serif; }
+  .mono    { font: 700 6.9cqw "DejaVu Sans Mono", Consolas, monospace; }
+
+  /* Timeline under the frame (not part of the video). */
+  .timeline { display: flex; gap: 4px; width: min(340px, 86vw); margin-top: 14px; }
+  .seg { flex: 1; height: 4px; border-radius: 2px; background: #333; overflow: hidden; cursor: pointer; }
+  .seg i { display: block; height: 100%; width: 0; background: var(--accent-bright); }
+  .controls { display: flex; align-items: center; gap: 12px; margin-top: 14px; }
+  button {
+    background: var(--surface); color: var(--text); border: 0; border-radius: 22px;
+    padding: 10px 18px; font: 600 14px inherit; cursor: pointer;
+  }
+  button.primary { background: var(--accent); }
+  .now { color: var(--muted); font-size: 13px; min-width: 160px; text-align: center; }
+
+  .notes {
+    margin-top: 26px; max-width: 420px; font-size: 13px; color: #bbb; line-height: 1.55;
+    background: var(--surface); border-radius: 14px; padding: 14px 16px;
+  }
+  .notes b { color: #fff; }
+  .notes ul { margin: 6px 0 0; padding-left: 18px; }
+</style>
+</head>
+<body>
+  <h1>Martin Coops · Yesterday</h1>
+  <p class="sub">What the midnight stitch produces: every clip of the day, 3 seconds each, in hour order, with the label and caption burned in.</p>
+
+  <div class="frame" id="frame"></div>
+
+  <div class="timeline" id="timeline"></div>
+  <div class="controls">
+    <button id="prev" aria-label="Previous clip">◀</button>
+    <button id="play" class="primary">Pause</button>
+    <button id="next" aria-label="Next clip">▶</button>
+  </div>
+  <div class="now" id="now"></div>
+
+  <div class="notes">
+    <b>How the real file is built</b>
+    <ul>
+      <li>720×1280 MP4, 30 fps. Each clip is cut to its 3 seconds and played back to back, earliest hour first; clips in the same hour go in recording order.</li>
+      <li>Top-left: <b>name · hour</b>, white on a dark box.</li>
+      <li>The caption sits where it was dragged on the capture screen, in the font picked there (Classic, Bold, Elegant or Mono) and its colour.</li>
+      <li>Square or landscape clips are centred over a blurred copy of themselves, so there are never black bars (see the 1 PM clip).</li>
+      <li>Original sound is kept; clips without sound get silence.</li>
+    </ul>
+  </div>
+
+<script>
+  // One entry per clip, in the order the stitcher plays them.
+  const clips = [
+    { who: "Fahmi", hour: 9,  emoji: "☕", bg: "linear-gradient(135deg,#f6d365,#fda085,#f6d365)",
+      caption: "Good morning!", font: "classic", color: "#FFFFFF", x: 0, y: -0.3 },
+    { who: "adwari132", hour: 9, emoji: "🛵", bg: "linear-gradient(135deg,#89f7fe,#66a6ff,#89f7fe)",
+      caption: "otw kerja", font: "mono", color: "#FFD93D", x: -0.6, y: 0.7 },
+    { who: "Fahmi", hour: 10, emoji: "💻", bg: "linear-gradient(135deg,#a18cd1,#fbc2eb,#a18cd1)",
+      caption: "sambung buat efoc", font: "bold", color: "#FFFFFF", x: 0, y: 0.75 },
+    { who: "BapakZolah", hour: 12, emoji: "🍛", bg: "linear-gradient(135deg,#ff9a9e,#fecfef,#ff9a9e)",
+      caption: "nasi lemak time", font: "elegant", color: "#C77DFF", x: 0.4, y: -0.6 },
+    { who: "syarifzafri", hour: 13, emoji: "⚽", bg: "linear-gradient(135deg,#43e97b,#38f9d7,#43e97b)",
+      caption: "", font: "classic", color: "#FFFFFF", x: 0, y: 0, square: true },
+    { who: "2023657294", hour: 15, emoji: "📚", bg: "linear-gradient(135deg,#30cfd0,#330867,#30cfd0)",
+      caption: "exam esok 😭", font: "classic", color: "#4ECDC4", x: 0, y: 0.2 },
+    { who: "Fahmi", hour: 18, emoji: "🌇", bg: "linear-gradient(135deg,#fa709a,#fee140,#fa709a)",
+      caption: "sunset dekat rumah", font: "elegant", color: "#FFFFFF", x: 0, y: -0.75 },
+    { who: "adwari132", hour: 21, emoji: "🎮", bg: "linear-gradient(135deg,#0f0c29,#302b63,#24243e)",
+      caption: "one more game", font: "bold", color: "#A855F7", x: 0.5, y: 0.6 },
+  ];
+  const CLIP_MS = 3000;
+
+  const hourLabel = h => `${h % 12 || 12} ${h < 12 ? "AM" : "PM"}`;
+  // Flutter Alignment(-1..1), same maths as stitch.py: -1 = flush to the
+  // start edge, 1 = flush to the end edge, 0 = centred.
+  const place = (x, y) => {
+    const fx = (1 + x) / 2 * 100, fy = (1 + y) / 2 * 100;
+    return `left:${fx}%;top:${fy}%;transform:translate(-${fx}%,-${fy}%)`;
+  };
+
+  const frame = document.getElementById("frame");
+  const timeline = document.getElementById("timeline");
+  const els = clips.map((c, i) => {
+    const el = document.createElement("div");
+    el.className = "clip";
+    const footage = c.square
+      ? `<div class="blurbg" style="background-image:${c.bg}"></div>
+         <div class="square"><div class="scene" style="background-image:${c.bg}"></div>
+         <div class="subject">${c.emoji}</div></div>`
+      : `<div class="scene" style="background-image:${c.bg}"></div><div class="subject">${c.emoji}</div>`;
+    const caption = c.caption
+      ? `<div class="cap-wrap">
+           <div class="cap ${c.font}" style="color:${c.color};${place(c.x, c.y)}"></div></div>`
+      : "";
+    el.innerHTML = footage + `<div class="label"></div>` + caption;
+    el.querySelector(".label").textContent = `${c.who} · ${hourLabel(c.hour)}`;
+    if (c.caption) el.querySelector(".cap").textContent = c.caption;
+    frame.appendChild(el);
+
+    const seg = document.createElement("div");
+    seg.className = "seg";
+    seg.innerHTML = "<i></i>";
+    seg.addEventListener("click", () => go(i));
+    timeline.appendChild(seg);
+    return el;
+  });
+  const fills = [...timeline.querySelectorAll(".seg i")];
+
+  let index = 0, start = performance.now(), paused = false, pausedAt = 0;
+  const playBtn = document.getElementById("play");
+  const now = document.getElementById("now");
+
+  function show(i) {
+    els.forEach((el, j) => el.classList.toggle("on", j === i));
+    fills.forEach((f, j) => { f.style.width = j < i ? "100%" : "0"; });
+    const c = clips[i];
+    now.textContent = `Clip ${i + 1} of ${clips.length} · ${c.who}, ${hourLabel(c.hour)}`;
+  }
+  function go(i) {
+    index = (i + clips.length) % clips.length;
+    start = performance.now();
+    pausedAt = 0;
+    show(index);
+  }
+  function tick(t) {
+    if (!paused) {
+      const p = (t - start) / CLIP_MS;
+      if (p >= 1) go(index + 1);
+      else fills[index].style.width = `${p * 100}%`;
+    }
+    requestAnimationFrame(tick);
+  }
+  playBtn.addEventListener("click", () => {
+    paused = !paused;
+    if (paused) pausedAt = performance.now();
+    else start += performance.now() - pausedAt;
+    playBtn.textContent = paused ? "Play" : "Pause";
+    document.querySelectorAll(".scene, .subject").forEach(e =>
+      e.style.animationPlayState = paused ? "paused" : "running");
+  });
+  document.getElementById("prev").addEventListener("click", () => go(index - 1));
+  document.getElementById("next").addEventListener("click", () => go(index + 1));
+
+  show(0);
+  requestAnimationFrame(tick);
+</script>
+</body>
+</html>
