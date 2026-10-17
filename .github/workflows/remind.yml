@@ -5,16 +5,22 @@ on:
     # Every hour. GitHub's scheduler often runs a few minutes late, and
     # minute 0 is its busiest slot, so aim just after it.
     - cron: "2 * * * *"
+  # Also started at exactly :00 by cron-job.org (GitHub's own schedule is
+  # often late or skipped). remind.py sends at most once per hour.
   workflow_dispatch:
     inputs:
       dry_run:
         description: "Only print who would be reminded"
         type: boolean
         default: true
+      force:
+        description: "Send even if this hour's reminders already went out"
+        type: boolean
+        default: false
 
 concurrency:
   group: remind
-  cancel-in-progress: true
+  cancel-in-progress: false  # queue: a cancelled run could claim the hour and not send
 
 jobs:
   remind:
@@ -38,8 +44,10 @@ jobs:
           REMIND_FIRST_HOUR: ${{ vars.REMIND_FIRST_HOUR || '8' }}
           REMIND_LAST_HOUR: ${{ vars.REMIND_LAST_HOUR || '22' }}
         run: |
+          args=()
+          [ "${{ inputs.force }}" = "true" ] && args+=(--force)
           if [ "${{ inputs.dry_run }}" = "true" ]; then
             python worker/remind.py --dry-run
           else
-            python worker/remind.py
+            python worker/remind.py "${args[@]}"
           fi

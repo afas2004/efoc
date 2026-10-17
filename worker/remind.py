@@ -70,6 +70,30 @@ def rest_delete(table: str, params: dict) -> None:
     r.raise_for_status()
 
 
+def claim_hour(hour_key: str) -> bool:
+    """True if this run is the first for the hour. Both GitHub's schedule
+    and cron-job.org can start a run; only the first one sends."""
+    try:
+        r = requests.post(
+            f"{SUPABASE_URL}/rest/v1/reminder_sends",
+            headers={
+                **_headers(),
+                "Content-Type": "application/json",
+                "Prefer": "resolution=ignore-duplicates,return=representation",
+            },
+            params={"on_conflict": "hour_key"},
+            json={"hour_key": hour_key},
+            timeout=30,
+        )
+        r.raise_for_status()
+        return bool(r.json())
+    except Exception as e:
+        # Table missing or unreachable: better a rare double than no reminder.
+        print(f"Couldn't check for an earlier run this hour ({e}); sending anyway.",
+              file=sys.stderr)
+        return True
+
+
 def in_list(values: list[str]) -> str:
     return "in.(" + ",".join(values) + ")"
 
@@ -106,6 +130,8 @@ def send(session: requests.Session, project: str, token: str, hour: int) -> str 
             "webpush": {
                 "notification": {
                     "icon": "/icons/Icon-192.png",
+                    # White mug silhouette for Android's status bar.
+                    "badge": "/icons/badge-96.png",
                     # One reminder on screen at a time; a new hour replaces
                     # an ignored one instead of stacking.
                     "tag": "efoc-hourly",
@@ -136,6 +162,8 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--hour", type=int, help="Override the current hour (0-23)")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--force", action="store_true",
+                    help="send even if this hour's reminders already went out")
     args = ap.parse_args()
 
     if not SUPABASE_URL or not SERVICE_KEY:
@@ -190,6 +218,10 @@ def main() -> int:
     if not SERVICE_ACCOUNT:
         print("FIREBASE_SERVICE_ACCOUNT is required to send", file=sys.stderr)
         return 1
+
+    if not args.force and not claim_hour(f"{today}T{hour:02d}"):
+        print(f"{label_for(hour)} reminders already went out this hour.")
+        return 0
 
     session, project = fcm_session()
     sent = failed = removed = 0
