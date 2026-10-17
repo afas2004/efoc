@@ -1,14 +1,20 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../models/member.dart';
 import '../../models/message.dart';
 import '../../services/chat_service.dart';
+import '../../state/app_state.dart';
 import '../../theme/colors.dart';
 import 'widgets/chat_composer.dart';
 import 'widgets/chat_context_menu.dart';
+import 'widgets/emoji_picker_sheet.dart';
 import 'widgets/message_bubble.dart';
+import 'widgets/reactions_sheet.dart';
 
 class ChatScreen extends StatefulWidget {
   final String groupId;
@@ -123,16 +129,49 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  Future<void> _toggleReaction(EfocMessage msg, String emoji) async {
+  /// WhatsApp rules: same emoji (or null) removes, another replaces.
+  /// Applied locally first so the pill updates instantly.
+  Future<void> _react(EfocMessage msg, String? emoji) async {
+    final myId = Supabase.instance.client.auth.currentUser?.id;
+    if (myId == null) return;
+    setState(() {
+      _messages = [
+        for (final m in _messages)
+          m.id == msg.id ? m.withMyReaction(emoji, myId) : m,
+      ];
+    });
     try {
-      await ChatService.instance.toggleReaction(
-        messageId: msg.id,
-        emoji: emoji,
-      );
-      _load();
-    } catch (_) {
-      // Silent — reaction is a low-stakes action.
+      await ChatService.instance.react(messageId: msg.id, emoji: emoji);
+    } catch (e) {
+      debugPrint('React error: $e');
     }
+    // Realtime also reloads; this covers a dropped event or a failure.
+    _onRealtime();
+  }
+
+  Future<void> _pickMoreEmoji(EfocMessage msg) async {
+    final emoji = await showEmojiPickerSheet(context);
+    if (emoji != null && mounted) _react(msg, emoji);
+  }
+
+  void _copy(EfocMessage msg) {
+    Clipboard.setData(ClipboardData(text: msg.text ?? ''));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Message copied'),
+        duration: Duration(milliseconds: 1200),
+      ),
+    );
+  }
+
+  /// Names and avatars for the "who reacted" sheet.
+  Map<String, EfocMember> _members() {
+    final group = context
+        .read<AppState>()
+        .groups
+        .where((g) => g.id == widget.groupId)
+        .firstOrNull;
+    return {for (final m in group?.members ?? const <EfocMember>[]) m.id: m};
   }
 
   @override
@@ -211,6 +250,12 @@ class _ChatScreenState extends State<ChatScreen> {
                               return MessageBubble(
                                 message: msg,
                                 isGrouped: isGrouped,
+                                onReactionsTap: () => showReactionsSheet(
+                                  context: context,
+                                  message: msg,
+                                  members: _members(),
+                                  onRemoveMine: () => _react(msg, null),
+                                ),
                                 onLongPress: (globalPos) =>
                                     showChatContextMenu(
                                   context: context,
@@ -218,8 +263,11 @@ class _ChatScreenState extends State<ChatScreen> {
                                   tapPosition: globalPos,
                                   onReply: () =>
                                       setState(() => _replyTo = msg),
-                                  onReact: (emoji) =>
-                                      _toggleReaction(msg, emoji),
+                                  onReact: (emoji) => _react(msg, emoji),
+                                  onMoreEmojis: () => _pickMoreEmoji(msg),
+                                  onCopy: (msg.text?.isNotEmpty ?? false)
+                                      ? () => _copy(msg)
+                                      : null,
                                   onDelete: msg.isMe
                                       ? () => _deleteMessage(msg)
                                       : null,

@@ -51,21 +51,27 @@ class ChatService {
     }
 
     final ids = rows.map((r) => r['id'] as String).toList();
-    final Map<String, Map<String, List<String>>> reactionsByMessage = {};
+    final Map<String, List<EfocReaction>> reactionsByMessage = {};
     if (ids.isNotEmpty) {
       final rx = await _client
           .from('message_reactions')
-          .select('message_id, user_id, emoji')
-          .inFilter('message_id', ids);
+          .select('message_id, user_id, emoji, created_at')
+          .inFilter('message_id', ids)
+          .order('created_at', ascending: false);
 
       for (final r in rx) {
-        final mid = r['message_id'] as String;
-        final emoji = r['emoji'] as String;
         final uid = r['user_id'] as String;
         reactionsByMessage
-            .putIfAbsent(mid, () => {})
-            .putIfAbsent(emoji, () => [])
-            .add(uid);
+            .putIfAbsent(r['message_id'] as String, () => [])
+            .add(
+              EfocReaction(
+                userId: uid,
+                emoji: r['emoji'] as String,
+                createdAt:
+                    DateTime.parse(r['created_at'] as String).toLocal(),
+                isMe: uid == userId,
+              ),
+            );
       }
     }
 
@@ -109,7 +115,7 @@ class ChatService {
         isMe: row['user_id'] == userId,
         replyPreviewText: replyPreviewText,
         replySenderName: replySenderName,
-        reactions: reactionsByMessage[row['id']] ?? const {},
+        reactions: reactionsByMessage[row['id']] ?? const [],
       );
     }).toList();
 
@@ -150,30 +156,16 @@ class ChatService {
     await _client.from('messages').delete().eq('id', id);
   }
 
-  Future<void> toggleReaction({
+  /// WhatsApp rules: one reaction per person. The same emoji again (or
+  /// null) removes it, a different one replaces it.
+  Future<void> react({
     required String messageId,
-    required String emoji,
+    required String? emoji,
   }) async {
-    final userId = _client.auth.currentUser?.id;
-    if (userId == null) throw Exception('Not signed in');
-
-    final existing = await _client
-        .from('message_reactions')
-        .select('id')
-        .eq('message_id', messageId)
-        .eq('user_id', userId)
-        .eq('emoji', emoji)
-        .maybeSingle();
-
-    if (existing != null) {
-      await _client.from('message_reactions').delete().eq('id', existing['id']);
-    } else {
-      await _client.from('message_reactions').insert({
-        'message_id': messageId,
-        'user_id': userId,
-        'emoji': emoji,
-      });
-    }
+    await _client.rpc(
+      'react_to_message',
+      params: {'mid': messageId, 'e': emoji},
+    );
   }
 
   RealtimeChannel subscribe({

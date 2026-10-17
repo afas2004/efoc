@@ -10,6 +10,8 @@ void showChatContextMenu({
   required Offset tapPosition,
   required VoidCallback onReply,
   required void Function(String emoji) onReact,
+  required VoidCallback onMoreEmojis,
+  required VoidCallback? onCopy,
   required VoidCallback? onDelete,
 }) {
   final overlay = Overlay.of(context);
@@ -32,6 +34,16 @@ void showChatContextMenu({
         dismiss();
         onReact(emoji);
       },
+      onMoreEmojis: () {
+        dismiss();
+        onMoreEmojis();
+      },
+      onCopy: onCopy == null
+          ? null
+          : () {
+              dismiss();
+              onCopy();
+            },
       onDelete: onDelete == null
           ? null
           : () {
@@ -50,6 +62,8 @@ class _ContextMenuLayer extends StatelessWidget {
   final VoidCallback onDismiss;
   final VoidCallback onReply;
   final void Function(String emoji) onReact;
+  final VoidCallback onMoreEmojis;
+  final VoidCallback? onCopy;
   final VoidCallback? onDelete;
 
   const _ContextMenuLayer({
@@ -58,11 +72,14 @@ class _ContextMenuLayer extends StatelessWidget {
     required this.onDismiss,
     required this.onReply,
     required this.onReact,
+    required this.onMoreEmojis,
+    required this.onCopy,
     required this.onDelete,
   });
 
-  static const _emojis = ['❤️', '😂', '😮', '👏', '🔥', '😢'];
-  static const _menuWidth = 260.0;
+  /// WhatsApp's default quick reactions, in its order.
+  static const _emojis = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
+  static const _menuWidth = 290.0;
 
   /// Rough max height — used only to decide whether "above" has room.
   /// Actual rendering uses bottom-anchoring so this doesn't need to be exact.
@@ -95,8 +112,11 @@ class _ContextMenuLayer extends StatelessWidget {
       color: Colors.transparent,
       child: _MenuCard(
         emojis: _emojis,
+        current: message.myReaction,
         onReact: onReact,
+        onMoreEmojis: onMoreEmojis,
         onReply: onReply,
+        onCopy: onCopy,
         onDelete: onDelete,
       ),
     );
@@ -137,16 +157,28 @@ class _ContextMenuLayer extends StatelessWidget {
 
 class _MenuCard extends StatelessWidget {
   final List<String> emojis;
+  final String? current;
   final void Function(String emoji) onReact;
+  final VoidCallback onMoreEmojis;
   final VoidCallback onReply;
+  final VoidCallback? onCopy;
   final VoidCallback? onDelete;
 
   const _MenuCard({
     required this.emojis,
+    required this.current,
     required this.onReact,
+    required this.onMoreEmojis,
     required this.onReply,
+    required this.onCopy,
     required this.onDelete,
   });
+
+  List<String> _quickRow() {
+    final c = current;
+    if (c == null || emojis.contains(c)) return emojis;
+    return [...emojis.take(emojis.length - 1), c];
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -174,27 +206,49 @@ class _MenuCard extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(10, 10, 10, 8),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: emojis
-                  .map(
-                    (e) => GestureDetector(
-                      onTap: () => onReact(e),
-                      behavior: HitTestBehavior.opaque,
-                      child: Container(
-                        width: 36,
-                        height: 36,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.04),
-                          shape: BoxShape.circle,
-                        ),
-                        child: Text(
-                          e,
-                          style: const TextStyle(fontSize: 20),
-                        ),
+              children: [
+                // Your current reaction sits on a grey disc; tapping it
+                // again removes it. A reaction picked from the full
+                // picker takes the place of the last quick emoji.
+                for (final e in _quickRow())
+                  GestureDetector(
+                    onTap: () => onReact(e),
+                    behavior: HitTestBehavior.opaque,
+                    child: Container(
+                      width: 36,
+                      height: 36,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: e == current
+                            ? Colors.white.withValues(alpha: 0.22)
+                            : Colors.transparent,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Text(
+                        e,
+                        style: const TextStyle(fontSize: 22),
                       ),
                     ),
-                  )
-                  .toList(),
+                  ),
+                GestureDetector(
+                  onTap: onMoreEmojis,
+                  behavior: HitTestBehavior.opaque,
+                  child: Container(
+                    width: 32,
+                    height: 32,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.add_rounded,
+                      size: 20,
+                      color: Colors.white70,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
 
@@ -208,6 +262,18 @@ class _MenuCard extends StatelessWidget {
             label: 'Reply',
             onTap: onReply,
           ),
+
+          if (onCopy != null) ...[
+            Container(
+              height: 1,
+              color: Colors.white.withValues(alpha: 0.06),
+            ),
+            _MenuItem(
+              icon: Icons.copy_rounded,
+              label: 'Copy',
+              onTap: onCopy!,
+            ),
+          ],
 
           if (onDelete != null) ...[
             Container(

@@ -3,17 +3,20 @@ import 'package:video_player/video_player.dart';
 
 import '../../../models/message.dart';
 import '../../../services/clip_service.dart';
+import '../../../theme/colors.dart';
 
 class MessageBubble extends StatelessWidget {
   final EfocMessage message;
   final bool isGrouped;
   final void Function(Offset globalTap) onLongPress;
+  final VoidCallback onReactionsTap;
 
   const MessageBubble({
     super.key,
     required this.message,
     required this.isGrouped,
     required this.onLongPress,
+    required this.onReactionsTap,
   });
 
   @override
@@ -61,12 +64,29 @@ class MessageBubble extends StatelessWidget {
                         ),
                       ),
                     ),
-                  _Bubble(message: message),
-                  if (message.reactions.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 3, left: 2, right: 2),
-                      child: _ReactionRow(reactions: message.reactions),
-                    ),
+                  // Like WhatsApp, the reaction pill hangs off the bottom
+                  // edge of the bubble on the sender's side.
+                  Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      Padding(
+                        padding: EdgeInsets.only(
+                          bottom: message.reactions.isEmpty ? 0 : 18,
+                        ),
+                        child: _Bubble(message: message),
+                      ),
+                      if (message.reactions.isNotEmpty)
+                        Positioned(
+                          bottom: 0,
+                          left: isMe ? null : 8,
+                          right: isMe ? 8 : null,
+                          child: _ReactionPill(
+                            message: message,
+                            onTap: onReactionsTap,
+                          ),
+                        ),
+                    ],
+                  ),
                 ],
               ),
             ),
@@ -369,44 +389,54 @@ class _Avatar extends StatelessWidget {
   }
 }
 
-class _ReactionRow extends StatelessWidget {
-  final Map<String, List<String>> reactions;
+class _ReactionPill extends StatelessWidget {
+  final EfocMessage message;
+  final VoidCallback onTap;
 
-  const _ReactionRow({required this.reactions});
+  const _ReactionPill({required this.message, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    return Wrap(
-      spacing: 3,
-      runSpacing: 3,
-      children: reactions.entries.map((e) {
-        return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+    // Up to three distinct emojis, then the total once more than one
+    // person has reacted.
+    final emojis = message.topEmojis.take(3).join();
+    final total = message.reactions.length;
+
+    return GestureDetector(
+      onTap: onTap,
+      child: TweenAnimationBuilder<double>(
+        key: ValueKey('$emojis$total'),
+        tween: Tween(begin: 0.6, end: 1),
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutBack,
+        builder: (_, scale, child) =>
+            Transform.scale(scale: scale, child: child),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
           decoration: BoxDecoration(
             color: const Color(0xFF262629),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(
-              color: Colors.white.withValues(alpha: 0.08),
-              width: 1,
-            ),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: EfocColors.bg, width: 2),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(e.key, style: const TextStyle(fontSize: 11)),
-              const SizedBox(width: 3),
-              Text(
-                '${e.value.length}',
-                style: const TextStyle(
-                  color: Colors.white70,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w700,
+              Text(emojis, style: const TextStyle(fontSize: 14)),
+              if (total > 1) ...[
+                const SizedBox(width: 3),
+                Text(
+                  '$total',
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
-              ),
+              ],
             ],
           ),
-        );
-      }).toList(),
+        ),
+      ),
     );
   }
 }
