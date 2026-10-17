@@ -34,7 +34,10 @@ class _CaptureScreenState extends State<CaptureScreen>
     with TickerProviderStateMixin {
   // Recorded with the phone sideways (top to the left) while the app stays
   // portrait: the camera's 2:3 portrait frames hold a 3:2 landscape scene.
-  static const String _ratio = '3x2';
+  // Stored as a label only (clips.aspect_ratio). The column's check
+  // constraint allows 9:16, 1:1 and 16:9, so landscape is filed as 16:9;
+  // playback uses the video's real 3:2 size.
+  static const String _ratio = '16x9';
   static const int _sidewaysRotation = 90;
 
   static const _clipLength = Duration(seconds: 3);
