@@ -44,7 +44,7 @@ FONT_FILE = os.environ.get(
 )
 
 WIDTH, HEIGHT, FPS = 720, 1280, 30
-MAX_CLIP_SECONDS = 3  # clips are 2s; cap guards against odd uploads
+MAX_CLIP_SECONDS = 4  # clips are 3s; cap guards against odd uploads
 
 HEX_COLOR = re.compile(r"^#?([0-9a-fA-F]{6})$")
 
