@@ -63,7 +63,7 @@ CAPTION_FONTS = {
 }
 
 
-def caption_font(key: str) -> tuple[str, int]:
+def caption_font_file(key: str) -> tuple[str, int]:
     name, size, fallback = CAPTION_FONTS.get(key, CAPTION_FONTS["classic"])
     path = Path(FONT_DIR) / name
     if path.is_file():
@@ -274,7 +274,7 @@ def normalize_clip(src: Path, dest: Path, label: str, caption: str | None,
     if caption:
         caption_file = work / f"{dest.stem}.caption.txt"
         caption_file.write_text(caption, encoding="utf-8")
-        font_path, size = caption_font(caption_font)
+        font_path, size = caption_font_file(caption_font)
         box, text_color = caption_box(caption_bg, caption_color)
         ax, ay = caption_align
         # Same maths as Flutter's Align: -1 = flush left/top, 1 = right/bottom,
