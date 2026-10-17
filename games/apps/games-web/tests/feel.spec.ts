@@ -20,21 +20,22 @@ const fire = (page: Page, event: Record<string, unknown>) =>
   }, event);
 
 test('every moment stays inside its tier budget over a full match', async ({ page }) => {
-  await page.goto('/bigtwo/?players=4&seed=5&tutorial=0&autoplay=1&speed=0.05&mute=1');
+  await page.goto('/bigtwo/?preview=0&players=4&seed=5&tutorial=0&autoplay=1&speed=0.05&mute=1');
   await expect(page.locator('.overlay.results')).toBeVisible({ timeout: 60_000 });
   await page.waitForTimeout(BUDGET[4] + 200);
   const log = await feelLog(page);
   expect(log.length).toBeGreaterThan(10);
   for (const r of log) {
     expect(r.end, `${r.name} finished`).not.toBeNull();
-    expect(r.end! - r.start, `${r.name} (T${r.tier})`).toBeLessThanOrEqual(BUDGET[r.tier]! + SLACK);
+    const budget = r.name === 'legendary' ? 3800 : BUDGET[r.tier]!; // the 2♠ / straight-flush moment
+    expect(r.end! - r.start, `${r.name} (T${r.tier})`).toBeLessThanOrEqual(budget + SLACK);
   }
   const tiers = new Set(log.map((r) => r.tier));
   expect(tiers.has(1) && tiers.has(4)).toBe(true);
 });
 
 test('one T3 at a time: the rest queue', async ({ page }) => {
-  await page.goto('/bigtwo/?players=4&seed=5&tutorial=0&mute=1');
+  await page.goto('/bigtwo/?preview=0&players=4&seed=5&tutorial=0&mute=1');
   await expect(page.locator('.seat')).toHaveCount(3);
   for (let i = 0; i < 3; i++) await fire(page, { type: 'bomb', seat: 1, kind: 'fourkind' });
   await page.waitForTimeout(3 * BUDGET[3] + 400);
@@ -47,7 +48,7 @@ test('one T3 at a time: the rest queue', async ({ page }) => {
 });
 
 test('input is never blocked by a T3, and a tap skips it', async ({ page }) => {
-  await page.goto('/bigtwo/?players=4&seed=5&tutorial=0&mute=1');
+  await page.goto('/bigtwo/?preview=0&players=4&seed=5&tutorial=0&mute=1');
   const card = page.locator('.card.in-hand').first();
   await expect(card).toBeVisible();
   await page.waitForTimeout(500);
@@ -66,7 +67,7 @@ test('input is never blocked by a T3, and a tap skips it', async ({ page }) => {
 
 test('reduced motion keeps text and drops motion', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await page.goto('/bigtwo/?players=4&seed=5&tutorial=0&mute=1');
+  await page.goto('/bigtwo/?preview=0&players=4&seed=5&tutorial=0&mute=1');
   await expect(page.locator('.efoc-root.reduced-motion')).toHaveCount(1);
   const transition = await page.locator('.card').first().evaluate((c) => getComputedStyle(c).transitionProperty);
   expect(transition).not.toContain('transform');
@@ -76,7 +77,7 @@ test('reduced motion keeps text and drops motion', async ({ page }) => {
 });
 
 test('select, play and the host confirms; Pass only when following', async ({ page }) => {
-  await page.goto('/bigtwo/?players=2&seed=8&tutorial=0&speed=0.05&mute=1');
+  await page.goto('/bigtwo/?preview=0&players=2&seed=8&tutorial=0&speed=0.05&mute=1');
   // Wait for my turn.
   await expect.poll(() => page.evaluate(() => (window as any).__efoc.table.view?.turn), { timeout: 15_000 }).toBe(0);
   const move = await page.evaluate(() => {
@@ -97,7 +98,7 @@ test('select, play and the host confirms; Pass only when following', async ({ pa
 });
 
 test('a rejected move snaps back with the reason', async ({ page }) => {
-  await page.goto('/bigtwo/?players=4&seed=5&tutorial=0&mute=1');
+  await page.goto('/bigtwo/?preview=0&players=4&seed=5&tutorial=0&mute=1');
   await expect(page.locator('.card.in-hand')).toHaveCount(13);
   await page.evaluate(() => {
     const t = (window as any).__efoc.table;
@@ -110,7 +111,7 @@ test('a rejected move snaps back with the reason', async ({ page }) => {
 });
 
 test('cards and actions have spoken labels', async ({ page }) => {
-  await page.goto('/bigtwo/?players=4&seed=5&tutorial=0&mute=1');
+  await page.goto('/bigtwo/?preview=0&players=4&seed=5&tutorial=0&mute=1');
   const first = page.locator('.card.in-hand').first();
   await expect(first).toHaveAttribute('aria-label', /^(Three|Four|Five|Six|Seven|Eight|Nine|Ten|Jack|Queen|King|Ace|Two) of (diamonds|clubs|hearts|spades)$/);
   await first.click();
@@ -119,14 +120,14 @@ test('cards and actions have spoken labels', async ({ page }) => {
 });
 
 test('the first visit runs the tutorial; Play again starts a new match', async ({ page }) => {
-  await page.goto('/bigtwo/?mute=1&speed=0.05');
+  await page.goto('/bigtwo/?mute=1&speed=0.05&preview=0');
   await expect(page.locator('.tip')).toContainText('3♦');
   await expect(page.locator('.seat')).toHaveCount(3);
   await page.getByRole('button', { name: 'Skip tutorial' }).click();
   await expect(page.locator('.tip')).toBeHidden();
   expect(await page.evaluate(() => localStorage.getItem('efoc.tutorial.bigtwo'))).toBe('1');
 
-  await page.goto('/bigtwo/?players=3&seed=4&tutorial=0&autoplay=1&speed=0.05&mute=1');
+  await page.goto('/bigtwo/?preview=0&players=3&seed=4&tutorial=0&autoplay=1&speed=0.05&mute=1');
   await expect(page.locator('.overlay.results')).toBeVisible({ timeout: 60_000 });
   await page.getByRole('button', { name: 'Play again' }).click();
   await expect(page.locator('.overlay.results')).toBeHidden();

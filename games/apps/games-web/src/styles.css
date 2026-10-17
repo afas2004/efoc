@@ -1054,3 +1054,223 @@ table.stats tr.me {
 .highlights .hl-bomb {
   font-weight: 800;
 }
+
+/* -------------------------------------------------------- legendary */
+
+.card.legendary {
+  animation: rainbow-edge 0.6s linear infinite;
+}
+@keyframes rainbow-edge {
+  0% { box-shadow: 0 0 0 4px #ef4444, 0 0 28px 10px #ef4444; }
+  17% { box-shadow: 0 0 0 4px #f97316, 0 0 28px 10px #f97316; }
+  33% { box-shadow: 0 0 0 4px #facc15, 0 0 28px 10px #facc15; }
+  50% { box-shadow: 0 0 0 4px #22c55e, 0 0 28px 10px #22c55e; }
+  67% { box-shadow: 0 0 0 4px #3b82f6, 0 0 28px 10px #3b82f6; }
+  83% { box-shadow: 0 0 0 4px #a855f7, 0 0 28px 10px #a855f7; }
+  100% { box-shadow: 0 0 0 4px #ef4444, 0 0 28px 10px #ef4444; }
+}
+.legend-ring {
+  position: absolute;
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  border: 6px solid #fde68a;
+  box-shadow: 0 0 24px 6px rgba(250, 204, 21, 0.7);
+}
+.legend-spark {
+  position: absolute;
+  width: 6px;
+  height: 18px;
+  border-radius: 3px;
+}
+.legend-boom {
+  position: absolute;
+  width: 140px;
+  height: 140px;
+  transform: translate(-50%, -50%);
+}
+.legend-wrap {
+  position: absolute;
+  left: 50%;
+  top: 40%;
+  width: min(92vw, 420px);
+  transform: translate(-50%, -50%);
+  z-index: 3;
+}
+.legend-rays {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 640px;
+  height: 640px;
+  margin: -320px 0 0 -320px;
+  border-radius: 50%;
+  background: repeating-conic-gradient(rgba(250, 204, 21, 0.55) 0deg 9deg, transparent 9deg 22.5deg);
+  -webkit-mask-image: radial-gradient(circle, #000 18%, transparent 65%);
+  mask-image: radial-gradient(circle, #000 18%, transparent 65%);
+  animation: rays-spin 6s linear infinite;
+}
+@keyframes rays-spin { to { transform: rotate(360deg); } }
+.legend-box {
+  position: relative;
+  padding: 18px 16px 14px;
+  border-radius: 22px;
+  background: linear-gradient(160deg, #3b0764, #7c3aed 55%, #a855f7);
+  border: 4px solid #facc15;
+  box-shadow: 0 0 0 4px #3b0764, 0 0 40px 10px rgba(250, 204, 21, 0.6), 0 16px 40px rgba(0, 0, 0, 0.5);
+  text-align: center;
+  animation: legend-pulse 0.8s ease-in-out infinite;
+}
+@keyframes legend-pulse {
+  50% { box-shadow: 0 0 0 4px #3b0764, 0 0 64px 18px rgba(250, 204, 21, 0.8), 0 16px 40px rgba(0, 0, 0, 0.5); }
+}
+.legend-title {
+  font-size: min(40px, 9.5vw);
+  font-weight: 900;
+  line-height: 1.05;
+  letter-spacing: 1px;
+  color: #fff7d6;
+  text-shadow: 0 3px 0 #b45309, 0 6px 14px rgba(0, 0, 0, 0.5);
+}
+.legend-sub {
+  margin-top: 8px;
+  font-size: 17px;
+  font-weight: 800;
+  color: #fde68a;
+}
+.legend-emoji {
+  position: absolute;
+  top: -40px;
+  width: 76px;
+  height: 76px;
+}
+.legend-emoji-l { left: -18px; }
+.legend-emoji-r { right: -18px; }
+.legend-star {
+  position: absolute;
+  font-size: 22px;
+  color: #fde68a;
+  text-shadow: 0 0 10px #facc15;
+  transform: translate(-50%, -50%);
+  animation: twinkle 0.7s ease-in-out infinite alternate;
+}
+@keyframes twinkle {
+  from { opacity: 0.2; transform: translate(-50%, -50%) scale(0.6) rotate(0deg); }
+  to { opacity: 1; transform: translate(-50%, -50%) scale(1.3) rotate(45deg); }
+}
+.role-danger-legend .legend-box {
+  background: linear-gradient(160deg, #450a0a, #b91c1c 55%, #ef4444);
+}
+.reduced-motion .legend-rays,
+.reduced-motion .legend-box,
+.reduced-motion .legend-star,
+.reduced-motion .card.legendary {
+  animation: none;
+}
+
+/* -------------------------------------------------------- countdown */
+
+.countdown {
+  position: absolute;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  pointer-events: none;
+  text-align: center;
+}
+.countdown-title {
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.7);
+  font-size: 18px;
+  font-weight: 800;
+}
+.countdown-num {
+  font-size: 84px;
+  font-weight: 900;
+  line-height: 1;
+  color: #fff;
+  text-shadow: 0 4px 0 rgba(0, 0, 0, 0.35), 0 0 30px rgba(34, 197, 94, 0.6);
+}
+.countdown-num.tick {
+  animation: count-pop 900ms cubic-bezier(0.2, 0.9, 0.3, 1.3);
+}
+@keyframes count-pop {
+  0% { transform: scale(1.8); opacity: 0; }
+  25% { transform: scale(1); opacity: 1; }
+  100% { transform: scale(0.9); opacity: 0.85; }
+}
+.reduced-motion .countdown-num.tick { animation: none; }
+
+/* ---------------------------------------------------------- podium */
+
+.podium {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 8px;
+  margin: 26px 0 10px;
+}
+.podium-step {
+  flex: 1 1 0;
+  max-width: 120px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  text-align: center;
+}
+.podium-avatar {
+  position: relative;
+  font-size: 34px;
+  line-height: 1;
+}
+.podium-step.p1 .podium-avatar {
+  font-size: 46px;
+  animation: winner-bounce 0.9s ease-in-out infinite;
+  animation-delay: 1.2s;
+}
+.podium-crown {
+  position: absolute;
+  left: 50%;
+  top: -24px;
+  transform: translateX(-50%) rotate(-8deg);
+  font-size: 26px;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.4));
+}
+@keyframes winner-bounce { 50% { transform: translateY(-8px); } }
+.podium-name {
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-weight: 800;
+  font-size: 15px;
+}
+.podium-pts {
+  font-size: 13px;
+  color: var(--ink-dim);
+}
+.podium-block {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 6px;
+  border-radius: 10px 10px 4px 4px;
+  font-size: 28px;
+  font-weight: 900;
+  color: rgba(0, 0, 0, 0.55);
+  transform-origin: 50% 100%;
+  animation: podium-rise 600ms cubic-bezier(0.2, 0.9, 0.3, 1.15) both;
+}
+.podium-step.p1 .podium-block { height: 96px; background: linear-gradient(#fde68a, #facc15); animation-delay: 700ms; }
+.podium-step.p2 .podium-block { height: 70px; background: linear-gradient(#e5e7eb, #9ca3af); animation-delay: 350ms; }
+.podium-step.p3 .podium-block { height: 50px; background: linear-gradient(#fdba74, #c2410c); animation-delay: 0ms; }
+@keyframes podium-rise { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+.reduced-motion .podium-block,
+.reduced-motion .podium-step.p1 .podium-avatar { animation: none; }
+.standings.rest .standing { min-height: 40px; }

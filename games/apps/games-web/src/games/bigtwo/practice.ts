@@ -18,6 +18,8 @@ export interface PracticeOptions {
   /** Multiplies bot thinking time; tests pass a small value. */
   botSpeed?: number;
   turnMs?: number;
+  /** Look-at-your-cards pause after each deal, in ms. */
+  previewMs?: number;
   /** My seat is played by a bot (layout tests). */
   autoplay?: boolean;
   tutorial: boolean;
@@ -72,6 +74,7 @@ export function startPractice(root: HTMLElement, o: PracticeOptions): { host: Ho
       seed: o.tutorial ? tutorialSeed(players, o.config) : o.seed,
       commentate: (events, state) => commentator.comment(events, state as bigtwo.BigTwoState),
       dwell: dwellMs,
+      previewMs: o.previewMs ?? 5000,
     },
   );
   const settings: TableSettings = { humour: o.humour, sound: true, reducedMotion: false, fourColour: false, ...o.settings };

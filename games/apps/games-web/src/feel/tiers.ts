@@ -7,6 +7,10 @@
 //   T2 Swing   700 ms   beat a strong play, take points, a good grab
 //   T3 Big    1500 ms   bomb, shoot the moon, comeback; tap to skip; one at a time
 //   T4 Ending 4000 ms   round and match results; tap to skip
+//   Legendary 3800 ms   a T3 for the rarest plays (2♠ single, straight
+//                       flush): thrown, slammed, announced. Longer than the
+//                       spec's 1.5 s at Fahmi's request; still never blocks
+//                       input, and a tap skips it.
 //
 // T0 and T1 never queue. One T3 plays at a time and the rest wait. Input is
 // never blocked: the T3 dimmer ignores pointer events and a tap anywhere
@@ -40,7 +44,11 @@ interface Pending {
   tier: Tier;
   name: string;
   effect: Effect;
+  ms?: number;
 }
+
+/** Longest a T3 may run when it asks for more than the standard 1.5 s. */
+export const LEGENDARY_MS = 3800;
 
 export class FeelQueue {
   readonly log: FeelRecord[] = [];
@@ -55,9 +63,9 @@ export class FeelQueue {
     }
   }
 
-  play(tier: Tier, name: string, effect: Effect): void {
+  play(tier: Tier, name: string, effect: Effect, ms?: number): void {
     if (tier >= 3) {
-      this.bigQueue.push({ tier, name, effect });
+      this.bigQueue.push({ tier, name, effect, ms: ms === undefined ? undefined : Math.min(ms, LEGENDARY_MS) });
       if (!this.bigActive) this.nextBig();
       return;
     }
@@ -103,7 +111,7 @@ export class FeelQueue {
       }
       after();
     };
-    const ms = TIER_MS[p.tier];
+    const ms = p.ms ?? TIER_MS[p.tier];
     const timer = setTimeout(() => finish(false), ms);
     try {
       p.effect({ ms, reduced: this.reduced, end: () => finish(false), onEnd: (fn) => cleanups.push(fn) });

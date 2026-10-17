@@ -53,6 +53,8 @@ efoc/                         (this repo)
 - **Stats on every results screen**, plus a setup screen (players, mode, poker hands, humour) and "Change rules".
 - **Playtest 2:** a turn chip above the hand ("YOUR TURN · beat it or pass" / "Speedy's turn…") with a glowing hand and a YOUR TURN pop; a "Before" strip with the two previous plays; humour defaults to **Spicy**; menu settings are switches; 2♠-style plays get an UNBEATABLE / UNSTOPPABLE moment with synced PASS stamps; results add the Jester's verdict and top-3 highlights.
 
+- **Playtest 3:** a single 2♠ or any straight/royal flush gets a *legendary* moment (thrown up spinning with a rainbow edge, slammed down with a shockwave, then a big announcement with rays, sparkles, confetti and Noto emoji). It runs 3.8 s, longer than the spec's 1.5 s T3 cap, at Fahmi's request; it never blocks input and a tap skips it, and the auto-passed play stays on the table until it is done. 2s spent inside a combo in the first half of a hand get a "BIG SPENDER!" moment. Every deal is followed by a 5 s look-at-your-cards countdown (no moves until it ends). Results show a pedestal for the top three.
+
 ## Left for later (as the spec says)
 
 - Pressure-rule numbers get tuned in beta.

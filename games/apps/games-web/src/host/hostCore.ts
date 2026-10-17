@@ -37,6 +37,8 @@ export interface HostOptions {
   commentate?: (events: GameEvent[], state: unknown) => GameEvent[];
   /** How long the table pauses after an entry before the next bot moves. */
   dwell?: (events: GameEvent[]) => number;
+  /** Time to look at your cards after each deal, before the first turn. */
+  previewMs?: number;
 }
 
 export interface Clock {
@@ -86,6 +88,8 @@ export class HostCore<Config, State, Move, View> {
   private listeners: ((e: LogEntry<Move>) => void)[] = [];
   private stopped = false;
   private lastDwell = 0;
+  /** No moves before this time: everyone is looking at their new hand. */
+  private previewUntil = 0;
 
   constructor(
     readonly game: GameModule<Config, State, Move, View> & { nextRound?: (s: State, rng: Rng) => State },
@@ -134,9 +138,7 @@ export class HostCore<Config, State, Move, View> {
     this.doubled.fill(false);
     this.rng = createRng(this.seedBase);
     this.state = this.game.setup(this.seats.map((_, i) => i), this.config, this.rng);
-    this.armTurn();
-    this.emit(null, null, [{ type: 'round_started', round: this.round }]);
-    this.scheduleBot();
+    this.dealt();
   }
 
   /** A new match with the same seats (the host's "Play again"). */
@@ -155,8 +157,16 @@ export class HostCore<Config, State, Move, View> {
     this.round++;
     this.doubled.fill(false);
     this.state = this.game.nextRound(this.state, this.rng);
-    this.armTurn();
-    this.emit(null, null, [{ type: 'round_started', round: this.round }]);
+    this.dealt();
+  }
+
+  /** After a deal: a look-at-your-cards pause, then the first turn. */
+  private dealt(): void {
+    const preview = this.opts.previewMs ?? 0;
+    this.previewUntil = this.now() + preview;
+    this.armTurn(preview);
+    this.emit(null, null, [{ type: 'round_started', round: this.round, previewMs: preview }]);
+    this.lastDwell = Math.max(this.lastDwell, preview);
     this.scheduleBot();
   }
 
@@ -164,6 +174,7 @@ export class HostCore<Config, State, Move, View> {
   submit(seat: SeatId, move: Move, madeAt?: number): string | null {
     if (this.stopped) return 'The match has ended';
     if (madeAt !== undefined && madeAt !== this.n - 1) return 'The table moved on; try again';
+    if (this.now() < this.previewUntil) return 'Get ready…';
     const check = this.game.validate(this.state, seat, move);
     if (!check.ok) return check.reason;
     this.consecutive[seat] = 0;
@@ -209,10 +220,10 @@ export class HostCore<Config, State, Move, View> {
     this.timer = this.botTimer = null;
   }
 
-  private armTurn(): void {
+  private armTurn(extraMs = 0): void {
     if (this.timer !== null) this.clock.clear(this.timer);
-    this.deadline = this.now() + this.turnMs;
-    this.timer = this.clock.set(() => this.timeout(), this.turnMs);
+    this.deadline = this.now() + extraMs + this.turnMs;
+    this.timer = this.clock.set(() => this.timeout(), extraMs + this.turnMs);
   }
 
   private timeout(): void {

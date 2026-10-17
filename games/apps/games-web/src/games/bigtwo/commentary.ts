@@ -75,7 +75,7 @@ export class BigTwoCommentator {
           const combo = describeCombo(cards, e.kind as string);
           const left = e.left as number;
           if (left === 1) candidates.push(['one_card', seat, { name: name(seat!), combo }]);
-          else if (cards.length === 1 && bigtwo.rankIndex(cards[0]!) === 12 && left >= 5) candidates.push(['two_early', seat, { name: name(seat!), combo, n: left }]);
+          else if (cards.some((c) => bigtwo.rankIndex(c) === 12) && cards[0] !== '2s' && left >= 5) candidates.push(['two_early', seat, { name: name(seat!), combo, n: left }]);
           else if (cards.length === 5 && !bigtwo.isBomb(e.kind as bigtwo.ComboKind)) candidates.push(['big_play', seat, { name: name(seat!), combo }]);
           break;
         }
@@ -129,9 +129,16 @@ export class BigTwoCommentator {
 }
 
 /** How long the table pauses after an entry before the next bot moves. */
+/** The rarest plays: a single 2♠ or any straight flush. */
+export function isLegendary(cards: readonly Card[], kind: string): boolean {
+  return (kind === 'single' && cards[0] === '2s') || kind === 'straightflush';
+}
+
 export function dwellMs(events: GameEvent[]): number {
   let ms = 0;
   for (const e of events) {
+    if (e.type === 'card_played' && isLegendary(e.cards as Card[], e.kind as string)) ms = Math.max(ms, 4300);
+    if (e.type === 'round_started') ms = Math.max(ms, (e.previewMs as number) ?? 0);
     if (e.type === 'unbeatable') ms = Math.max(ms, (e.left as number) === 1 ? 3200 : 2400);
     else if (e.type === 'bomb' || e.type === 'double_it') ms = Math.max(ms, 1800);
     else if (e.type === 'all_passed' || e.type === 'player_out') ms = Math.max(ms, 1200);

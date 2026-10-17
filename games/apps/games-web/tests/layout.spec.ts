@@ -97,7 +97,7 @@ for (const size of SIZES) {
   for (const players of PLAYERS) {
     test(`${size.name} ${size.width}×${size.height}, ${players} players: full match, no overlap, 44 px targets`, async ({ page }) => {
       await page.setViewportSize({ width: size.width, height: size.height });
-      await page.goto(`/bigtwo/?players=${players}&seed=${players * 11}&tutorial=0&autoplay=1&speed=${players === 2 ? 0.4 : 0.15}&mute=1`);
+      await page.goto(`/bigtwo/?preview=0&players=${players}&seed=${players * 11}&tutorial=0&autoplay=1&speed=${players === 2 ? 0.4 : 0.15}&mute=1`);
       await expect(page.locator('.seat')).toHaveCount(players - 1);
       const seen = new Set<string>();
       let samples = 0;
@@ -110,7 +110,9 @@ for (const size of SIZES) {
         if (samples > 600) break;
       }
       await expect(page.locator('.overlay.results')).toBeVisible();
-      await expect(page.locator('.standing')).toHaveCount(players);
+      // Top three on the pedestal, the rest listed below it.
+      await expect(page.locator('.podium-step')).toHaveCount(Math.min(players, 3));
+      await expect(page.locator('.standing')).toHaveCount(Math.max(0, players - 3));
       for (const b of await page.locator('.overlay.results button').all()) {
         const r = (await b.boundingBox())!;
         expect(r.height, 'results buttons are 44 px tall').toBeGreaterThanOrEqual(MIN);

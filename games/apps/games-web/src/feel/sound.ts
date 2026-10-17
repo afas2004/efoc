@@ -116,6 +116,11 @@ export const sound = {
   sort: () => sample('fan', 0.7) || tone(900, 60, 'triangle', 0.06),
   toggle: () => sample('switch', 0.6) || tone(1400, 40, 'square', 0.04),
   pass: () => sample('rollover', 0.7, 0.8) || tone(420, 90, 'triangle', 0.12, 300),
+  /** Tension while a legendary card flies up. */
+  rise: () => {
+    tone(196, 950, 'sawtooth', 0.05, 880);
+    tone(294, 950, 'triangle', 0.06, 1320);
+  },
   /** T2 */
   whoosh: () => noise(320, 0.35, 400, 3200),
   chime: () => {

@@ -7,12 +7,13 @@ import { haptic } from '../../bridge';
 import { banner, burst, confetti, dim, shake, type ColourRole } from '../../feel/effects';
 import { jesterText, type Humour, type JesterEvent } from '../../feel/jester';
 import { EYES, JESTER_SVG, playEmoji, preloadEmoji } from '../../feel/jesterArt';
+import { legendary, LEGENDARY_TOTAL_MS } from '../../feel/legendary';
 import { sound, unlockAudio, setMuted } from '../../feel/sound';
 import { FeelQueue, type Tier } from '../../feel/tiers';
 import { L, fmt } from '../../strings';
 import { cardLabel, cardsText, makeBack, makeCard } from '../../table/cardFace';
 import { TURN_CHIP_H } from '../../table/layout';
-import { describeCombo } from './commentary';
+import { describeCombo, isLegendary } from './commentary';
 import { MatchStats } from './stats';
 import { computeLayout, handPlaces, RAISE_PX, type Box, type TableLayout } from '../../table/layout';
 
@@ -71,6 +72,9 @@ export class BigTwoTable {
   private selected = new Set<Card>();
   private pending: Card[] | null = null;
   private trick: TrickPlay[] = [];
+  /** A trick that ended by auto-pass stays on the table until its moment has played. */
+  private clearTimer = 0;
+  private clearPending = false;
   /** Every play this round, for the "before" strip. */
   private history: TrickPlay[] = [];
   private sortMode: SortMode = 'rank';
@@ -87,6 +91,12 @@ export class BigTwoTable {
   private seatEls: HTMLElement[] = [];
   private centreLabel: HTMLElement;
   private historyEl: HTMLElement;
+  private countdown: HTMLElement;
+  /** No moves until this time: the look-at-your-cards pause. */
+  private previewUntil = 0;
+  private lastCount = -1;
+  /** True while this update's events include a legendary play. */
+  private legendNow = false;
   private turnChip: HTMLElement;
   private handGlow: HTMLElement;
   private timerBar: HTMLElement;
@@ -120,6 +130,7 @@ export class BigTwoTable {
     this.cardLayer = el('div', 'card-layer', this.table);
     this.centreLabel = el('div', 'centre-label', this.table);
     this.historyEl = el('div', 'history', this.table);
+    this.countdown = el('div', 'countdown hidden', root);
     this.handGlow = el('div', 'hand-glow', this.table);
     this.turnChip = el('div', 'turn-chip hidden', this.table);
     this.turnChip.setAttribute('aria-live', 'polite');
@@ -176,16 +187,73 @@ export class BigTwoTable {
     if (this.pending && events.some((e) => e.type === 'card_played' && e.seat === this.me)) this.pending = null;
     if (this.pending && view.turn !== this.me) this.pending = null;
     for (const c of [...this.selected]) if (!view.hand.includes(c)) this.selected.delete(c);
+    const legend = events.find((e) => e.type === 'card_played' && isLegendary(e.cards as Card[], e.kind as string));
+    this.legendNow = !!legend;
+    const autoPass = events.some((e) => e.type === 'card_played') && events.some((e) => e.type === 'all_passed');
     for (const e of events) {
+      if (e.type === 'all_passed' && autoPass) {
+        this.holdTrick(this.legendNow ? LEGENDARY_TOTAL_MS + 1000 : 1600);
+        continue;
+      }
       if (e.type === 'round_started' && e.round === 1) this.stats.reset(view.players);
+      if (e.type === 'round_started') this.previewUntil = Date.now() + ((e.previewMs as number) ?? 0);
       this.stats.feed(e, view.players);
       this.trackTrick(e);
     }
     this.render(prev, events);
+    if (legend) this.legendaryPlay(legend, events);
     for (const e of events) this.moment(e, view);
+    this.legendNow = false;
     const myTurnNow = view.phase === 'play' && view.turn === this.me;
     const myTurnBefore = !!prev && prev.phase === 'play' && prev.turn === this.me && !events.some((e) => e.type === 'round_started');
     if (myTurnNow && !myTurnBefore && !this.meta.afk[this.me]) this.yourTurn();
+  }
+
+  /** The throw-and-slam moment for a single 2♠ or a straight flush. */
+  private legendaryPlay(e: GameEvent, events: GameEvent[]): void {
+    const seat = e.seat as number;
+    const cards = e.cards as Card[];
+    const kind = e.kind as string;
+    const u = L().ui;
+    const name = this.seatMeta[seat]?.name ?? '';
+    const unbeatable = events.find((x) => x.type === 'unbeatable');
+    if (unbeatable) this.skipAllPassed = true;
+    const isTwo = kind === 'single';
+    const royal = !isTwo && ['T', 'J', 'Q', 'K', 'A'].every((r) => cards.some((c) => c[0] === r));
+    const left = e.left as number;
+    const title = isTwo ? u.legend2s : royal ? u.royalFlush : u.straightFlush;
+    const subtitle = isTwo
+      ? fmt(left === 1 ? u.legend2sWin : u.legend2sSub, { name })
+      : fmt(u.flushSub, { name, combo: describeCombo(cards, kind) });
+    const sprites = cards.map((c) => this.sprites.get(c)).filter((x): x is HTMLElement => !!x);
+    const from = seat === this.me ? this.handTop() : this.seatCentre(seat);
+    this.feel.play(
+      3,
+      'legendary',
+      (ctx) =>
+        legendary(
+          {
+            fx: this.fx,
+            table: this.table,
+            root: this.root,
+            sprites,
+            from,
+            stage: this.layout.stage,
+            vw: this.layout.vw,
+            cardW: this.layout.handW,
+            title,
+            subtitle,
+            role: left === 1 || royal ? 'good' : 'power',
+            afterImpact: () => {
+              const passed = (unbeatable?.passed as number[] | undefined) ?? [];
+              for (const s of passed) this.stamp(s, L().ui.stampPass, 'pass');
+              if (passed.length) sound.pass();
+            },
+          },
+          ctx,
+        ),
+      LEGENDARY_TOTAL_MS,
+    );
   }
 
   /** The cue that it's my turn: banner over the table, glowing hand, chime, haptic. */
@@ -211,7 +279,24 @@ export class BigTwoTable {
     });
   }
 
+  /** Keeps the current trick on the table for `ms`, then clears it. */
+  private holdTrick(ms: number): void {
+    this.clearPending = true;
+    window.clearTimeout(this.clearTimer);
+    this.clearTimer = window.setTimeout(() => {
+      if (!this.clearPending) return;
+      this.clearPending = false;
+      this.trick = [];
+      this.render();
+    }, ms);
+  }
+
   private trackTrick(e: GameEvent): void {
+    if (this.clearPending && (e.type === 'card_played' || e.type === 'round_started')) {
+      this.clearPending = false;
+      window.clearTimeout(this.clearTimer);
+      this.trick = [];
+    }
     if (e.type === 'round_started') {
       this.trick = [];
       this.history = [];
@@ -402,7 +487,10 @@ export class BigTwoTable {
     }
     const mine = v.turn === this.me;
     const u = L().ui;
-    chip.textContent = mine
+    const waitS = Math.ceil((this.previewUntil - Date.now()) / 1000);
+    chip.textContent = waitS > 0
+      ? fmt(u.startingIn, { n: waitS })
+      : mine
       ? v.mustInclude
         ? fmt(u.turnOpen, { card: cardsText([v.mustInclude]) })
         : v.lead
@@ -471,7 +559,7 @@ export class BigTwoTable {
 
   private selectionPlay(): bigtwo.Combo | null {
     const v = this.view;
-    if (!v || v.phase !== 'play' || v.turn !== this.me || this.pending) return null;
+    if (!v || v.phase !== 'play' || v.turn !== this.me || this.pending || Date.now() < this.previewUntil) return null;
     const cards = [...this.selected];
     const combo = bigtwo.classify(cards, v.config);
     if (!combo) return null;
@@ -489,7 +577,7 @@ export class BigTwoTable {
     const combo = this.selectionPlay();
     this.playBtn.disabled = !combo;
     this.playBtn.textContent = combo ? `${L().ui.play} ${(L().ui.combo as Record<string, string>)[combo.kind]}` : L().ui.play;
-    this.passBtn.disabled = !(myTurn && v.lead);
+    this.passBtn.disabled = !(myTurn && v.lead) || Date.now() < this.previewUntil;
     const afk = this.meta.afk[this.me] === true;
     this.backBtn.classList.toggle('hidden', !afk);
     this.passBtn.classList.toggle('hidden', afk);
@@ -705,15 +793,22 @@ export class BigTwoTable {
       }
       case 'card_played': {
         const cards = e.cards as Card[];
-        this.feel.play(1, 'card_played', () => {
-          if (seat !== this.me) sound.slide();
-          cards.forEach((_, i) => setTimeout(() => sound.thud(i), 120 + i * 55));
-        });
+        const legendaryHere = this.legendNow && isLegendary(cards, e.kind as string);
+        if (!legendaryHere) {
+          this.feel.play(1, 'card_played', () => {
+            if (seat !== this.me) sound.slide();
+            cards.forEach((_, i) => setTimeout(() => sound.thud(i), 120 + i * 55));
+          });
+        }
         if (seat === this.me) haptic('light');
         if (seat !== null) {
           const kind = (L().ui.combo as Record<string, string>)[e.kind as string] ?? '';
           this.stamp(seat, kind.toUpperCase(), 'turn');
-          const isTwo = cards.length === 1 && bigtwo.rankIndex(cards[0]!) === TWO;
+          const isTwo = cards.length === 1 && bigtwo.rankIndex(cards[0]!) === TWO && !legendaryHere;
+          const twosInCombo = cards.length > 1 && cards.some((c) => bigtwo.rankIndex(c) === TWO);
+          if (twosInCombo && !legendaryHere && (e.left as number) >= this.initialHand / 2) {
+            this.big('big_spender', L().ui.bigSpender, 'danger', true);
+          }
           if (isTwo) {
             this.pop(2, 'two', '2!', 'danger', { x: this.layout.stage.x + this.layout.stage.w / 2, y: this.layout.stage.y + 20 });
             sound.whoosh();
@@ -727,10 +822,10 @@ export class BigTwoTable {
         break;
       }
       case 'bomb':
-        this.big('bomb', L().ui.bomb, 'danger', true);
+        if (!this.legendNow) this.big('bomb', L().ui.bomb, 'danger', true);
         break;
       case 'unbeatable':
-        this.unbeatable(seat!, (e.left as number) === 1, e.passed as number[]);
+        if (!this.legendNow) this.unbeatable(seat!, (e.left as number) === 1, e.passed as number[]);
         break;
       case 'passed': {
         this.feel.play(1, 'passed', () => sound.pass());
@@ -857,8 +952,22 @@ export class BigTwoTable {
     const u = L().ui;
     const mode = v.config.mode === 'fightTillTheEnd' ? u.modeFtte : u.modeStandard;
     el('h2', '', card).textContent = `${matchOver ? u.results : fmt(u.round, { n: v.round })} · ${mode}`;
-    const podium = el('ol', 'standings', card);
+    // Pedestal: 2nd, 1st, 3rd from left to right; the rest listed below.
+    const stand = el('div', 'podium', card);
+    for (const place of [1, 0, 2]) {
+      const seat = placings[place];
+      if (seat === undefined || place >= placings.length) continue;
+      const step = el('div', `podium-step p${place + 1}`, stand);
+      const av = el('div', 'podium-avatar', step);
+      av.textContent = this.seatMeta[seat]!.avatar;
+      if (place === 0) el('span', 'podium-crown', av).textContent = '👑';
+      el('div', 'podium-name', step).textContent = this.nameOf(seat);
+      el('div', 'podium-pts', step).textContent = `+${points[seat]}${doubled[seat] ? ` (${u.doubled})` : ''}`;
+      el('div', 'podium-block', step).textContent = String(place + 1);
+    }
+    const podium = el('ol', 'standings rest', card);
     placings.forEach((seat, place) => {
+      if (place < 3) return;
       const li = el('li', `standing place-${place + 1}${seat === winner ? ' winner' : ''}${seat === last ? ' last' : ''}`, podium);
       const medal = ['🥇', '🥈', '🥉'][place] ?? `${place + 1}.`;
       li.innerHTML = `<span class="medal"></span><span class="who"></span><span class="pts"></span>`;
@@ -1034,8 +1143,40 @@ export class BigTwoTable {
 
   // --------------------------------------------------------------- clock
 
+  /** Big countdown over the stage while everyone looks at their new hand. */
+  private renderCountdown(): void {
+    const left = this.previewUntil - Date.now();
+    const c = this.countdown;
+    if (left <= -700 || !this.layout) {
+      if (this.lastCount !== -1) {
+        c.className = 'countdown hidden';
+        this.lastCount = -1;
+        this.renderButtons();
+        if (this.view) this.renderTurn(this.view);
+      }
+      return;
+    }
+    const n = Math.ceil(left / 1000);
+    if (n === this.lastCount) return;
+    this.lastCount = n;
+    const st = this.layout.stage;
+    c.className = 'countdown';
+    c.style.left = `${st.x}px`;
+    c.style.top = `${st.y}px`;
+    c.style.width = `${st.w}px`;
+    c.style.height = `${st.h}px`;
+    c.innerHTML = '<div class="countdown-title"></div><div class="countdown-num tick"></div>';
+    c.firstElementChild!.textContent = n > 0 ? L().ui.lookAtCards : '';
+    c.lastElementChild!.textContent = n > 0 ? String(n) : L().ui.go;
+    if (n > 0) sound.tick();
+    else sound.chime();
+    if (this.view) this.renderTurn(this.view);
+    this.renderButtons();
+  }
+
   private tick = (): void => {
     requestAnimationFrame(this.tick);
+    if (this.previewUntil > 0) this.renderCountdown();
     const v = this.view;
     if (!v || !this.meta.deadline || v.phase !== 'play') return;
     const total = this.meta.deadline - Date.now();

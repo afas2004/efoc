@@ -132,7 +132,18 @@
     "hlUnbeatable": "{name} played {combo}. Nobody could answer.",
     "hlBomb": "{name} dropped {combo}.",
     "hlBig": "{name} played {combo}.",
-    "verdict": "The Jester says"
+    "verdict": "The Jester says",
+    "legend2s": "THE 2♠ HAS ARRIVED!",
+    "legend2sSub": "{name} slams the highest card. Everyone passes!",
+    "legend2sWin": "{name} slams it with one card left. It's over!",
+    "royalFlush": "ROYAL FLUSH!",
+    "straightFlush": "STRAIGHT FLUSH!",
+    "flushSub": "{name}: {combo}",
+    "bigSpender": "BIG SPENDER!",
+    "lookAtCards": "Look at your cards",
+    "startingIn": "Starting in {n}…",
+    "go": "GO!",
+    "getReady": "Get ready…"
   },
   "tutorial": {
     "lead3d": "You hold 3♦, so you start. Tap the 3♦ (you can add cards that make a pair, triple or 5-card hand), then tap Play.",

@@ -1,7 +1,7 @@
 // Big Two page entry. Inside the EFOC app it waits for `init` from Flutter;
 // opened on its own (dev server, Playwright) it starts Practice from the URL:
 //   ?players=4&seed=1&mode=standard|fightTillTheEnd&fast=1&speed=0.05
-//   &turn=20000&autoplay=1&tutorial=0&humour=off|mild|spicy&reduced=1
+//   &turn=20000&autoplay=1&tutorial=0&humour=off|mild|spicy&reduced=1&preview=5000
 
 import './styles.css';
 import { bigtwo } from '@efoc/engine';
@@ -59,6 +59,7 @@ function launch(l: Launch): void {
     fast: q.get('fast') === '1',
     botSpeed: num('speed'),
     turnMs: num('turn'),
+    previewMs: num('preview'),
     autoplay: q.get('autoplay') === '1',
     tutorial,
     humour: l.humour,
