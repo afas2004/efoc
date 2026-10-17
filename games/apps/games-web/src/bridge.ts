@@ -57,6 +57,7 @@ export type FromGame =
   | { t: 'vote'; yes?: boolean; start?: boolean }
   | { t: 'haptic'; kind: HapticKind }
   | { t: 'exit' }
+  | { t: 'invite' }
   | { t: 'db'; id: number; op: 'get' | 'set' | 'update' | 'push' | 'onDisconnect' | 'watch' | 'watchChildren' | 'unwatch'; path?: string; value?: unknown; values?: Record<string, unknown> };
 
 /** Origins allowed to embed the page and talk to it on the web. */

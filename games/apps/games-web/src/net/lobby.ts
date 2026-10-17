@@ -20,6 +20,8 @@ export interface LobbyActions {
   removeBot(i: number): void;
   setRule(patch: Partial<Pick<RoomMeta, 'mode' | 'pokerHands' | 'humour'>>): void;
   start(): void;
+  /** Only inside the EFOC app: share a link to this table. */
+  invite?(): void;
 }
 
 /** Seats in the order they will sit: humans by join time, then bots. */
@@ -100,6 +102,7 @@ export function renderLobby(root: HTMLElement, st: LobbyState, act: LobbyActions
   const meReady = st.members[st.me]?.ready ?? false;
   if (st.members[st.me]) btn(`btn ${meReady ? 'btn-turn' : 'btn-secondary'}`, meReady ? `✓ ${u.isReady}` : u.readyQ, () => act.setReady(!meReady));
   if (isHost) btn('btn btn-secondary', u.addBot, () => act.addBot(), seats.length >= 8);
+  if (act.invite) btn('btn btn-secondary btn-invite', u.invite, () => act.invite!());
 
   // House rules: the host picks, everyone sees them.
   const rules = document.createElement('div');

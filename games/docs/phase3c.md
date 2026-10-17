@@ -36,6 +36,12 @@ EFOC app (Flutter)                          game page (games.efoc.party/efoc/big
   older than 6 h. Rules: any signed-in player can read a group's list (the
   group id is a uuid only members see); only the room's host can add,
   only players in the room can remove.
+- **Telling friends (17 Oct):** once the page has created the room (its
+  first update, seen by GameSession.onUpdated), the host's app lists the
+  table and posts a chat message whose link `efoc.party/join?table=…&group=…&game=…`
+  the chat shows as a card with a Join button. The waiting room's Invite
+  button shares (Android) or copies (web) the same link; opening it goes
+  straight to the table (Android reuses the /join deep link).
 - **Seat avatars** are emoji picked from the uid (the rules cap avatars at
   16 characters), not profile photos.
 

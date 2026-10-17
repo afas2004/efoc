@@ -1,13 +1,17 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:share_plus/share_plus.dart';
 
+import '../services/chat_service.dart';
 import '../theme/colors.dart';
 import 'game_session.dart';
 import 'games_config.dart';
 import 'games_database.dart';
 import 'open_tables.dart';
+import 'table_link.dart';
 import 'table_view.dart';
 
 /// One live table: the game page plus the [GameSession] that runs its
@@ -46,8 +50,8 @@ class _TableScreenState extends State<TableScreen> with WidgetsBindingObserver {
   String? _error;
   bool _initSent = false;
   bool _online = false;
+  bool _announced = false;
   int _clockOffset = 0;
-  StreamSubscription<void>? _hostWatch;
   StreamSubscription<void>? _resultsWatch;
   StreamSubscription<int>? _clock;
 
@@ -76,9 +80,13 @@ class _TableScreenState extends State<TableScreen> with WidgetsBindingObserver {
     }
     if (!mounted) return;
     final db = FirebaseGameDb(GamesDatabase.instance.db);
-    _session = GameSession(db: db, roomId: roomId, send: _controller.send);
+    _session = GameSession(
+      db: db,
+      roomId: roomId,
+      send: _controller.send,
+      onUpdated: (values) => _onPageUpdate(db, roomId, values),
+    );
     _clock = db.clockOffset.listen((o) => _clockOffset = o, onError: (_) {});
-    if (widget.createWithMembers != null) _listTableWhenCreated(db, roomId);
     setState(() => _view = _buildView());
   }
 
@@ -91,23 +99,65 @@ class _TableScreenState extends State<TableScreen> with WidgetsBindingObserver {
         onLoaded: _sendInit,
       );
 
-  /// Once the page has created the room as us, list it in the group's open
-  /// tables; take it off when the match has results.
-  void _listTableWhenCreated(GameDb db, String roomId) {
-    _hostWatch = db.watch('rooms/$roomId/meta/hostUid', (v) {
-      if (v != widget.myUid) return;
-      _hostWatch?.cancel();
+  TableLink? get _link {
+    final roomId = widget.roomId;
+    if (roomId == null) return null;
+    return TableLink(roomId: roomId, groupId: widget.groupId, gameId: widget.gameId);
+  }
+
+  /// The page created the room as us (its first update writes meta with
+  /// hostUid = me): list the table in the group's Games tab, post a chat
+  /// card with a Join button, and take the listing off when the match has
+  /// results. Watching the room before it exists isn't allowed by the
+  /// rules, which is why this waits for the page's own write.
+  void _onPageUpdate(GameDb db, String roomId, Map<String, Object?> values) {
+    if (_announced || widget.createWithMembers == null) return;
+    final meta = values['rooms/$roomId/meta'];
+    if (meta is! Map || meta['hostUid'] != widget.myUid) return;
+    _announced = true;
+
+    OpenTables.instance
+        .list(widget.groupId, roomId, widget.gameId, widget.myUid, widget.myName)
+        .catchError((Object e) => debugPrint('games list table: $e'));
+
+    final link = _link!;
+    if ((widget.createWithMembers?.length ?? 0) > 1) {
+      ChatService.instance
+          .sendText(
+            groupId: widget.groupId,
+            text: '🃏 I opened a ${link.gameName()} table. Come play!\n'
+                '${link.toUri()}',
+          )
+          .catchError((Object e) => debugPrint('games chat card: $e'));
+    }
+
+    _resultsWatch = db.watch('rooms/$roomId/results', (r) {
+      if (r == null) return;
+      _resultsWatch?.cancel();
       OpenTables.instance
-          .list(widget.groupId, roomId, widget.gameId, widget.myUid, widget.myName)
-          .catchError((Object e) => debugPrint('games list table: $e'));
-      _resultsWatch = db.watch('rooms/$roomId/results', (r) {
-        if (r == null) return;
-        _resultsWatch?.cancel();
-        OpenTables.instance
-            .unlist(widget.groupId, roomId)
-            .catchError((Object e) => debugPrint('games unlist: $e'));
-      });
+          .unlist(widget.groupId, roomId)
+          .catchError((Object e) => debugPrint('games unlist: $e'));
     });
+  }
+
+  /// The waiting room's Invite button: share (Android) or copy (web) a
+  /// link that opens this table.
+  Future<void> _invite() async {
+    final link = _link;
+    if (link == null) return;
+    final text = 'Join my ${link.gameName()} table on EFOC: ${link.toUri()}';
+    if (kIsWeb) {
+      await Clipboard.setData(ClipboardData(text: text));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Invite link copied — paste it anywhere'),
+          duration: Duration(milliseconds: 1600),
+        ),
+      );
+      return;
+    }
+    await Share.share(text, subject: 'Join my table');
   }
 
   void _sendInit() {
@@ -163,6 +213,8 @@ class _TableScreenState extends State<TableScreen> with WidgetsBindingObserver {
           case 'error':
             HapticFeedback.vibrate();
         }
+      case 'invite':
+        _invite();
       case 'exit':
         if (mounted) Navigator.of(context).maybePop(true);
     }
@@ -208,7 +260,6 @@ class _TableScreenState extends State<TableScreen> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _hostWatch?.cancel();
     _resultsWatch?.cancel();
     _clock?.cancel();
     _session?.close();

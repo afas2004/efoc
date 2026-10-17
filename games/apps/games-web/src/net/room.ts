@@ -209,6 +209,7 @@ export class OnlineGame {
       },
       removeBot: (i) => void this.store.set(`${P.meta(this.room)}/bots`, m.bots.filter((_, k) => k !== i) as unknown as Json),
       setRule: (patch) => void this.store.update(Object.fromEntries(Object.entries(patch).map(([k, v]) => [`${P.meta(this.room)}/${k}`, v as Json]))),
+      invite: inApp() ? () => send({ t: 'invite' }) : undefined,
       start: () => {
         const seats = lobbySeats(m, this.members);
         if (seats.length < 2) return;

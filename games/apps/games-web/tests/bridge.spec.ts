@@ -13,6 +13,7 @@ const db = { root: {} };
 const subs = []; // {frame, id, path, kind, seen, last}
 const disconnect = new Map(); // frame -> {path: value}
 const errors = [];
+const others = []; // non-db messages from the pages
 const parts = (p) => p.split('/').filter(Boolean);
 const isObj = (v) => v && typeof v === 'object' && !Array.isArray(v);
 function resolveTs(v) {
@@ -80,6 +81,7 @@ window.addEventListener('message', (e) => {
   const f = frames.find((x) => x.el.contentWindow === e.source);
   if (!f || e.origin !== location.origin) return;
   const m = e.data;
+  if (m && m.t !== 'db') others.push(f.uid + ':' + m.t);
   if (!m || m.t !== 'db') return;
   const reply = (ok, value, error) => f.post({ t: 'dbResult', id: m.id, ok, value, error });
   const paths = m.op === 'update' ? Object.keys(m.values || {}) : m.op === 'unwatch' ? [] : [m.path];
@@ -98,7 +100,7 @@ window.addEventListener('message', (e) => {
     case 'unwatch': subs.splice(0, subs.length, ...subs.filter((s) => !(s.frame === f && s.id === m.id))); break;
   }
 });
-window.harness = { addPhone, dropPhone, db, errors, read };
+window.harness = { addPhone, dropPhone, db, errors, others, read };
 </script></body>`;
 
 async function openHarness(page: Page): Promise<void> {
@@ -120,6 +122,9 @@ test('two phones and a bot play a match through the app bridge', async ({ page }
   );
   const phones = [page.frameLocator('iframe').nth(0), page.frameLocator('iframe').nth(1)];
   for (const f of phones) await expect(f.locator('.lobby-seat')).toHaveCount(2);
+  // Inside the app the waiting room offers Invite, which asks the app to share a link.
+  await phones[1]!.getByRole('button', { name: '📨 Invite' }).click();
+  await expect.poll(() => page.evaluate(() => (window as any).harness.others)).toContain('b2:invite');
   await phones[0]!.getByRole('button', { name: '+ Add bot' }).click();
   for (const f of phones) await expect(f.locator('.lobby-seat')).toHaveCount(3);
   for (const f of phones) await f.getByRole('button', { name: 'Ready?' }).click();

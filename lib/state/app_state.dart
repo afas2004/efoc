@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../games/table_link.dart';
 import '../models/log_group.dart';
 import '../models/member.dart';
 import '../models/vlog.dart';
@@ -96,6 +97,19 @@ class AppState extends ChangeNotifier {
     if (_pendingInviteCode == null) return;
     _pendingInviteCode = null;
     notifyListeners();
+  }
+
+  // ---------- pending game table (from a link) ----------
+  TableLink? _pendingTable;
+  TableLink? get pendingTable => _pendingTable;
+
+  void setPendingTable(TableLink link) {
+    _pendingTable = link;
+    notifyListeners();
+  }
+
+  void clearPendingTable() {
+    _pendingTable = null;
   }
 
   // ---------- groups ----------

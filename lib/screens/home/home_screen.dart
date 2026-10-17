@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../games/games_screen.dart';
+import '../../games/open_table_link.dart';
 import '../../services/reminder_service.dart';
 import '../../services/update_service.dart';
 import '../../services/vlog_service.dart';
@@ -206,6 +207,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     state.clearPendingInviteCode();
     _stripInviteParamFromUrl();
     _openCreateJoin(initialCode: code);
+  }
+
+  void _openPendingTable() {
+    if (!mounted) return;
+    final state = context.read<AppState>();
+    final link = state.pendingTable;
+    if (link == null) return;
+    state.clearPendingTable();
+    _stripInviteParamFromUrl();
+    final i = state.groups.indexWhere((g) => g.id == link.groupId);
+    if (i >= 0) state.setGroup(i);
+    openTableLink(context, link);
   }
 
   /// Removes ?code=... from the browser URL so a refresh doesn't re-trigger
@@ -412,6 +425,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (state.hasPendingInvite && !_pendingInviteHandled) {
       WidgetsBinding.instance
           .addPostFrameCallback((_) => _maybeHandlePendingInvite());
+    }
+    // A card-game table link: open it once the groups have loaded.
+    if (state.pendingTable != null && !state.isLoadingGroups) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _openPendingTable());
     }
 
     final needsInitialLoad = state.isLoadingGroups ||

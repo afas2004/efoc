@@ -151,6 +151,7 @@
     "isReady": "Ready",
     "notReady": "Not ready",
     "addBot": "+ Add bot",
+    "invite": "📨 Invite",
     "removeBot": "Remove",
     "startGame": "Start",
     "needPlayers": "Need at least 2 players",

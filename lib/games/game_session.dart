@@ -77,11 +77,20 @@ class GameSession {
   /// Sends one message to the page (`window.efoc.receive` / postMessage).
   final void Function(Map<String, Object?> msg) send;
 
+  /// Called after the page's multi-path update went through (the table
+  /// screen uses it to notice the room being created).
+  final void Function(Map<String, Object?> values)? onUpdated;
+
   final Map<int, StreamSubscription<void>> _subs = {};
   StreamSubscription<int>? _clock;
   bool _closed = false;
 
-  GameSession({required this.db, required this.roomId, required this.send}) {
+  GameSession({
+    required this.db,
+    required this.roomId,
+    required this.send,
+    this.onUpdated,
+  }) {
     _clock = db.clockOffset.listen(
       (o) => _send({'t': 'dbClock', 'offset': o}),
       onError: (_) {},
@@ -132,9 +141,14 @@ class GameSession {
       case 'set':
         _run(n, () => db.set(path as String, raw['value']));
       case 'update':
-        _run(n, () => db.update({
-              for (final e in (values as Map).entries) e.key as String: e.value,
-            }));
+        final map = {
+          for (final e in (values as Map).entries) e.key as String: e.value,
+        };
+        _run(n, () async {
+          await db.update(map);
+          onUpdated?.call(map);
+          return null;
+        });
       case 'push':
         _run(n, () => db.push(path as String, raw['value']));
       case 'onDisconnect':
