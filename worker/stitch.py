@@ -259,7 +259,8 @@ def normalize_clip(src: Path, dest: Path, label: str, caption: str | None,
     label_file.write_text(label, encoding="utf-8")
 
     font = _filter_path(Path(FONT_FILE))
-    upright = "transpose=2," if rotation == 90 else ""  # 90° counter-clockwise
+    # 90: back camera, turn counter-clockwise; 270: front camera, clockwise.
+    upright = {90: "transpose=2,", 270: "transpose=1,"}.get(rotation, "")
     vf = (
         f"[0:v]{upright}split=2[a][b];"
         f"[a]scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase,"

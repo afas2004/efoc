@@ -38,7 +38,14 @@ class _CaptureScreenState extends State<CaptureScreen>
   // constraint allows 9:16, 1:1 and 16:9, so landscape is filed as 16:9;
   // playback uses the video's real 3:2 size.
   static const String _ratio = '16x9';
-  static const int _sidewaysRotation = 90;
+  /// The live preview needs a quarter turn back for both cameras.
+  static const int _previewRotation = 90;
+
+  /// The saved file differs: the front camera writes its frames turned the
+  /// other way, so selfies are turned clockwise (270), back-camera clips
+  /// counter-clockwise (90). See clip_video.dart.
+  bool _recordedFront = false;
+  int get _clipRotation => _recordedFront ? 270 : 90;
 
   static const _clipLength = Duration(seconds: 3);
   static const _readyLength = Duration(seconds: 1);
@@ -180,6 +187,8 @@ class _CaptureScreenState extends State<CaptureScreen>
   }
 
   Future<void> _beginRecording() async {
+    _recordedFront = _cameraController?.description.lensDirection ==
+        CameraLensDirection.front;
     setState(() => _phase = CapturePhase.recording);
     try {
       await _cameraController!.startVideoRecording();
@@ -267,7 +276,7 @@ class _CaptureScreenState extends State<CaptureScreen>
           mimeType: _recordedFile!.mimeType,
           textX: _textAlign.dx,
           textY: _textAlign.dy,
-          rotation: _sidewaysRotation,
+          rotation: _clipRotation,
           textBg: _highlight,
         );
         successCount++;
@@ -364,7 +373,7 @@ class _CaptureScreenState extends State<CaptureScreen>
       child: FittedBox(
         fit: BoxFit.cover,
         child: UprightClip(
-          rotation: _sidewaysRotation,
+          rotation: _previewRotation,
           child: SizedBox(width: w, height: h, child: preview),
         ),
       ),
@@ -541,7 +550,7 @@ class _CaptureScreenState extends State<CaptureScreen>
                       padding: const EdgeInsets.symmetric(horizontal: 12),
                       child: AspectRatio(
                         aspectRatio: ready
-                            ? uprightAspect(vc, _sidewaysRotation)
+                            ? uprightAspect(vc, _clipRotation)
                             : 3 / 2,
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(16),
@@ -551,7 +560,7 @@ class _CaptureScreenState extends State<CaptureScreen>
                               if (ready)
                                 UprightVideoCover(
                                   controller: vc,
-                                  rotation: _sidewaysRotation,
+                                  rotation: _clipRotation,
                                 )
                               else
                                 const ColoredBox(
