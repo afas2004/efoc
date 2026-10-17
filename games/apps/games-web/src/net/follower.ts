@@ -1,10 +1,13 @@
 // Every phone (spectators too) follows the room: it loads the latest
 // snapshot, then applies each log entry in order with the engine's public
-// rules, on a masked copy of the table that holds only its own hand. Every
-// 20 entries it checks the host's checksum; on a mismatch it reloads the
+// rules, on a masked copy of the table that holds only its own private
+// cards. Private events for this phone (Lucky 7's drawn card and peeks)
+// arrive under hands/{uid}/ev/{n} and are applied after entry n. Every 20
+// entries it checks the host's checksum; on a mismatch it reloads the
 // snapshot. Joining late or reconnecting is the same path.
 
 import { bigtwo, type GameEvent } from '@efoc/engine';
+import type { NetGame } from './netGame';
 import { P, type Entry } from './protocol';
 import type { Json, RoomStore, Unsubscribe } from './store';
 
@@ -76,20 +79,26 @@ export function reviveEntry(raw: Json): Entry {
 
 export interface FollowUpdate {
   n: number;
-  state: State;
-  view: bigtwo.BigTwoView;
+  /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+  state: any;
+  /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+  view: any;
   events: GameEvent[];
   entry: Entry;
 }
 
 export class Follower {
-  state: State | null = null;
+  /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+  state: any = null;
   n = -1;
   drift = 0;
   private queue: [number, Json][] = [];
   private busy = false;
   private subs: Unsubscribe[] = [];
   private lastReject = 0;
+  /** My private events by log position, from hands/{uid}/ev. */
+  private privateAt = new Map<number, GameEvent[]>();
+  private lastEntry: Entry | null = null;
 
   constructor(
     private readonly store: RoomStore,
@@ -99,6 +108,7 @@ export class Follower {
     private readonly seat: number | 'public',
     private readonly onUpdate: (u: FollowUpdate) => void,
     private readonly onReject: (reason: string) => void,
+    private readonly game: NetGame,
   ) {}
 
   start(): void {
@@ -108,6 +118,21 @@ export class Follower {
         void this.drain();
       }),
     );
+    if (this.seat !== 'public') {
+      this.subs.push(
+        this.store.watchChildren(`${P.hand(this.room, this.store.uid)}/ev`, (key, value) => {
+          const n = Number(key);
+          const events = arr<GameEvent>((value as { events?: Json } | null)?.events);
+          this.privateAt.set(n, events);
+          // Entry n is the one on the table: fold it in now and show it.
+          // (Older ones only matter when loading a snapshot.)
+          if (n === this.n && this.state && this.lastEntry) {
+            this.state = this.game.applyPrivate(this.state, this.seat as number, events);
+            this.emit(this.n, this.lastEntry, events);
+          }
+        }),
+      );
+    }
     if (this.seat !== 'public') {
       this.subs.push(
         this.store.watch(`${P.hand(this.room, this.store.uid)}/rejected`, (v) => {
@@ -136,10 +161,10 @@ export class Follower {
         this.seat === 'public' ? null : ((await this.store.get(P.hand(this.room, this.store.uid))) as { n?: number; cards?: Json; mustInclude?: string } | null);
       const fresh = snap && snap.n >= atLeast && (this.seat === 'public' || hand?.n === snap.n);
       if (fresh) {
-        const state = reviveState(snap.state, this.players);
+        let state = this.game.revive(snap.state, this.players);
         if (this.seat !== 'public') {
-          state.hands[this.seat] = arr<string>(hand?.cards);
-          if (hand?.mustInclude) state.mustInclude = hand.mustInclude;
+          const earlier = [...this.privateAt.entries()].filter(([k]) => k <= snap.n).sort((a, b) => a[0] - b[0]).flatMap(([, e]) => e);
+          state = this.game.loadHand(state, this.seat, hand as Record<string, Json> | null, earlier);
         }
         this.state = state;
         this.n = snap.n;
@@ -164,29 +189,33 @@ export class Follower {
           if (!this.state) continue;
           if (n < this.n) continue; // the snapshot is already past this entry
           if (n === this.n) {
-            this.emit(n, entry);
+            this.emit(n, entry, entry.events as unknown as GameEvent[]);
             continue;
           }
         }
         if (entry.seat !== null && entry.move) {
-          this.state = bigtwo.applyTrusted(this.state, entry.seat, entry.move as bigtwo.BigTwoMove).state;
+          this.state = this.game.applyEntry(this.state, entry.seat, entry.move, entry.events as unknown as GameEvent[]);
         }
         this.n = n;
-        if (entry.sum && bigtwo.checksum(this.state) !== entry.sum) {
+        if (entry.sum && this.game.checksum(this.state) !== entry.sum) {
           // Drifted from the host: reload the snapshot written with this checksum.
           this.drift++;
           await this.load(n);
         }
-        this.emit(n, entry);
+        const mine = (this.seat !== 'public' && this.privateAt.get(n)) || [];
+        if (mine.length) this.state = this.game.applyPrivate(this.state, this.seat as number, mine);
+        this.emit(n, entry, [...(entry.events as unknown as GameEvent[]), ...mine]);
       }
     } finally {
       this.busy = false;
     }
   }
 
-  private emit(n: number, entry: Entry): void {
+  /** Shows the table after entry n, playing `events` (its own, or late private ones). */
+  private emit(n: number, entry: Entry, events: GameEvent[]): void {
+    this.lastEntry = entry;
     const s = this.state!;
-    const view = bigtwo.view(s, this.seat === 'public' ? 'public' : this.seat);
-    this.onUpdate({ n, state: s, view, events: entry.events as unknown as GameEvent[], entry });
+    const view = this.game.view(s, this.seat === 'public' ? 'public' : this.seat);
+    this.onUpdate({ n, state: s, view, events, entry });
   }
 }

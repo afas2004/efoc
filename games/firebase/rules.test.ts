@@ -118,6 +118,14 @@ describe('hidden cards', () => {
     await assertFails(get(ref(db('a'), `${R}/hands/b`)));
     await assertFails(get(ref(db('a'), `${R}/hands`)));
   });
+  it("private events (a drawn card, a peek) under hands/{uid}/ev: only that player reads them", async () => {
+    await seedRoom({ hands: { a: { n: 0, ev: { '000003': { events: [{ type: 'drawn_card', to: 1, card: '7h' }] } } } } });
+    await assertSucceeds(get(ref(db('a'), `${R}/hands/a/ev`)));
+    await assertFails(get(ref(db('b'), `${R}/hands/a/ev`)));
+    await assertFails(get(ref(db('h'), `${R}/hands/a/ev`)));
+    await assertFails(set(ref(db('a'), `${R}/hands/a/ev/000004`), { events: [] }));
+    await assertSucceeds(set(ref(db('h'), `${R}/hands/a/ev/000004`), { events: [{ type: 'peek_card', to: 1 }] }));
+  });
   it('only the host reads or writes hostState', async () => {
     await seedRoom();
     await assertFails(get(ref(db('a'), `${R}/hostState`)));

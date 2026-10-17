@@ -88,11 +88,11 @@ function fire() {
 const frames = [];
 function addPhone(o) {
   const el = document.createElement('iframe');
-  el.src = '/bigtwo/?' + o.query;
+  el.src = '/' + (o.game || 'bigtwo') + '/?' + o.query;
   const frame = { el, uid: o.uid, room: o.room, post: (m) => el.contentWindow && el.contentWindow.postMessage(m, location.origin) };
   frames.push(frame);
   disconnect.set(frame, {});
-  el.addEventListener('load', () => frame.post({ t: 'init', gameId: 'bigtwo', mySeat: 0, isHost: false, isSpectator: false, players: [],
+  el.addEventListener('load', () => frame.post({ t: 'init', gameId: o.game || 'bigtwo', mySeat: 0, isHost: false, isSpectator: false, players: [],
     online: { room: o.room, uid: o.uid, name: o.name, avatar: o.avatar, clockOffset: 0, create: o.create } }));
   document.body.appendChild(el);
 }
@@ -111,6 +111,14 @@ window.addEventListener('message', (e) => {
   if (!m || m.t !== 'db') return;
   const reply = (ok, value, error) => f.post({ t: 'dbResult', id: m.id, ok, value, error });
   const paths = m.op === 'update' ? Object.keys(m.values || {}) : m.op === 'unwatch' ? [] : [m.path];
+  // Like the security rules: nobody reads another player's hand or private events.
+  const reads = ['get', 'watch', 'watchChildren'].includes(m.op);
+  const othersHand = (p) => { const x = parts(p); return x[2] === 'hands' && (x.length < 4 || x[3] !== f.uid); };
+  if (reads && paths.some((p) => typeof p === 'string' && othersHand(p))) {
+    errors.push('read ' + m.op + ' ' + paths.join(','));
+    if (m.op === 'get') reply(false, null, 'permission denied');
+    return;
+  }
   if (paths.some((p) => typeof p !== 'string' || !allowedPath(f.room, p))) {
     errors.push(m.op + ' ' + paths.join(','));
     if (!['watch', 'watchChildren'].includes(m.op)) reply(false, null, 'path not allowed');
@@ -179,7 +187,7 @@ test('the host reloads mid-match on Firebase-shaped data: same seats, unique pla
   test.setTimeout(420_000);
   await openHarness(page);
   const room = `brr-${Date.now()}`;
-  const q = 'mute=1&turn=6000&preview=0&autopilot=1&migrate=600000';
+  const q = 'mute=1&turn=6000&preview=0&autopilot=1&migrate=600000&speed=0.25';
   await page.evaluate(
     ({ room, q }) => {
       const h = (window as any).harness;
@@ -267,4 +275,62 @@ test('waiting room: leave, the host removes a player, the host closes the table'
   await expect.poll(others).toContain('h1:exit');
   await expect(cat.getByText('The host closed this table.')).toBeVisible();
   expect(await page.evaluate((room) => (window as any).harness.read(`rooms/${room}/meta/status`), room)).toBe('closed');
+});
+
+test('Lucky 7 online on Firebase-shaped data: private cards stay private; the host reloads and it finishes', async ({ page }) => {
+  test.setTimeout(300_000);
+  await openHarness(page);
+  const room = `l7-${Date.now()}`;
+  const q = 'mute=1&turn=6000&autopilot=1&migrate=600000&speed=0.15';
+  await page.evaluate(
+    ({ room, q }) => {
+      const h = (window as any).harness;
+      h.addPhone({ game: 'lucky7', room, uid: 'h1', name: 'Host', avatar: '🦁', query: q, create: { groupId: 'g1', allowed: ['h1', 'a2', 'b3'] } });
+      h.addPhone({ game: 'lucky7', room, uid: 'a2', name: 'Ann', avatar: '🐸', query: q });
+      h.addPhone({ game: 'lucky7', room, uid: 'b3', name: 'Ben', avatar: '🐵', query: q });
+    },
+    { room, q },
+  );
+  const host = page.frameLocator('iframe').nth(0);
+  for (let i = 0; i < 3; i++) await expect(page.frameLocator('iframe').nth(i).locator('.lobby-seat')).toHaveCount(3);
+  // Lucky 7's waiting room has no Big Two house rules.
+  await expect(host.getByRole('button', { name: 'Fight Till The End' })).toHaveCount(0);
+  await host.getByRole('button', { name: '+ Add bot' }).click();
+  for (let i = 0; i < 3; i++) await page.frameLocator('iframe').nth(i).getByRole('button', { name: 'Ready?' }).click();
+  await host.getByRole('button', { name: 'Start' }).click();
+
+  // Private events reach only their owner: a2's drawn cards sit under a2's hand.
+  const logLen = () => page.evaluate((room) => Object.keys((window as any).harness.read(`rooms/${room}/log`) ?? {}).length, room);
+  await expect.poll(logLen, { timeout: 120_000, intervals: [500] }).toBeGreaterThanOrEqual(14);
+  const priv = await page.evaluate((room) => {
+    const h = (window as any).harness;
+    const hands = h.read(`rooms/${room}/hands`) ?? {};
+    const out: Record<string, string[]> = {};
+    for (const [uid, v] of Object.entries(hands) as [string, any][]) out[uid] = Object.values(v.ev ?? {}).flatMap((e: any) => e.events.map((x: any) => `${x.type}:${x.to}`));
+    const log = h.read(`rooms/${room}/log`) ?? {};
+    const leaked = Object.values(log).flatMap((e: any) => (e.events ?? []).filter((x: any) => x.to !== undefined || x.type === 'drawn_card' || x.type === 'peek_own' || x.type === 'peek_card'));
+    const seats = Object.values(h.read(`rooms/${room}/meta/seats`) ?? {}).map((x: any) => x.uid ?? null);
+    return { out, leaked: leaked.length, seats };
+  }, room);
+  expect(priv.leaked).toBe(0);
+  for (const [uid, events] of Object.entries(priv.out)) {
+    const seat = priv.seats.indexOf(uid);
+    expect(seat).toBeGreaterThanOrEqual(0);
+    for (const e of events) expect(e.endsWith(`:${seat}`)).toBe(true);
+  }
+
+  // The host's tab reloads mid-game and carries on from hostState.
+  await page.evaluate(({ room, q }) => {
+    const h = (window as any).harness;
+    h.dropPhone(0);
+    h.addPhone({ game: 'lucky7', room, uid: 'h1', name: 'Host', avatar: '🦁', query: q });
+  }, { room, q });
+
+  const phones = [0, 1, 2].map((i) => page.frameLocator('iframe').nth(i));
+  for (const f of phones) await expect(f.locator('.overlay.results')).toBeVisible({ timeout: 240_000 });
+  const pts = await Promise.all(phones.map((f) => f.locator('.l7-standings .pts').allTextContents()));
+  expect(new Set(pts.map((p) => p.join())).size).toBe(1);
+  const st = await page.evaluate(() => [...document.querySelectorAll('iframe')].map((f) => (f.contentWindow as any).__room?.status()));
+  expect(st.map((s: any) => s.drift)).toEqual([0, 0, 0]);
+  expect(await page.evaluate(() => (window as any).harness.errors)).toEqual([]);
 });

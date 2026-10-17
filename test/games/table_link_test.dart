@@ -16,6 +16,10 @@ void main() {
     expect(TableLink.fromUri(Uri.parse('https://efoc.party/join?code=ABC123')), isNull);
   });
 
+  test('Lucky 7 tables link too', () {
+    expect(TableLink.fromUri(Uri.parse('https://efoc.party/join?table=r1&group=g1&game=lucky7'))?.gameName(), 'Lucky 7');
+  });
+
   test('rejects games that are not ready and odd ids', () {
     expect(TableLink.fromUri(Uri.parse('https://efoc.party/join?table=r1&group=g1&game=hearts')), isNull);
     expect(TableLink.fromUri(Uri.parse('https://efoc.party/join?table=../x&group=g1&game=bigtwo')), isNull);

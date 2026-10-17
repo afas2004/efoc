@@ -30,9 +30,10 @@ class GameInfo {
 const List<GameInfo> kGames = [
   GameInfo('bigtwo', 'Big Two', '🃏', '2–8 players · get rid of every card',
       ready: true),
+  GameInfo('lucky7', 'Lucky 7', '🍀', '2–8 players · lowest hidden total wins',
+      ready: true),
   GameInfo('hearts', 'Hearts', '♥️', 'Coming soon'),
   GameInfo('21', '21', '🎰', 'Coming soon'),
-  GameInfo('lucky7', 'Lucky 7', '🍀', 'Coming soon'),
   GameInfo('zombie', 'Zombie', '🧟', 'Coming soon'),
 ];
 

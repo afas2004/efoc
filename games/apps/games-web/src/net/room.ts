@@ -8,15 +8,14 @@
 //               hostState and carries on from the same log position
 // Anyone who arrives after Start watches as a spectator.
 
-import { bigtwo, type GameEvent } from '@efoc/engine';
+import { createRng, type GameEvent } from '@efoc/engine';
 import { inApp, send } from '../bridge';
-import { BigTwoCommentator, dwellMs } from '../games/bigtwo/commentary';
-import { BigTwoTable } from '../games/bigtwo/table';
 import { HostCore, type HostSnapshot, type SeatInfo } from '../host/hostCore';
 import { L, fmt } from '../strings';
-import { arr, Follower, reviveState, type FollowUpdate } from './follower';
+import { arr, Follower, type FollowUpdate } from './follower';
 import { HostRelay } from './hostRelay';
 import { lobbySeats, renderLobby } from './lobby';
+import { netGame, type NetGame, type NetTable, type OnlineGameId } from './netGame';
 import { HEARTBEAT_MS, P, type Member, type RoomMeta, type SeatEntry } from './protocol';
 import { TIMESTAMP, type Json, type RoomStore } from './store';
 
@@ -27,6 +26,7 @@ export interface Me {
 }
 
 export interface CreateRoom {
+  gameId?: OnlineGameId;
   groupId: string;
   /** The group's member uids (copied into rooms/{id}/allowed). */
   allowed: string[];
@@ -36,8 +36,12 @@ export interface CreateRoom {
 }
 
 export interface OnlineOptions {
+  /** Which game this page is (until the room's meta says). */
+  gameId?: OnlineGameId;
   /** Play my seat with a bot (tests). */
   autopilot?: boolean;
+  /** Multiplies bot thinking time when this phone referees (tests). */
+  botSpeed?: number;
   onExit(): void;
 }
 
@@ -55,7 +59,7 @@ export async function createRoom(store: RoomStore, room: string, me: Me, c: Crea
   const allowed: Record<string, Json> = {};
   for (const uid of new Set([...c.allowed, me.uid])) allowed[uid] = true;
   const meta: RoomMeta = {
-    gameId: 'bigtwo',
+    gameId: c.gameId ?? 'bigtwo',
     groupId: c.groupId,
     hostUid: me.uid,
     status: 'waiting',
@@ -76,14 +80,16 @@ export class OnlineGame {
   private meta: RoomMeta | null = null;
   private members: Record<string, Member> = {};
   private presence: Record<string, { online?: boolean; lastSeen?: number }> = {};
-  private table: BigTwoTable | null = null;
+  private table: NetTable | null = null;
   private follower: Follower | null = null;
-  private host: HostCore<bigtwo.BigTwoConfig, bigtwo.BigTwoState, bigtwo.BigTwoMove, bigtwo.BigTwoView> | null = null;
+  /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+  private host: HostCore<any, any, any, any> | null = null;
   private relay: HostRelay | null = null;
   private seats: SeatEntry[] = [];
   private mySeat: number | 'public' = 'public';
   private lastN = -1;
-  private lastView: bigtwo.BigTwoView | null = null;
+  /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+  private lastView: any = null;
   private timers: number[] = [];
   private claiming = false;
   private autoTimer = 0;
@@ -94,7 +100,11 @@ export class OnlineGame {
     private readonly me: Me,
     private readonly root: HTMLElement,
     private readonly opts: OnlineOptions,
-  ) {}
+  ) {
+    this.game = netGame(opts.gameId);
+  }
+
+  private game: NetGame;
 
   /** Join (or rejoin) the room and keep presence fresh. */
   async start(): Promise<void> {
@@ -171,9 +181,9 @@ export class OnlineGame {
   /** Before the host has created the table. */
   private showWaitingForRoom(): void {
     if (this.meta) return;
-    this.root.className = 'efoc-root felt-bigtwo';
+    this.root.className = `efoc-root ${this.game.felt}`;
     this.root.innerHTML = '<div class="overlay lobby"><div class="sheet setup-sheet"><h2></h2><p class="lobby-wait"></p></div></div>';
-    this.root.querySelector('h2')!.textContent = `🃏 ${L().ui.setupTitle}`;
+    this.root.querySelector('h2')!.textContent = `🃏 ${this.game.title()}`;
     this.root.querySelector('.lobby-wait')!.textContent = L().ui.waitingForTable;
   }
 
@@ -187,6 +197,8 @@ export class OnlineGame {
       if (!this.leaving) this.end(L().ui.tableClosed);
       return;
     }
+    // The room says which game this is.
+    if (meta.gameId && meta.gameId !== this.game.id && !this.table) this.game = netGame(meta.gameId);
     void this.ensureJoined(meta);
     meta.bots = arr<SeatEntry>(meta.bots);
     const prevHost = this.meta?.hostUid;
@@ -208,9 +220,9 @@ export class OnlineGame {
     if (this.ended) return;
     this.ended = true;
     this.stop();
-    this.root.className = 'efoc-root felt-bigtwo';
+    this.root.className = `efoc-root ${this.game.felt}`;
     this.root.innerHTML = '<div class="overlay lobby"><div class="sheet setup-sheet"><h2></h2><p class="lobby-wait lobby-ended"></p><div class="sheet-actions"><button type="button" class="btn btn-primary"></button></div></div></div>';
-    this.root.querySelector('h2')!.textContent = `🃏 ${L().ui.setupTitle}`;
+    this.root.querySelector('h2')!.textContent = `🃏 ${this.game.title()}`;
     this.root.querySelector('.lobby-ended')!.textContent = message;
     const back = this.root.querySelector('button')!;
     back.textContent = L().ui.back;
@@ -240,7 +252,7 @@ export class OnlineGame {
     const m = this.meta;
     if (!m || m.status !== 'waiting') return;
     const online = new Set(Object.keys(this.members).filter((u) => this.online(u)));
-    renderLobby(this.root, { meta: m, members: this.members, online, me: this.me.uid }, {
+    renderLobby(this.root, { meta: m, members: this.members, online, me: this.me.uid, title: this.game.title(), felt: this.game.felt, houseRules: this.game.houseRules }, {
       setReady: (ready) => void this.store.set(`${P.member(this.room, this.me.uid)}/ready`, ready),
       addBot: () => {
         const used = new Set(m.bots.map((b) => b.name));
@@ -263,16 +275,12 @@ export class OnlineGame {
 
   // -------------------------------------------------------------- table
 
-  private config(meta: RoomMeta): bigtwo.BigTwoConfig {
-    return { ...bigtwo.defaultConfig, mode: meta.mode, pokerHands: meta.pokerHands };
-  }
-
   private startTable(meta: RoomMeta): void {
     this.seats = arr<SeatEntry>(meta.seats);
     const seat = this.seats.findIndex((s) => s.uid === this.me.uid);
     this.mySeat = seat >= 0 ? seat : 'public';
     const me = seat >= 0 ? seat : 0;
-    this.table = new BigTwoTable(
+    this.table = this.game.createTable(
       this.root,
       me,
       this.seats.map((s) => ({ name: s.name, avatar: s.avatar, bot: !!s.bot })),
@@ -287,14 +295,22 @@ export class OnlineGame {
           this.opts.onExit();
         },
       },
-      { humour: meta.humour, sound: true, reducedMotion: false, fourColour: false },
+      meta.humour,
     );
     this.root.classList.toggle('spectator', this.mySeat === 'public');
     this.root.dataset.turnMs = String(meta.turnMs);
-    this.follower = new Follower(this.store, this.room, this.seats.length, this.mySeat, (u) => this.onFollow(u), (r) => {
-      this.table?.reject(r);
-      if (this.opts.autopilot) this.autopilot(); // try again, like a person would
-    });
+    this.follower = new Follower(
+      this.store,
+      this.room,
+      this.seats.length,
+      this.mySeat,
+      (u) => this.onFollow(u),
+      (r) => {
+        this.table?.reject(r);
+        if (this.opts.autopilot) this.autopilot(); // try again, like a person would
+      },
+      this.game,
+    );
     this.follower.start();
     (window as unknown as { __efoc: unknown }).__efoc = this.debug();
   }
@@ -302,7 +318,7 @@ export class OnlineGame {
   private onFollow(u: FollowUpdate): void {
     this.lastN = u.n;
     this.lastView = u.view;
-    this.table?.update(u.view, u.events as GameEvent[], { deadline: u.entry.deadline, afk: u.entry.afk, totals: u.entry.totals });
+    this.table?.update(u.view as never, u.events as GameEvent[], { deadline: u.entry.deadline, afk: u.entry.afk, totals: u.entry.totals });
     if (u.events.some((e) => e.type === 'host_changed')) {
       const name = String(u.events.find((e) => e.type === 'host_changed')!.name ?? '');
       this.table?.notice(fmt(L().ui.hostChanged, { name }));
@@ -318,7 +334,7 @@ export class OnlineGame {
     this.autoTimer = window.setTimeout(() => {
       const view = this.lastView;
       if (!view || view.turn !== this.mySeat || view.phase !== 'play') return;
-      const move = bigtwo.bot(view, 'normal', { next: Math.random, int: (n) => Math.floor(Math.random() * n), shuffle: (a) => [...a] });
+      const move = this.game.module.bot(view, 'normal', createRng(Math.floor(Math.random() * 2 ** 31)));
       void this.intent(move);
     }, 250 + Math.random() * 250);
   }
@@ -337,24 +353,22 @@ export class OnlineGame {
   private async becomeHost(migrated: boolean): Promise<void> {
     const meta = this.meta!;
     let seed = Math.floor(Math.random() * 2 ** 31);
-    const commentator = new BigTwoCommentator(this.seats.map((s) => s.name), () => {
+    const rand = (): number => {
       seed = (Math.imul(seed, 1103515245) + 12345) >>> 0;
       return seed / 2 ** 32;
-    });
-    commentator.director.humour = meta.humour;
-    const host = new HostCore({ ...bigtwo.bigTwo, nextRound: bigtwo.nextRound }, this.seatInfo(), this.config(meta), {
+    };
+    const host = new HostCore(this.game.module, this.seatInfo(), this.game.config(meta), {
       turnMs: meta.turnMs,
-      previewMs: meta.previewMs,
-      commentate: (events, state) => commentator.comment(events, state as bigtwo.BigTwoState),
-      dwell: dwellMs,
+      botSpeed: this.opts.botSpeed,
+      ...this.game.hostOptions(meta, this.seats.map((s) => s.name), rand),
     });
     this.host = host;
-    this.relay = new HostRelay(this.store, this.room, host, this.seats);
+    this.relay = new HostRelay(this.store, this.room, host, this.seats, this.game);
     const saved = (await this.store.get(P.hostState(this.room))) as unknown as HostSnapshot<Json> | null;
     if (saved) {
-      const restored: HostSnapshot<bigtwo.BigTwoState> = {
+      const restored: HostSnapshot<unknown> = {
         ...saved,
-        state: reviveState(saved.state, this.seats.length),
+        state: this.game.revive(saved.state, this.seats.length),
         totals: arr<number>(saved.totals),
         stamps: arr<number>(saved.stamps),
         doubled: arr<boolean>(saved.doubled),

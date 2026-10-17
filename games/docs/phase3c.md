@@ -45,6 +45,16 @@ EFOC app (Flutter)                          game page (games.efoc.party/efoc/big
 - **Seat avatars** are emoji picked from the uid (the rules cap avatars at
   16 characters), not profile photos.
 
+## More games (18 Oct)
+
+The online layer is the same for every game: `src/net/netGame.ts` gives
+each game's rules module, how a masked copy follows the log, each player's
+private fields at a snapshot, and its table. Private events (Lucky 7's
+drawn card and peeks) never enter the public log: the host writes them to
+`rooms/{id}/hands/{uid}/ev/{n}`, which only that player can read, and their
+follower applies them after entry n. Lucky 7 is the second game:
+`games-web/lucky7/`, `packages/engine/games/lucky7/`.
+
 ## Tests
 
 - `games/apps/games-web`: `tests/bridge.spec.ts` — a fake app page hosts two

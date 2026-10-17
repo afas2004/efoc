@@ -5,9 +5,9 @@
 
 import './styles.css';
 import { bigtwo } from '@efoc/engine';
-import { inApp, onMessage, send, startBridge, type ToGame } from './bridge';
+import { inApp, onMessage, send, startBridge } from './bridge';
 import type { Humour } from './feel/jester';
-import type { RoomStore } from './net/store';
+import { launchOnline } from './net/launch';
 import { startPractice } from './games/bigtwo/practice';
 import { showSetup, type SetupChoice } from './games/bigtwo/setup';
 
@@ -80,62 +80,17 @@ function setup(base: Omit<Launch, 'players' | 'humour'> & Partial<Launch>): void
   showSetup(root, (c) => launch({ myName: base.myName, myAvatar: base.myAvatar, players: c.players, humour: c.humour, mode: c.mode, pokerHands: c.pokerHands, tutorial: false }));
 }
 
-/**
- * Online table in a plain browser (development and the multi-player tests),
- * on the localStorage room store:
- *   ?room=r1&uid=u1&name=Ali&create=1&allowed=u1,u2,u3&turn=20000&migrate=60000&preview=15000&autopilot=1
- * Inside EFOC the same OnlineGame runs on the bridge store: the app sends
- * `init` with `online` and proxies every database call (net/bridgeStore.ts).
- */
-async function launchOnline(app?: NonNullable<Extract<ToGame, { t: 'init' }>['online']>): Promise<void> {
-  const { OnlineGame, createRoom, exitApp } = await import('./net/room');
-  let store: RoomStore;
-  let me: { uid: string; name: string; avatar: string };
-  let room: string;
-  let create: { groupId: string; allowed: string[] } | undefined;
-  if (app) {
-    const { BridgeStore } = await import('./net/bridgeStore');
-    me = { uid: app.uid, name: app.name, avatar: app.avatar };
-    room = app.room;
-    store = new BridgeStore(app.uid, app.clockOffset ?? 0);
-    create = app.create;
-  } else {
-    const { LocalStore } = await import('./net/store');
-    const uid = q.get('uid') ?? `u${Math.floor(Math.random() * 1e6)}`;
-    me = { uid, name: q.get('name') ?? uid, avatar: q.get('avatar') ?? '😎' };
-    room = q.get('room')!;
-    store = new LocalStore(uid);
-    if (q.get('create') === '1') create = { groupId: q.get('group') ?? 'dev', allowed: (q.get('allowed') ?? uid).split(',') };
-  }
-  if (create) {
-    try {
-      await createRoom(store, room, me, {
-        groupId: create.groupId,
-        allowed: create.allowed,
-        turnMs: num('turn'),
-        migrateAfterMs: num('migrate'),
-        previewMs: num('preview'),
-      });
-    } catch {
-      // Already created (the host reopened the page): just join it.
-    }
-  }
-  const game = new OnlineGame(store, room, me, root, { autopilot: q.get('autopilot') === '1', onExit: exitApp });
-  (window as unknown as { __room: unknown }).__room = game;
-  await game.start();
-}
-
 startBridge();
 const humourParam = (q.get('humour') as Humour | null) ?? 'spicy';
 
 let launched = false;
 if (q.has('room') && !inApp()) {
-  void launchOnline();
+  void launchOnline(root, 'bigtwo');
 } else if (inApp()) {
   onMessage((msg) => {
     if (msg.t !== 'init') return;
     if (msg.online) {
-      if (!launched) void launchOnline(msg.online);
+      if (!launched) void launchOnline(root, 'bigtwo', msg.online);
       launched = true;
       return;
     }

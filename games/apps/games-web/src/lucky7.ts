@@ -1,11 +1,13 @@
 // Lucky 7 page entry. Inside the EFOC app it waits for `init` from Flutter;
 // opened on its own (dev server, Playwright) it starts Practice from the URL:
 //   ?players=4&seed=1&fast=1&speed=0.05&turn=20000&autoplay=1&humour=off|mild|spicy&reduced=1&mute=1
+// or an online table on the localStorage store (see net/launch.ts): ?room=...&uid=...
 
 import './styles.css';
 import { inApp, onMessage, send, startBridge } from './bridge';
 import type { Humour } from './feel/jester';
 import { startPractice } from './games/lucky7/practice';
+import { launchOnline } from './net/launch';
 import { showSetup } from './games/lucky7/setup';
 
 const root = document.getElementById('table')!;
@@ -36,9 +38,16 @@ startBridge();
 const humourParam = (q.get('humour') as Humour | null) ?? 'spicy';
 let launched = false;
 
-if (inApp()) {
+if (q.has('room') && !inApp()) {
+  void launchOnline(root, 'lucky7');
+} else if (inApp()) {
   onMessage((msg) => {
     if (msg.t !== 'init' || launched) return;
+    if (msg.online) {
+      launched = true;
+      void launchOnline(root, 'lucky7', msg.online);
+      return;
+    }
     if (msg.practice) {
       launched = true;
       const myName = msg.players[msg.mySeat]?.name ?? 'Player';

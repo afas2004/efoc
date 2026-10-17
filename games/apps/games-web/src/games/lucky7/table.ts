@@ -171,6 +171,13 @@ export class LuckySevenTable {
     }
   }
 
+  /** A short note over the table, e.g. "Mei is now the host". */
+  notice(text: string): void {
+    const c = this.layout?.stage;
+    if (!c) return;
+    this.feel.play(2, 'notice', (ctx) => banner(this.fx, text, 'info', 'pop', ctx, { x: c.x + c.w / 2, y: c.y + 8 }));
+  }
+
   /** The host turned a move down (stale or illegal): try again. */
   reject(reason: string): void {
     this.sent = false;

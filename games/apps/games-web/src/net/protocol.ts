@@ -28,7 +28,7 @@ export interface SeatEntry {
 }
 
 export interface RoomMeta {
-  gameId: 'bigtwo';
+  gameId: 'bigtwo' | 'lucky7';
   groupId: string;
   hostUid: string;
   /** 'closed': the host cancelled the table from the waiting room. */

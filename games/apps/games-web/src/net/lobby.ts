@@ -12,6 +12,10 @@ export interface LobbyState {
   members: Record<string, Member>;
   online: Set<string>;
   me: string;
+  /** The game's name, background, and whether Big Two's house rules apply. */
+  title: string;
+  felt: string;
+  houseRules: boolean;
 }
 
 export interface LobbyActions {
@@ -41,7 +45,7 @@ export function lobbySeats(meta: RoomMeta, members: Record<string, Member>): Sea
 export function renderLobby(root: HTMLElement, st: LobbyState, act: LobbyActions): void {
   const u = L().ui;
   const isHost = st.meta.hostUid === st.me;
-  root.className = 'efoc-root felt-bigtwo';
+  root.className = `efoc-root ${st.felt}`;
   let overlay = root.querySelector('.overlay.lobby') as HTMLElement | null;
   if (!overlay) {
     root.innerHTML = '';
@@ -58,7 +62,7 @@ export function renderLobby(root: HTMLElement, st: LobbyState, act: LobbyActions
   head.className = 'lobby-head';
   sheet.appendChild(head);
   const h = document.createElement('h2');
-  h.textContent = `🃏 ${u.waitingRoom}`;
+  h.textContent = `🃏 ${st.title}`;
   head.appendChild(h);
   head.appendChild(
     isHost
@@ -144,11 +148,11 @@ export function renderLobby(root: HTMLElement, st: LobbyState, act: LobbyActions
     rules.appendChild(g);
   };
   const m = st.meta;
-  seg(u.mode, [
+  if (st.houseRules) seg(u.mode, [
     { text: u.modeStandard, on: m.mode === 'standard', pick: () => act.setRule({ mode: 'standard' }) },
     { text: u.modeFtte, on: m.mode === 'fightTillTheEnd', pick: () => act.setRule({ mode: 'fightTillTheEnd' }) },
   ]);
-  seg(u.pokerHands, [
+  if (st.houseRules) seg(u.pokerHands, [
     { text: u.on, on: m.pokerHands, pick: () => act.setRule({ pokerHands: true }) },
     { text: u.off, on: !m.pokerHands, pick: () => act.setRule({ pokerHands: false }) },
   ]);
