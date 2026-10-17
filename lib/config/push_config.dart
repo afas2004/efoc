@@ -6,4 +6,5 @@
 ///
 /// While empty, the Hourly reminders switch explains that reminders
 /// aren't set up yet instead of failing.
-const String kWebPushVapidKey = '';
+const String kWebPushVapidKey =
+    'BG5qsBlVOFoCc2RlXkxUzeggrb8e2fhVHQon_2IOA4lr5xcwoJ9jaFNnXqaSn2XTS1qq8rkRQUBFHa8WYBEIOKw';
