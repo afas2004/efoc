@@ -6,7 +6,7 @@ which overrides the spec where they differ.
 
 ```
 packages/engine/   @efoc/engine: pure, seeded rules, bots, simulator (Vitest)
-apps/games-web/    Vite table client, one page per game -> games.efoc.party/<game>/
+apps/games-web/    Vite table client, one page per game -> games.efoc.party/efoc/<game>/
 assets/            sounds, Lottie, icons, card art; every licence in LICENSES.md
 firebase/          Realtime Database and Firestore rules (not deployed yet)
 docs/              spec, decisions, rule sheets, Jester lines

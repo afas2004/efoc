@@ -8,11 +8,13 @@ import 'table_view.dart';
 Widget buildTableView({
   required Uri url,
   required String origin,
+  required String base,
   required TableController controller,
   required void Function(Object? msg) onMessage,
   required VoidCallback onLoaded,
 }) {
-  bool fromGames(WebUri? u) => u != null && u.origin == origin;
+  bool fromGames(WebUri? u) =>
+      u != null && u.origin == origin && u.toString().startsWith('$base/');
 
   return InAppWebView(
     initialUrlRequest: URLRequest(url: WebUri(url.toString())),
@@ -46,7 +48,7 @@ Widget buildTableView({
     onLoadStop: (c, u) {
       if (fromGames(u)) onLoaded();
     },
-    // Navigation to any other origin is blocked.
+    // Navigation anywhere else is blocked.
     shouldOverrideUrlLoading: (c, action) async =>
         fromGames(action.request.url)
             ? NavigationActionPolicy.ALLOW

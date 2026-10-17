@@ -83,8 +83,9 @@ class _TableScreenState extends State<TableScreen> with WidgetsBindingObserver {
   }
 
   Widget _buildView() => buildTableView(
-        url: Uri.parse('$kGamesOrigin/${widget.gameId}/'),
+        url: Uri.parse('$kGamesBase/${widget.gameId}/'),
         origin: kGamesOrigin,
+        base: kGamesBase,
         controller: _controller,
         onMessage: _onMessage,
         onLoaded: _sendInit,

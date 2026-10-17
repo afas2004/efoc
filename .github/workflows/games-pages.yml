@@ -1,9 +1,10 @@
 name: Publish card games
 
-# Run by hand. Builds games/apps/games-web and publishes it to GitHub
-# Pages at games.efoc.party (custom domain from public/CNAME). Needs the
-# repo's Pages source set to "GitHub Actions" and a DNS CNAME
-# games -> afas2004.github.io.
+# Run by hand. Builds games/apps/games-web and publishes it as this repo's
+# GitHub Pages project site. The user site afas2004.github.io has the
+# custom domain games.efoc.party, so this lands at games.efoc.party/efoc/
+# (e.g. /efoc/bigtwo/). No CNAME here: that would clash with the user site.
+# Needs the repo's Pages source set to "GitHub Actions".
 on:
   workflow_dispatch:
 

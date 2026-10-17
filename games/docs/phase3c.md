@@ -5,7 +5,7 @@ Written and tested locally on 17 Oct 2026. Nothing is deployed.
 ## How it fits together
 
 ```
-EFOC app (Flutter)                          game page (games.efoc.party/bigtwo/)
+EFOC app (Flutter)                          game page (games.efoc.party/efoc/bigtwo/)
   Games tab ── Open a table / Join ──┐
   TableScreen                        │        OnlineGame (same code as Phase 3a)
     GameSession ◄── {t:'db', op, path, ...} ── BridgeStore (RoomStore)
@@ -52,7 +52,7 @@ EFOC app (Flutter)                          game page (games.efoc.party/bigtwo/)
 ## Not done yet
 
 - The "download once, serve locally" cache on Android (`InAppLocalhostServer`):
-  the WebView loads games.efoc.party directly for now.
+  the WebView loads games.efoc.party/efoc/ directly for now.
 - Deep links to a table, rooms cleaned up after the match, the host's 60 s
   "host is away" countdown in Flutter (the page already migrates the host).
 
@@ -71,8 +71,9 @@ EFOC app (Flutter)                          game page (games.efoc.party/bigtwo/)
    with `games/firebase/database.rules.json` and `firestore.rules`.
 5. Firebase console → Authentication: make sure it's enabled (custom tokens
    need no provider switched on).
-6. DNS: `CNAME games → afas2004.github.io`; in the repo's Pages settings set
-   the custom domain `games.efoc.party` and enforce HTTPS.
+6. GitHub → afas2004/efoc → Settings → Pages → Source: **GitHub Actions**.
+   No DNS change: the page appears at games.efoc.party/efoc/ because the
+   afas2004.github.io site owns games.efoc.party. Don't add a custom domain.
 7. Run the manual **Publish card games** workflow.
 8. Build and release the app as usual (new packages: `firebase_auth`,
    `firebase_database`, `flutter_inappwebview`).

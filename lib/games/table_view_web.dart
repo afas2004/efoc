@@ -18,6 +18,7 @@ external JSString? _jsonStringify(JSAny? v);
 Widget buildTableView({
   required Uri url,
   required String origin,
+  required String base,
   required TableController controller,
   required void Function(Object? msg) onMessage,
   required VoidCallback onLoaded,

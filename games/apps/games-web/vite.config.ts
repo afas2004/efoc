@@ -1,9 +1,9 @@
 import { resolve } from 'node:path';
 import { defineConfig } from 'vite';
 
-// One HTML page per game, published to games.efoc.party/<game>/.
-// games/assets is served and copied as-is (cards, sounds, emoji, CNAME,
-// LICENSES.md), so asset URLs are /cards/Qh.png and so on.
+// One HTML page per game, published to games.efoc.party/efoc/<game>/.
+// games/assets is served and copied as-is (cards, sounds, emoji,
+// LICENSES.md); every URL is relative, so the site works under any path.
 export default defineConfig({
   base: './',
   publicDir: resolve(__dirname, '../../assets'),

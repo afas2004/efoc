@@ -1,10 +1,14 @@
-/// Where the card games live. Override for local testing with
-/// `--dart-define=GAMES_ORIGIN=http://localhost:5173` (the games-web dev
-/// server).
-const String kGamesOrigin = String.fromEnvironment(
-  'GAMES_ORIGIN',
-  defaultValue: 'https://games.efoc.party',
+/// Where the card games live: this repo's GitHub Pages project site, which
+/// GitHub serves under the afas2004.github.io site's domain. Override for
+/// local testing with `--dart-define=GAMES_BASE=http://localhost:5173`
+/// (the games-web dev server).
+const String kGamesBase = String.fromEnvironment(
+  'GAMES_BASE',
+  defaultValue: 'https://games.efoc.party/efoc',
 );
+
+/// The origin the game pages talk to the app from.
+final String kGamesOrigin = Uri.parse(kGamesBase).origin;
 
 /// Realtime Database for live tables (project efoc-fcf44, asia-southeast1).
 const String kGamesDatabaseUrl = String.fromEnvironment(

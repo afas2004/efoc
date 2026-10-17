@@ -15,10 +15,12 @@ class TableController {
 
 /// The game page: an Android WebView (flutter_inappwebview, JS handler
 /// `efoc`) or, on the web build, an `<iframe>` talking over postMessage.
-/// Either way only [origin] may load and talk to the app.
+/// Either way only pages under [base] (on [origin]) may load and talk to
+/// the app; other sites on the same origin are refused.
 Widget buildTableView({
   required Uri url,
   required String origin,
+  required String base,
   required TableController controller,
   required void Function(Object? msg) onMessage,
   required VoidCallback onLoaded,
@@ -26,6 +28,7 @@ Widget buildTableView({
     impl.buildTableView(
       url: url,
       origin: origin,
+      base: base,
       controller: controller,
       onMessage: onMessage,
       onLoaded: onLoaded,
