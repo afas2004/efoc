@@ -20,7 +20,9 @@ foreach ($f in $required) {
 }
 
 # --- read current version from pubspec.yaml ---
-$lines = Get-Content "pubspec.yaml"
+# Read as UTF-8 (Get-Content defaults to the ANSI codepage on Windows
+# PowerShell 5.1, which mangled non-ASCII text on every release).
+$lines = [System.IO.File]::ReadAllLines((Resolve-Path "pubspec.yaml").Path, [System.Text.Encoding]::UTF8)
 $versionLine = $lines | Where-Object { $_ -match '^version:' } | Select-Object -First 1
 
 if ($versionLine -notmatch '^version:\s*(\d+\.\d+\.\d+)\+(\d+)') {
@@ -70,7 +72,7 @@ $json = $manifest | ConvertTo-Json
 )
 
 # --- 3. lib/version.dart ---
-$dartLines = Get-Content "lib\version.dart"
+$dartLines = [System.IO.File]::ReadAllLines((Resolve-Path "lib\version.dart").Path, [System.Text.Encoding]::UTF8)
 $newDartLines = $dartLines | ForEach-Object {
     if ($_ -match '^const int kAppBuild = ') {
         "const int kAppBuild = $newBuild;"
