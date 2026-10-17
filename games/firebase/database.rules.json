@@ -1,0 +1,91 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "rooms": {
+      "$room": {
+        "allowed": {
+          ".read": "root.child('rooms').child($room).child('meta/hostUid').val() === auth.uid",
+          ".write": "auth != null && !data.exists() && newData.parent().child('meta/hostUid').val() === auth.uid"
+        },
+        "meta": {
+          ".read": "root.child('rooms').child($room).child('members').child(auth.uid).exists() || root.child('rooms').child($room).child('spectators').child(auth.uid).exists()",
+          ".write": "auth != null && ((!data.exists() && newData.child('hostUid').val() === auth.uid) || data.child('hostUid').val() === auth.uid || (data.exists() && newData.child('hostUid').val() === auth.uid && root.child('rooms').child($room).child('members').child(auth.uid).exists() && root.child('presence').child($room).child(data.child('hostUid').val()).child('online').val() === false && root.child('presence').child($room).child(data.child('hostUid').val()).child('lastSeen').val() < now - 60000))"
+        },
+        "members": {
+          ".read": "root.child('rooms').child($room).child('members').child(auth.uid).exists() || root.child('rooms').child($room).child('spectators').child(auth.uid).exists()",
+          "$uid": {
+            ".write": "(auth.uid === $uid && root.child('rooms').child($room).child('allowed').child(auth.uid).exists()) || root.child('rooms').child($room).child('meta/hostUid').val() === auth.uid"
+          }
+        },
+        "spectators": {
+          ".read": "root.child('rooms').child($room).child('members').child(auth.uid).exists() || root.child('rooms').child($room).child('spectators').child(auth.uid).exists()",
+          "$uid": {
+            ".write": "auth.uid === $uid && root.child('rooms').child($room).child('allowed').child(auth.uid).exists() && (data.exists() || !newData.exists() || root.child('rooms').child($room).child('spectators').numChildren() < 8)"
+          }
+        },
+        "intents": {
+          ".read": "root.child('rooms').child($room).child('meta/hostUid').val() === auth.uid",
+          "$intent": {
+            ".write": "(!data.exists() && newData.child('uid').val() === auth.uid && root.child('rooms').child($room).child('members').child(auth.uid).exists()) || (!newData.exists() && root.child('rooms').child($room).child('meta/hostUid').val() === auth.uid)"
+          }
+        },
+        "log": {
+          ".read": "root.child('rooms').child($room).child('members').child(auth.uid).exists() || root.child('rooms').child($room).child('spectators').child(auth.uid).exists()",
+          "$n": {
+            ".write": "!data.exists() && root.child('rooms').child($room).child('meta/hostUid').val() === auth.uid"
+          }
+        },
+        "snapshot": {
+          ".read": "root.child('rooms').child($room).child('members').child(auth.uid).exists() || root.child('rooms').child($room).child('spectators').child(auth.uid).exists()",
+          ".write": "root.child('rooms').child($room).child('meta/hostUid').val() === auth.uid"
+        },
+        "hands": {
+          "$uid": {
+            ".read": "auth.uid === $uid",
+            ".write": "root.child('rooms').child($room).child('meta/hostUid').val() === auth.uid"
+          }
+        },
+        "hostState": {
+          ".read": "root.child('rooms').child($room).child('meta/hostUid').val() === auth.uid",
+          ".write": "root.child('rooms').child($room).child('meta/hostUid').val() === auth.uid"
+        },
+        "votes": {
+          ".read": "root.child('rooms').child($room).child('members').child(auth.uid).exists()",
+          "$uid": {
+            ".write": "auth.uid === $uid && root.child('rooms').child($room).child('members').child(auth.uid).exists()"
+          }
+        },
+        "results": {
+          ".read": "root.child('rooms').child($room).child('members').child(auth.uid).exists() || root.child('rooms').child($room).child('spectators').child(auth.uid).exists()",
+          ".write": "root.child('rooms').child($room).child('meta/hostUid').val() === auth.uid"
+        }
+      }
+    },
+    "presence": {
+      "$room": {
+        ".read": "root.child('rooms').child($room).child('members').child(auth.uid).exists() || root.child('rooms').child($room).child('spectators').child(auth.uid).exists()",
+        "$uid": {
+          ".write": "auth.uid === $uid"
+        }
+      }
+    },
+    "chat": {
+      "$room": {
+        ".read": "root.child('rooms').child($room).child('members').child(auth.uid).exists() || root.child('rooms').child($room).child('spectators').child(auth.uid).exists()",
+        "$msg": {
+          ".write": "!data.exists() && (root.child('rooms').child($room).child('members').child(auth.uid).exists() || root.child('rooms').child($room).child('spectators').child(auth.uid).exists())",
+          ".validate": "newData.hasChildren(['uid', 'text', 'ts']) && newData.child('uid').val() === auth.uid && newData.child('text').isString() && newData.child('text').val().length >= 1 && newData.child('text').val().length <= 200 && newData.child('ts').val() === now && newData.parent().parent().parent().child('chatRate').child($room).child(auth.uid).val() === now"
+        }
+      }
+    },
+    "chatRate": {
+      "$room": {
+        "$uid": {
+          ".write": "auth.uid === $uid",
+          ".validate": "newData.val() === now && (!data.exists() || data.val() <= now - 1000)"
+        }
+      }
+    }
+  }
+}
