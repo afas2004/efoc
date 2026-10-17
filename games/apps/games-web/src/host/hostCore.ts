@@ -39,6 +39,10 @@ export interface HostOptions {
   dwell?: (events: GameEvent[]) => number;
   /** Time to look at your cards after each deal, before the first turn. */
   previewMs?: number;
+  /** Extra time on the next decision after these events (Lucky 7: a J's peek). */
+  extraMs?: (events: GameEvent[]) => number;
+  /** Multiplies the turn time for the current state (Lucky 7's final lap halves it). */
+  turnScale?: (state: unknown) => number;
 }
 
 /** Everything a new host needs to carry on where the old one stopped. */
@@ -322,7 +326,7 @@ export class HostCore<Config, State, Move, View> {
       this.previewing = false;
       const hold = this.lastDwell >= HOLD_FROM_MS ? this.lastDwell : 0;
       this.holdUntil = this.now() + hold;
-      this.armTurn(hold);
+      this.armTurn(hold + (this.opts.extraMs?.(all) ?? 0));
     }
     this.emit(seat, move, all);
     if (!result) this.scheduleBot();
@@ -336,8 +340,9 @@ export class HostCore<Config, State, Move, View> {
 
   private armTurn(extraMs = 0): void {
     if (this.timer !== null) this.clock.clear(this.timer);
-    this.deadline = this.now() + extraMs + this.turnMs;
-    this.timer = this.clock.set(() => this.timeout(), extraMs + this.turnMs);
+    const turnMs = Math.round(this.turnMs * (this.state && this.opts.turnScale ? this.opts.turnScale(this.state) : 1));
+    this.deadline = this.now() + extraMs + turnMs;
+    this.timer = this.clock.set(() => this.timeout(), extraMs + turnMs);
   }
 
   private timeout(): void {

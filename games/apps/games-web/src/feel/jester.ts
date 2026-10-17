@@ -55,6 +55,17 @@ const STYLE: Record<string, { mood: Mood; emoji: string | null }> = {
   out_on_two: { mood: 'laugh', emoji: 'laugh' },
   win: { mood: 'cheer', emoji: 'party' },
   last_place: { mood: 'sad', emoji: 'grimace' },
+  l7_gift: { mood: 'laugh', emoji: 'laugh' },
+  l7_lock: { mood: 'smug', emoji: 'cool' },
+  l7_lock_self: { mood: 'smug', emoji: 'cool' },
+  l7_unlock: { mood: 'shock', emoji: 'explode' },
+  l7_shuffle: { mood: 'laugh', emoji: 'eyeroll' },
+  l7_swap: { mood: 'smug', emoji: 'cool' },
+  l7_peek: { mood: 'talk', emoji: null },
+  l7_dump: { mood: 'shock', emoji: 'grimace' },
+  l7_final_lap: { mood: 'shock', emoji: 'fire' },
+  l7_win: { mood: 'cheer', emoji: 'party' },
+  l7_zero: { mood: 'shock', emoji: 'party' },
   cheer: { mood: 'cheer', emoji: null },
 };
 

@@ -412,6 +412,160 @@
         "tone": "neutral",
         "spicy": true
       }
+    ],
+    "l7_gift": [
+      {
+        "text": "{name} grabs what {giver} threw away. Thanks for the gift!",
+        "tone": "tease"
+      },
+      {
+        "text": "{giver} gave that away for free? {name} says thank you!",
+        "tone": "tease"
+      }
+    ],
+    "l7_lock": [
+      {
+        "text": "{name} locks one of {victim}'s cards. No escape now!",
+        "tone": "neutral"
+      },
+      {
+        "text": "Padlock! {victim}'s card is stuck. Hope it's a K, {victim}.",
+        "tone": "tease",
+        "spicy": true
+      }
+    ],
+    "l7_lock_self": [
+      {
+        "text": "{name} locks their own card. Confident or desperate?",
+        "tone": "tease"
+      }
+    ],
+    "l7_unlock": [
+      {
+        "text": "{name} smashes a lock! Freedom!",
+        "tone": "cheer"
+      },
+      {
+        "text": "A 9! {name} breaks the padlock.",
+        "tone": "neutral"
+      }
+    ],
+    "l7_shuffle": [
+      {
+        "text": "{name} shuffles {victim}'s cards. Good luck remembering, {victim}!",
+        "tone": "tease"
+      },
+      {
+        "text": "Spin spin spin! {victim}, whatever you remembered is gone.",
+        "tone": "tease"
+      }
+    ],
+    "l7_swap": [
+      {
+        "text": "{name} swaps a card with {victim}. Nobody knows what moved. Nobody!",
+        "tone": "neutral"
+      }
+    ],
+    "l7_peek": [
+      {
+        "text": "{name} is peeking. Act natural, everyone.",
+        "tone": "neutral"
+      }
+    ],
+    "l7_dump": [
+      {
+        "text": "{name} threw away a lucky card. Whyyy?",
+        "tone": "tease"
+      },
+      {
+        "text": "That card was worth almost nothing, {name}. You threw it away.",
+        "tone": "tease"
+      }
+    ],
+    "l7_final_lap": [
+      {
+        "text": "Final lap! One card each left in the deck. Make it count!",
+        "tone": "neutral"
+      }
+    ],
+    "l7_win": [
+      {
+        "text": "{name} wins with {total} points! Lucky or clever?",
+        "tone": "cheer"
+      },
+      {
+        "text": "Lowest total: {name} with {total}. Steady lah.",
+        "tone": "cheer"
+      }
+    ],
+    "l7_zero": [
+      {
+        "text": "ZERO points! {name} is the luckiest person alive!",
+        "tone": "cheer"
+      }
     ]
+  },
+  "l7": {
+    "title": "Lucky 7",
+    "drawDeck": "Draw",
+    "takeDiscard": "Take {card}",
+    "swap": "Swap in",
+    "discard": "Throw",
+    "use": "⚡ Use",
+    "skip": "Skip",
+    "cancel": "Back",
+    "deck": "Deck",
+    "discardPile": "Discard",
+    "usedPile": "Used",
+    "left": "{n} left",
+    "yourCards": "Your cards",
+    "youDrew": "You drew",
+    "theyDrew": "{name} drew",
+    "drawPrompt": "Your turn · draw a card",
+    "actPrompt": "Swap it in, throw it, or use its power",
+    "swapPrompt": "Tap one of your cards to swap it out",
+    "waitingFor": "{name}'s turn…",
+    "powers": {
+      "J": "Peek",
+      "Q": "Swap",
+      "K": "Lock",
+      "9": "Unlock",
+      "T": "Shuffle"
+    },
+    "powerHelp": {
+      "J": "See your own cards for {n} s, then peek at one card of someone else's.",
+      "Q": "Swap one of your cards with one of theirs. Nobody sees them.",
+      "K": "Lock any card. Locked cards can't be peeked, swapped or shuffled.",
+      "9": "Remove a lock, or skip.",
+      "T": "Shuffle one player's unlocked cards, yours or theirs."
+    },
+    "pickMine": "Pick one of YOUR cards",
+    "pickTheirs": "Now pick a player's card",
+    "pickAny": "Pick a card to lock",
+    "pickLocked": "Pick a locked card to free, or skip",
+    "pickSeat": "Pick whose cards to shuffle",
+    "pickPeek": "Pick a card to peek at",
+    "ownPeek": "Your cards · only you see this",
+    "peekResult": "Only you see this",
+    "locked": "Locked",
+    "stamps": {
+      "swap": "SWAP",
+      "discard": "TOSS",
+      "peek": "PEEK",
+      "lock": "LOCKED!",
+      "unlock": "UNLOCKED!",
+      "shuffle": "SHUFFLED!",
+      "qswap": "SWAPPED!"
+    },
+    "gift": "Thanks for the gift!",
+    "finalLap": "FINAL LAP!",
+    "shuffledYou": "Good luck remembering.",
+    "reveal": "Reveal!",
+    "total": "{n} pts",
+    "winner": "Lowest wins",
+    "tie": "Shared win!",
+    "setupHint": "Lowest total wins. 7 = 0, A = 1, J Q K = 10.",
+    "me": "Me",
+    "remember": "Remember them!"
   }
 }

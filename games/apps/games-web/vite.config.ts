@@ -11,6 +11,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         bigtwo: resolve(__dirname, 'bigtwo/index.html'),
+        lucky7: resolve(__dirname, 'lucky7/index.html'),
       },
     },
   },

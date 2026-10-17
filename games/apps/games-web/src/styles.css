@@ -1404,3 +1404,329 @@ table.stats tr.me {
   text-align: center;
   color: var(--ink-dim);
 }
+
+/* ============================================================ Lucky 7 */
+
+.felt-lucky7 {
+  background: radial-gradient(ellipse at 50% 40%, #146c64 0%, #0b4a45 55%, #062b29 100%);
+}
+.felt-lucky7.final-lap .table {
+  animation: final-lap-pulse 1.4s ease-in-out infinite;
+}
+@keyframes final-lap-pulse {
+  50% { box-shadow: inset 0 0 90px rgba(239, 68, 68, 0.45); }
+}
+.l7-prompt {
+  height: auto !important;
+  min-height: 30px;
+  padding: 4px 14px;
+  line-height: 1.2;
+  font-size: 14px;
+  text-align: center;
+}
+.l7-prompt.mine {
+  animation: none;
+}
+
+/* Seats: avatar, name, and three mini face-down slots with padlocks. */
+.l7-seat {
+  border: 0;
+  color: var(--ink);
+  font: inherit;
+  cursor: default;
+}
+.l7-seat.pickable {
+  cursor: pointer;
+  background: rgba(168, 85, 247, 0.35);
+  box-shadow: 0 0 0 3px var(--efoc), 0 0 18px rgba(168, 85, 247, 0.8);
+  animation: pick-pulse 1s ease-in-out infinite;
+}
+@keyframes pick-pulse {
+  50% { box-shadow: 0 0 0 5px var(--efoc), 0 0 26px rgba(168, 85, 247, 0.9); }
+}
+.l7-mini {
+  display: flex;
+  gap: 3px;
+}
+.l7-mini-card {
+  position: relative;
+  width: 16px;
+  height: 22px;
+  border-radius: 3px;
+  background: linear-gradient(135deg, #1e3a8a, #2563eb);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  line-height: 1;
+}
+.l7-seat:not(.compact) .l7-mini-card {
+  width: 20px;
+  height: 27px;
+}
+.l7-mini-card.locked {
+  background: linear-gradient(135deg, #78350f, #b45309);
+}
+.l7-mini-card.face {
+  background: #fff;
+  color: #111827;
+  font-size: 9px;
+  font-weight: 900;
+}
+.l7-mini-card.face.red {
+  color: var(--card-red);
+}
+
+/* Centre: deck, Discard, Used, and the card in play. */
+.l7-centre {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  pointer-events: none;
+}
+.l7-piles {
+  display: flex;
+  gap: 14px;
+  align-items: flex-end;
+  pointer-events: auto;
+}
+.l7-pile {
+  position: relative;
+  width: var(--pile-w);
+  height: calc(var(--pile-w) * 1.36);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.l7-pile .card,
+.l7-pile .back,
+.l7-drawn .card,
+.l7-drawn .back {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: calc(var(--pile-w) * 0.12);
+  background-size: 100% 100%;
+  transition: none;
+  transform: none;
+}
+.l7-pile .back {
+  box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.25), 4px 4px 0 rgba(0, 0, 0, 0.15);
+}
+.l7-used .card {
+  filter: grayscale(0.7) brightness(0.8);
+}
+.l7-empty {
+  width: 100%;
+  height: 100%;
+  border: 2px dashed rgba(255, 255, 255, 0.3);
+  border-radius: calc(var(--pile-w) * 0.12);
+}
+.l7-pile-label {
+  position: absolute;
+  bottom: -20px;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--ink-dim);
+}
+.l7-pile.pickable {
+  cursor: pointer;
+  border-radius: calc(var(--pile-w) * 0.12);
+  box-shadow: 0 0 0 3px var(--turn), 0 0 20px rgba(34, 197, 94, 0.8);
+  animation: pile-pulse 1.1s ease-in-out infinite;
+}
+@keyframes pile-pulse {
+  50% { transform: translateY(-4px); }
+}
+.l7-drawn {
+  position: relative;
+  width: calc(var(--pile-w) * 1.25);
+  height: calc(var(--pile-w) * 1.7);
+  margin-top: 46px;
+  animation: drawn-in 300ms var(--spring);
+}
+.l7-drawn-label {
+  position: absolute;
+  top: -20px;
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 800;
+}
+.l7-drawn .card,
+.l7-drawn .back {
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+.l7-power-tag {
+  position: absolute;
+  bottom: -14px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--power);
+  font-size: 13px;
+  font-weight: 900;
+  white-space: nowrap;
+  box-shadow: 0 0 14px rgba(168, 85, 247, 0.8);
+}
+@keyframes drawn-in {
+  from { transform: translateY(-30px) scale(0.6); opacity: 0; }
+}
+
+/* My three slots, face down. */
+.l7-mine {
+  position: absolute;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 14px;
+}
+.l7-mine[data-peek]::before {
+  content: attr(data-peek);
+  position: absolute;
+  top: -4px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--info);
+  font-size: 13px;
+  font-weight: 900;
+  white-space: nowrap;
+  z-index: 2;
+}
+.l7-mine.spin .l7-slot {
+  animation: slot-spin 700ms ease-in-out;
+}
+@keyframes slot-spin {
+  50% { transform: rotateY(180deg) translateY(-10px); }
+}
+.l7-slot {
+  position: relative;
+  width: var(--card-w);
+  height: var(--card-h);
+  padding: 0;
+  border: 0;
+  border-radius: calc(var(--card-w) * 0.12);
+  background: transparent;
+  cursor: default;
+  transition: transform 200ms var(--spring);
+}
+.l7-slot .l7-slot-card {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  background-size: 100% 100%;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  transform: none;
+  transition: none;
+}
+.l7-slot-no {
+  position: absolute;
+  bottom: -18px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 12px;
+  font-weight: 900;
+  color: var(--ink-dim);
+}
+.l7-lock {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: calc(var(--card-w) * 0.55);
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.6));
+  animation: lock-slam 380ms var(--spring);
+}
+@keyframes lock-slam {
+  from { transform: translate(-50%, -160%) scale(1.8); opacity: 0; }
+}
+.l7-slot.locked .l7-slot-card {
+  filter: brightness(0.75) sepia(0.4);
+}
+.l7-slot.pickable {
+  cursor: pointer;
+  transform: translateY(-10px);
+  box-shadow: 0 0 0 3px var(--efoc), 0 0 22px rgba(168, 85, 247, 0.9);
+  animation: pick-pulse 1s ease-in-out infinite;
+}
+.l7-slot.selected {
+  transform: translateY(-16px);
+  box-shadow: 0 0 0 4px var(--good), 0 0 22px rgba(250, 204, 21, 0.9);
+}
+
+/* Focus sheet: one seat's three slots, big. */
+.l7-focus {
+  align-items: center;
+}
+.l7-focus-hint {
+  margin: -4px 0 12px;
+  color: var(--ink-dim);
+}
+.l7-focus-slots {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  margin: 8px 0 26px;
+}
+.l7-slot.big {
+  width: 84px;
+  height: 114px;
+}
+.l7-slot.big .l7-lock {
+  font-size: 40px;
+}
+.l7-slot.big:disabled {
+  opacity: 0.5;
+}
+
+.btn-power {
+  background: var(--power);
+  border-color: var(--power);
+}
+
+/* Results: everyone's three cards and total; lowest wins. */
+.l7-results-sub {
+  margin: -6px 0 8px;
+  color: var(--ink-dim);
+}
+.l7-standings {
+  display: flex;
+  flex-direction: column;
+}
+.l7-standings .standing {
+  animation: reveal-in 420ms var(--spring) both;
+}
+@keyframes reveal-in {
+  from { transform: rotateX(90deg); opacity: 0; }
+}
+.l7-res-cards {
+  display: flex;
+  gap: 3px;
+}
+.l7-res-cards .card {
+  position: relative;
+  width: 30px;
+  height: 41px;
+  transform: none;
+  transition: none;
+  border-radius: 4px;
+}
+.l7-res-cards .card .idx {
+  font-size: 10px;
+}
+.l7-help {
+  margin: 0 0 12px;
+  padding-left: 18px;
+  line-height: 1.45;
+}
