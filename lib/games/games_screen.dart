@@ -23,6 +23,7 @@ class _GamesScreenState extends State<GamesScreen> {
   Stream<List<OpenTable>>? _tables;
   bool _connecting = true;
   bool _offline = false;
+  String? _offlineReason;
   bool _acquired = false;
 
   String get _myUid => Supabase.instance.client.auth.currentUser?.id ?? '';
@@ -53,6 +54,7 @@ class _GamesScreenState extends State<GamesScreen> {
       setState(() {
         _connecting = false;
         _offline = true;
+        _offlineReason = '$e';
       });
     }
   }
@@ -181,7 +183,10 @@ class _GamesScreenState extends State<GamesScreen> {
       return _note('Connecting…');
     }
     if (_offline) {
-      return _note("Couldn't reach the game server. Practice still works.");
+      return _note(
+        "Couldn't reach the game server. Practice still works.",
+        detail: _offlineReason,
+      );
     }
     return StreamBuilder<List<OpenTable>>(
       stream: _tables,
@@ -199,13 +204,25 @@ class _GamesScreenState extends State<GamesScreen> {
     );
   }
 
-  Widget _note(String text) => Container(
+  Widget _note(String text, {String? detail}) => Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: EfocColors.surface,
           borderRadius: BorderRadius.circular(16),
         ),
-        child: Text(text, style: const TextStyle(color: Colors.white60, fontSize: 13)),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(text, style: const TextStyle(color: Colors.white60, fontSize: 13)),
+            if (detail != null) ...[
+              const SizedBox(height: 6),
+              SelectableText(
+                detail,
+                style: const TextStyle(color: Colors.white38, fontSize: 11),
+              ),
+            ],
+          ],
+        ),
       );
 }
 

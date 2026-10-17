@@ -44,19 +44,40 @@ class GamesDatabase {
     final auth = FirebaseAuth.instance;
     if (auth.currentUser?.uid == supabaseUid) return supabaseUid;
 
-    final res =
-        await Supabase.instance.client.functions.invoke('firebase-token');
-    final data = res.data;
+    final Object? data;
+    try {
+      data = (await Supabase.instance.client.functions
+              .invoke('firebase-token'))
+          .data;
+    } on FunctionException catch (e) {
+      throw GamesSignInError('token service ${e.status}: ${e.details ?? e.reasonPhrase ?? ''}');
+    } catch (e) {
+      throw GamesSignInError('token service: $e');
+    }
     final token = data is Map ? data['token'] : null;
     if (token is! String || token.isEmpty) {
-      throw StateError('No game token');
+      throw GamesSignInError('token service sent no token');
     }
-    final cred = await auth.signInWithCustomToken(token);
+    final UserCredential cred;
+    try {
+      cred = await auth.signInWithCustomToken(token);
+    } on FirebaseAuthException catch (e) {
+      throw GamesSignInError('firebase ${e.code}: ${e.message ?? ''}');
+    }
     final uid = cred.user?.uid;
     if (uid != supabaseUid) {
       await auth.signOut();
-      throw StateError('Game sign-in mismatch');
+      throw GamesSignInError('firebase uid mismatch');
     }
     return uid!;
   }
+}
+
+/// Why signing in to the game server failed, short enough to show.
+class GamesSignInError implements Exception {
+  final String reason;
+  GamesSignInError(this.reason);
+
+  @override
+  String toString() => reason;
 }
