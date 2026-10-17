@@ -119,5 +119,5 @@ class UpdateService {
   /// the new main.dart.js. The service worker picks up the new build on that
   /// navigation. Flutter's URL strategy strips the param on next route change,
   /// so the user never sees it linger.
-  void reload() => impl.reloadApp();
+  Future<void> reload() => impl.reloadApp();
 }
