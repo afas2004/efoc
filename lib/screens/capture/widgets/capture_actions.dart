@@ -10,10 +10,14 @@ class CaptureActions extends StatelessWidget {
   final VoidCallback onStart;
   final VoidCallback onSend;
 
+  /// The flip button next to Start; off when the screen has its own.
+  final bool showFlip;
+
   const CaptureActions({
     super.key,
     required this.phase,
     required this.selectedCount,
+    this.showFlip = true,
     required this.onFlip,
     required this.onStart,
     required this.onSend,
@@ -29,7 +33,7 @@ class CaptureActions extends StatelessWidget {
     return Row(
       children: [
         // Flip (setup only)
-        if (isSetup)
+        if (isSetup && showFlip)
           _SquareBtn(
             onTap: onFlip,
             child: const Icon(
@@ -39,7 +43,7 @@ class CaptureActions extends StatelessWidget {
             ),
           ),
 
-        if (isSetup) const SizedBox(width: 10),
+        if (isSetup && showFlip) const SizedBox(width: 10),
 
         // Primary (Start / Recording / Send)
         Expanded(

@@ -6,6 +6,7 @@ import '../../../services/clip_service.dart';
 import '../../../state/app_state.dart';
 import '../../../theme/colors.dart';
 import '../../../widgets/caption.dart';
+import '../../../widgets/clip_video.dart';
 
 class EfocGridCell extends StatelessWidget {
   final int memberIdx;
@@ -178,13 +179,22 @@ class _FilledCell extends StatelessWidget {
       ),
       child: thumbUrl == null
           ? null
-          : Image.network(
-              thumbUrl,
-              fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-              loadingBuilder: (_, child, progress) {
-                return progress == null ? child : const SizedBox.shrink();
-              },
+          : ClipRect(
+              child: FittedBox(
+                fit: BoxFit.cover,
+                child: UprightClip(
+                  rotation: clipRotationOf(clip),
+                  child: Image.network(
+                    thumbUrl,
+                    errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                    loadingBuilder: (_, child, progress) {
+                      return progress == null
+                          ? child
+                          : const SizedBox.shrink();
+                    },
+                  ),
+                ),
+              ),
             ),
     );
 
@@ -250,6 +260,7 @@ class _FilledCell extends StatelessWidget {
               PositionedCaption(
                 text: overlayText,
                 fontKey: clip?['text_font'] as String?,
+                highlight: clip?['text_bg'] as String?,
                 color: overlayColor,
                 alignment: captionAlignmentOf(clip),
                 size: 12,

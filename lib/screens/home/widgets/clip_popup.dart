@@ -5,6 +5,7 @@ import 'package:video_player/video_player.dart';
 import '../../../services/clip_service.dart';
 import '../../../state/app_state.dart';
 import '../../../widgets/caption.dart';
+import '../../../widgets/clip_video.dart';
 
 class ClipPopup extends StatefulWidget {
   final int initialMemberIdx;
@@ -205,10 +206,11 @@ class _ClipPopupState extends State<ClipPopup> {
     required Color overlayColor,
     required int hour,
   }) {
-    // Determine aspect ratio: use video's own if ready, else fall back to 9:16
+    // The clip's own shape once loaded (landscape for sideways clips).
+    final rotation = clipRotationOf(_clip);
     final ar = (_videoController?.value.isInitialized ?? false)
-        ? _videoController!.value.aspectRatio
-        : 9 / 16;
+        ? uprightAspect(_videoController!, rotation)
+        : 3 / 2;
 
     return AspectRatio(
       aspectRatio: ar,
@@ -244,13 +246,9 @@ class _ClipPopupState extends State<ClipPopup> {
                 ),
               )
             else if (_videoController != null)
-              FittedBox(
-                fit: BoxFit.cover,
-                child: SizedBox(
-                  width: _videoController!.value.size.width,
-                  height: _videoController!.value.size.height,
-                  child: VideoPlayer(_videoController!),
-                ),
+              UprightVideoCover(
+                controller: _videoController!,
+                rotation: rotation,
               ),
 
             // 2. Author chip (top-left)
@@ -318,6 +316,7 @@ class _ClipPopupState extends State<ClipPopup> {
               PositionedCaption(
                 text: overlayText,
                 fontKey: _clip?['text_font'] as String?,
+                highlight: _clip?['text_bg'] as String?,
                 color: overlayColor,
                 alignment: captionAlignmentOf(_clip),
               ),

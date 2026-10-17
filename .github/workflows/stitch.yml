@@ -42,6 +42,20 @@ jobs:
 
       - run: pip install -r worker/requirements.txt
 
+      # Caption fonts, same as the app (Google Fonts, OFL licensed).
+      - name: Fetch caption fonts
+        run: |
+          mkdir -p /tmp/efoc-fonts && cd /tmp/efoc-fonts
+          base=https://github.com/google/fonts/raw/main/ofl
+          get() { curl -fsSL -o "$1" "$base/$2" || echo "::warning::font $1 missing, using fallback"; }
+          get Poppins-Bold.ttf poppins/Poppins-Bold.ttf
+          get Anton-Regular.ttf anton/Anton-Regular.ttf
+          get PlayfairDisplay-Italic.ttf "playfairdisplay/PlayfairDisplay-Italic%5Bwght%5D.ttf"
+          get JetBrainsMono.ttf "jetbrainsmono/JetBrainsMono%5Bwght%5D.ttf"
+          get Caveat.ttf "caveat/Caveat%5Bwght%5D.ttf"
+          get Pacifico-Regular.ttf pacifico/Pacifico-Regular.ttf
+          ls -la
+
       - name: Stitch
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
