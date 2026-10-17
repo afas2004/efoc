@@ -27,11 +27,15 @@ class EfocGridCell extends StatelessWidget {
 
     if (filled) {
       final clip = state.clipFor(memberIdx, hourIdx);
+      final unseen = clip != null && state.isClipUnseen(clip);
       return _FilledCell(
         member: member,
         memberIdx: memberIdx,
         hour: hour,
         clip: clip,
+        unseen: unseen,
+        // Your own clips never grey out; others do once you've watched them.
+        seen: !member.isMe && !unseen,
         onTap: onTap,
       );
     }
@@ -117,6 +121,8 @@ class _FilledCell extends StatelessWidget {
   final int memberIdx;
   final int hour;
   final Map<String, dynamic>? clip;
+  final bool unseen;
+  final bool seen;
   final VoidCallback onTap;
 
   const _FilledCell({
@@ -124,8 +130,17 @@ class _FilledCell extends StatelessWidget {
     required this.memberIdx,
     required this.hour,
     required this.clip,
+    required this.unseen,
+    required this.seen,
     required this.onTap,
   });
+
+  static const _greyscale = ColorFilter.matrix([
+    0.2126, 0.7152, 0.0722, 0, 0, //
+    0.2126, 0.7152, 0.0722, 0, 0, //
+    0.2126, 0.7152, 0.0722, 0, 0, //
+    0, 0, 0, 1, 0,
+  ]);
 
   static const _gradients = [
     [Color(0xFFA855F7), Color(0xFF6D28D9)],
@@ -161,28 +176,40 @@ class _FilledCell extends StatelessWidget {
         ? null
         : ClipService.instance.publicThumbnailUrl(storagePath);
 
+    final background = Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: pair,
+        ),
+      ),
+      child: thumbUrl == null
+          ? null
+          : Image.network(
+              thumbUrl,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+              loadingBuilder: (_, child, progress) {
+                return progress == null ? child : const SizedBox.shrink();
+              },
+            ),
+    );
+
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: pair,
-          ),
-        ),
+        color: Colors.black,
         child: Stack(
           fit: StackFit.expand,
           children: [
-            if (thumbUrl != null)
-              Image.network(
-                thumbUrl,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-                loadingBuilder: (_, child, progress) {
-                  return progress == null ? child : const SizedBox.shrink();
-                },
-              ),
+            if (seen)
+              Opacity(
+                opacity: 0.55,
+                child: ColorFiltered(colorFilter: _greyscale, child: background),
+              )
+            else
+              background,
 
             Container(
               decoration: BoxDecoration(
@@ -200,18 +227,25 @@ class _FilledCell extends StatelessWidget {
               ),
             ),
 
-            Positioned(
-              top: 12,
-              right: 12,
-              child: Container(
-                width: 6,
-                height: 6,
-                decoration: const BoxDecoration(
-                  color: Colors.white,
-                  shape: BoxShape.circle,
+            if (unseen)
+              Positioned(
+                top: 12,
+                right: 12,
+                child: Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    color: EfocColors.accentBright,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: EfocColors.accent.withValues(alpha: 0.9),
+                        blurRadius: 8,
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
 
             Positioned(
               top: 10,

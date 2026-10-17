@@ -42,6 +42,7 @@ Future<void> openTodayPreview(BuildContext context) {
     );
     return Future.value();
   }
+  state.markClipsViewed(state.todaysClipsInOrder);
   return Navigator.of(context).push(
     MaterialPageRoute(
       fullscreenDialog: true,

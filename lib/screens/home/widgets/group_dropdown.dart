@@ -133,6 +133,14 @@ class _GroupRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
     final group = state.groups[groupIdx];
+    final hasNews = !isActive &&
+        (state.hasUnseenClips(group.id) ||
+            state.hasUnviewedYesterday(group.id));
+    final hasChat = !isActive && state.hasUnreadChat(group.id);
+    final hints = [
+      if (hasNews) 'new',
+      if (hasChat) 'new messages',
+    ];
 
     return InkWell(
       onTap: onTap,
@@ -146,6 +154,17 @@ class _GroupRow extends StatelessWidget {
               decoration: BoxDecoration(
                 color: group.avatarColor,
                 shape: BoxShape.circle,
+                border: hasNews
+                    ? Border.all(color: EfocColors.accentBright, width: 2)
+                    : null,
+                boxShadow: hasNews
+                    ? [
+                        BoxShadow(
+                          color: EfocColors.accent.withValues(alpha: 0.6),
+                          blurRadius: 8,
+                        ),
+                      ]
+                    : null,
               ),
               alignment: Alignment.center,
               child: Text(
@@ -175,9 +194,21 @@ class _GroupRow extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 1),
-                  Text(
-                    '${group.members.length} member${group.members.length != 1 ? "s" : ""}'
-                    '${!isActive && state.hasUnviewedYesterday(group.id) ? ' · new' : ''}',
+                  Text.rich(
+                    TextSpan(
+                      text:
+                          '${group.members.length} member${group.members.length != 1 ? "s" : ""}',
+                      children: [
+                        if (hints.isNotEmpty)
+                          TextSpan(
+                            text: ' · ${hints.join(' · ')}',
+                            style: const TextStyle(
+                              color: EfocColors.accentBright,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                      ],
+                    ),
                     style: const TextStyle(
                       color: Colors.white38,
                       fontSize: 10,
@@ -187,6 +218,15 @@ class _GroupRow extends StatelessWidget {
                 ],
               ),
             ),
+            if (hasNews || hasChat)
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: hasNews ? EfocColors.accentBright : EfocColors.danger,
+                  shape: BoxShape.circle,
+                ),
+              ),
             if (isActive)
               const Icon(
                 Icons.check_rounded,

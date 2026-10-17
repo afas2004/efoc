@@ -116,18 +116,15 @@ class ChatService {
     return messages.reversed.toList();
   }
 
-  /// Returns the timestamp of the most recent message in a group,
-  /// or null if the group has no messages.
-  Future<DateTime?> getLatestMessageTime(String groupId) async {
-    final row = await _client
-        .from('messages')
-        .select('created_at')
-        .eq('group_id', groupId)
-        .order('created_at', ascending: false)
-        .limit(1)
-        .maybeSingle();
-    if (row == null) return null;
-    return DateTime.parse(row['created_at'] as String).toLocal();
+  /// Group ids with a message from someone else since you last read them.
+  Future<Set<String>> fetchUnreadGroupIds() async {
+    final rows = await _client.rpc('unread_chat_groups') as List<dynamic>;
+    return rows.map((r) => r as String).toSet();
+  }
+
+  /// Marks [groupId]'s chat as read up to now (server time).
+  Future<void> markRead(String groupId) async {
+    await _client.rpc('mark_chat_read', params: {'gid': groupId});
   }
 
   Future<void> sendText({

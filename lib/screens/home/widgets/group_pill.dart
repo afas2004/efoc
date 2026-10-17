@@ -88,10 +88,35 @@ class GroupPill extends StatelessWidget {
               ],
             ),
           ),
-          const Icon(
-            Icons.keyboard_arrow_down_rounded,
-            size: 16,
-            color: Colors.white54,
+          // Something new in another group: nudge toward the dropdown.
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              const Icon(
+                Icons.keyboard_arrow_down_rounded,
+                size: 16,
+                color: Colors.white54,
+              ),
+              if (state.otherGroupsHaveNews)
+                Positioned(
+                  top: -3,
+                  right: -3,
+                  child: Container(
+                    width: 7,
+                    height: 7,
+                    decoration: BoxDecoration(
+                      color: EfocColors.accentBright,
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: EfocColors.accent.withValues(alpha: 0.8),
+                          blurRadius: 6,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
           ),
         ],
       ),

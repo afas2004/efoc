@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
-import '../../services/chat_service.dart';
 import '../../services/update_service.dart';
 import '../../services/vlog_service.dart';
 import '../../state/app_state.dart';
@@ -38,14 +37,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   OverlayEntry? _groupOverlay;
   OverlayEntry? _dlOverlay;
 
-  /// In-memory tracker: group id -> last time we opened its chat.
-  final Map<String, DateTime> _lastOpened = {};
-
-  /// Group ids that currently have unread messages.
-  final Set<String> _unreadGroups = {};
-
-  bool _unreadChecked = false;
-
   /// Guards the invite-link handling so it only fires once per HomeScreen.
   bool _pendingInviteHandled = false;
 
@@ -66,7 +57,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _maybeCheckUnread();
       _maybeHandlePendingInvite();
       _runAutoUpdateCheck();
     });
@@ -76,8 +66,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _runAutoUpdateCheck();
-      // A new day may have rolled over (and been stitched) while away.
-      context.read<AppState>().reloadVlogs();
+      // New clips, messages or a fresh stitch may have landed while away.
+      context.read<AppState>().reloadBadges();
     }
   }
 
@@ -171,36 +161,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
-  // ---------- unread tracking ----------
-
-  void _maybeCheckUnread() {
-    final state = context.read<AppState>();
-    if (!state.hasGroups) return;
-    if (_unreadChecked) return;
-    _unreadChecked = true;
-    _checkUnreadForAllGroups();
-  }
-
-  Future<void> _checkUnreadForAllGroups() async {
-    final state = context.read<AppState>();
-    if (!state.hasGroups) return;
-
-    for (final g in state.groups) {
-      // Skip Personal — nobody messages there.
-      if (g.isPersonal) continue;
-      try {
-        final last = await ChatService.instance.getLatestMessageTime(g.id);
-        if (last == null) continue;
-        final opened = _lastOpened[g.id];
-        if (opened == null || last.isAfter(opened)) {
-          if (mounted) setState(() => _unreadGroups.add(g.id));
-        }
-      } catch (_) {
-        // Non-fatal — badge just doesn't show.
-      }
-    }
-  }
-
   // ---------- navigation ----------
 
   void _openChat() async {
@@ -208,11 +168,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (!state.hasGroups) return;
     final group = state.currentGroup;
 
-    // Mark read before navigating.
-    setState(() {
-      _lastOpened[group.id] = DateTime.now();
-      _unreadGroups.remove(group.id);
-    });
+    state.markChatRead(group.id);
 
     await Navigator.of(context).push(
       PageRouteBuilder(
@@ -239,9 +195,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       ),
     );
 
-    // Refresh unread state after returning.
-    _unreadChecked = false;
-    _maybeCheckUnread();
+    // Messages that arrived while the chat was open were seen there.
+    state.markChatRead(group.id);
   }
 
   void _toggleGroupMenu() {
@@ -381,11 +336,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
 
-    // Trigger unread check once groups become available.
-    if (state.hasGroups && !_unreadChecked) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _maybeCheckUnread());
-    }
-
     // Handles the case where a deep link arrives while Home is already
     // mounted (warm start on Android). Cold start is handled in initState.
     if (state.hasPendingInvite && !_pendingInviteHandled) {
@@ -501,8 +451,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       );
     }
 
-    final currentGroupHasUnread =
-        _unreadGroups.contains(state.currentGroup.id);
+    final currentGroupHasUnread = state.hasUnreadChat(state.currentGroup.id);
 
     return _withUpdateBanner(
       GestureDetector(

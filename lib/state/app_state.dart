@@ -8,6 +8,7 @@ import '../models/day_dot_state.dart';
 import '../models/log_group.dart';
 import '../models/member.dart';
 import '../models/vlog.dart';
+import '../services/chat_service.dart';
 import '../services/clip_service.dart';
 import '../services/group_service.dart';
 import '../services/vlog_service.dart';
@@ -50,6 +51,8 @@ class AppState extends ChangeNotifier {
   void _reset() {
     _clipChannel?.unsubscribe();
     _clipChannel = null;
+    _chatChannel?.unsubscribe();
+    _chatChannel = null;
     _debounce?.cancel();
     _debounce = null;
 
@@ -66,6 +69,10 @@ class AppState extends ChangeNotifier {
 
     _vlogs.clear();
     _viewedVlogIds.clear();
+
+    _viewedClipIds.clear();
+    _unseenCounts.clear();
+    _unreadChatGroups.clear();
 
     ClipService.instance.clearCache();
 
@@ -208,13 +215,19 @@ class AppState extends ChangeNotifier {
         () {
           final day = today.subtract(Duration(days: back));
           if (back == 0) {
-            return DayDotData(label: 'Today', date: day, kind: DayDotKind.today);
+            return DayDotData(
+              label: 'Today',
+              date: day,
+              kind: DayDotKind.today,
+              hasUnseenClips: _dayHasUnseen(groupId, day),
+            );
           }
           final vlog = vlogFor(groupId, day);
           return DayDotData(
             label: back == 1 ? 'Yesterday' : _weekday(day),
             date: day,
             vlog: vlog,
+            hasUnseenClips: _dayHasUnseen(groupId, day),
             kind: vlog == null
                 ? DayDotKind.missed
                 : isVlogViewed(vlog)
@@ -278,6 +291,112 @@ class AppState extends ChangeNotifier {
     return clips;
   }
 
+  // ---------- seen clips ----------
+  /// Clip ids (from the loaded day) the current user has watched.
+  final Set<String> _viewedClipIds = {};
+
+  /// Unwatched clips from other members, keyed by `groupId|yyyy-mm-dd`,
+  /// for the last [dayDotCount] days across all groups.
+  final Map<String, int> _unseenCounts = {};
+
+  String? get _myId => _client.auth.currentUser?.id;
+
+  static String _dayKey(String groupId, DateTime d) =>
+      '$groupId|${d.year.toString().padLeft(4, '0')}-'
+      '${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+  /// Someone else's clip you haven't opened yet. Your own clips never are.
+  bool isClipUnseen(Map<String, dynamic> clip) =>
+      clip['user_id'] != _myId && !_viewedClipIds.contains(clip['id']);
+
+  /// Drives the "new" hint in the dropdown.
+  bool hasUnseenClips(String groupId) => _unseenCounts.entries
+      .any((e) => e.value > 0 && e.key.startsWith('$groupId|'));
+
+  /// Any group other than the current one has something new. Drives the
+  /// dot on the group pill so you know to open the dropdown.
+  bool get otherGroupsHaveNews => groups.any((g) =>
+      g.id != currentGroup.id &&
+      (hasUnseenClips(g.id) ||
+          hasUnviewedYesterday(g.id) ||
+          hasUnreadChat(g.id)));
+
+  bool _dayHasUnseen(String groupId, DateTime day) =>
+      (_unseenCounts[_dayKey(groupId, day)] ?? 0) > 0;
+
+  /// Marks clips as watched everywhere (grid, dots, dropdown). Optimistic.
+  void markClipsViewed(Iterable<Map<String, dynamic>> clips) {
+    final fresh = clips.where(isClipUnseen).toList();
+    if (fresh.isEmpty) return;
+    for (final clip in fresh) {
+      _viewedClipIds.add(clip['id'] as String);
+      final key = '${clip['group_id']}|${clip['recorded_on']}';
+      final left = (_unseenCounts[key] ?? 0) - 1;
+      if (left > 0) {
+        _unseenCounts[key] = left;
+      } else {
+        _unseenCounts.remove(key);
+      }
+    }
+    notifyListeners();
+    for (final clip in fresh) {
+      ClipService.instance.markViewed(clip['id'] as String).catchError(
+            (Object e) => debugPrint('Mark clip viewed error: $e'),
+          );
+    }
+  }
+
+  Future<void> _loadUnseenCounts() async {
+    if (!hasGroups) return;
+    try {
+      final since = _dateOnly(DateTime.now())
+          .subtract(const Duration(days: dayDotCount - 1));
+      final counts =
+          await ClipService.instance.fetchUnseenCounts(since: since);
+      _unseenCounts
+        ..clear()
+        ..addAll(counts);
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Load unseen counts error: $e');
+    }
+  }
+
+  // ---------- chat unread ----------
+  final Set<String> _unreadChatGroups = {};
+  RealtimeChannel? _chatChannel;
+
+  bool hasUnreadChat(String groupId) => _unreadChatGroups.contains(groupId);
+
+  Future<void> markChatRead(String groupId) async {
+    if (_unreadChatGroups.remove(groupId)) notifyListeners();
+    try {
+      await ChatService.instance.markRead(groupId);
+    } catch (e) {
+      debugPrint('Mark chat read error: $e');
+    }
+  }
+
+  Future<void> _loadUnreadChat() async {
+    if (!hasGroups) return;
+    try {
+      final ids = await ChatService.instance.fetchUnreadGroupIds();
+      _unreadChatGroups
+        ..clear()
+        ..addAll(ids);
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Load unread chat error: $e');
+    }
+  }
+
+  /// Re-checks unseen clips, unread chat and vlogs, e.g. on app resume.
+  Future<void> reloadBadges() => Future.wait([
+        _loadUnseenCounts(),
+        _loadUnreadChat(),
+        _loadVlogs(),
+      ]);
+
   // ---------- init ----------
   Future<void> _init() async {
     await _loadGroups();
@@ -286,6 +405,7 @@ class AppState extends ChangeNotifier {
       await _loadClips();
       _subscribeRealtime();
       _loadVlogs();
+      _loadUnreadChat();
     }
   }
 
@@ -340,9 +460,15 @@ class AppState extends ChangeNotifier {
         groupId: currentGroup.id,
         date: DateTime.now(),
       );
+      final viewed = await ClipService.instance.fetchViewedIds(
+        map.values.map((c) => c['id'] as String).toList(),
+      );
       _clipsByUserAndHour
         ..clear()
         ..addAll(map);
+      _viewedClipIds
+        ..clear()
+        ..addAll(viewed);
     } catch (e) {
       debugPrint('Load clips error: $e');
     } finally {
@@ -350,6 +476,8 @@ class AppState extends ChangeNotifier {
       clipsLoadedOnce = true;
       notifyListeners();
     }
+    // A new upload from someone else may have just arrived.
+    _loadUnseenCounts();
   }
 
   void _subscribeRealtime() {
@@ -365,11 +493,31 @@ class AppState extends ChangeNotifier {
         _debounce = Timer(const Duration(milliseconds: 200), _loadClips);
       },
     );
+
+    // Lights the chat dot live for the group on screen. Other groups are
+    // re-checked on resume and when you switch to them.
+    _chatChannel?.unsubscribe();
+    _chatChannel = _client
+        .channel('unread-${currentGroup.id}')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.insert,
+          schema: 'public',
+          table: 'messages',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'group_id',
+            value: currentGroup.id,
+          ),
+          callback: (_) => _loadUnreadChat(),
+        )
+        .subscribe();
   }
 
   Future<void> refresh() async {
     await _loadGroups();
-    if (hasGroups) await Future.wait([_loadClips(), _loadVlogs()]);
+    if (hasGroups) {
+      await Future.wait([_loadClips(), _loadVlogs(), _loadUnreadChat()]);
+    }
   }
 
   // ---------- group mutations ----------
@@ -432,6 +580,7 @@ class AppState extends ChangeNotifier {
     _authSub?.cancel();
     _debounce?.cancel();
     _clipChannel?.unsubscribe();
+    _chatChannel?.unsubscribe();
     super.dispose();
   }
 }

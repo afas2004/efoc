@@ -253,6 +253,7 @@ class _CaptureScreenState extends State<CaptureScreen>
           fontKey: _fontKey,
           textColorHex: colorHex,
           ratio: _ratio,
+          mimeType: _recordedFile!.mimeType,
         );
         successCount++;
       } catch (e) {

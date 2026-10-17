@@ -92,6 +92,7 @@ class _ClipPopupState extends State<ClipPopup> {
         _videoController = controller;
         _loading = false;
       });
+      state.markClipsViewed([clip]);
     } catch (e) {
       if (!mounted) return;
       setState(() {

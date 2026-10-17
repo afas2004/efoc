@@ -34,23 +34,20 @@ class ClipService {
     return url;
   }
 
-  /// Public URL for a clip's thumbnail. Works because the clips bucket
-  /// allows public SELECT on `.jpg` files.
-    /// Public URL for a clip's thumbnail. Thumbnails live in their own
+  /// Public URL for a clip's thumbnail. Thumbnails live in their own
   /// public bucket, at the same path as the video but with a .jpg extension.
   String? publicThumbnailUrl(String storagePath) {
-    String thumbPath;
-    if (storagePath.endsWith('.mp4')) {
-      thumbPath = storagePath.replaceAll('.mp4', '.jpg');
-    } else if (storagePath.endsWith('.webm')) {
-      thumbPath = storagePath.replaceAll('.webm', '.jpg');
-    } else if (storagePath.endsWith('.mov')) {
-      thumbPath = storagePath.replaceAll('.mov', '.jpg');
-    } else {
-      return null;
-    }
+    final match = _videoExt.firstMatch(storagePath);
+    // Older uploads from the web app had no real extension (the blob URL's
+    // domain leaked in, e.g. `.party/<uuid>`), so their thumbnail was
+    // stored under the exact same path as the video.
+    final thumbPath = match == null
+        ? storagePath
+        : storagePath.replaceRange(match.start, match.end, '.jpg');
     return _client.storage.from('thumbnails').getPublicUrl(thumbPath);
   }
+
+  static final _videoExt = RegExp(r'\.(mp4|webm|mov)$');
 
   // ---------- upload ----------
 
@@ -62,13 +59,14 @@ class ClipService {
     required String fontKey,
     required String textColorHex,
     required String ratio,
+    String? mimeType,
   }) async {
     final userId = _client.auth.currentUser?.id;
     if (userId == null) throw Exception('Not signed in');
 
     // 1. Prepare bytes + path
     final Uint8List bytes = await _readFileBytes(filePath);
-    final ext = _extFromPath(filePath);
+    final ext = _extFor(filePath, mimeType);
 
     final now = DateTime.now();
     final dateStr = _dateString(now);
@@ -115,8 +113,7 @@ class ClipService {
     required String videoPath,
     required String storagePath,
   }) async {
-    final thumbPath =
-        storagePath.replaceAll(RegExp(r'\.(mp4|webm|mov)$'), '.jpg');
+    final thumbPath = storagePath.replaceAll(_videoExt, '.jpg');
 
     try {
       final bytes = await extractThumbnailJpeg(videoPath);
@@ -164,6 +161,42 @@ class ClipService {
     return map;
   }
 
+  // ---------- seen tracking ----------
+
+  /// Ids in [clipIds] the current user has already watched.
+  Future<Set<String>> fetchViewedIds(List<String> clipIds) async {
+    final userId = _client.auth.currentUser?.id;
+    if (userId == null || clipIds.isEmpty) return {};
+    final rows = await _client
+        .from('clip_views')
+        .select('clip_id')
+        .eq('user_id', userId)
+        .inFilter('clip_id', clipIds);
+    return rows.map((r) => r['clip_id'] as String).toSet();
+  }
+
+  Future<void> markViewed(String clipId) async {
+    final userId = _client.auth.currentUser?.id;
+    if (userId == null) return;
+    await _client.from('clip_views').upsert(
+      {'user_id': userId, 'clip_id': clipId},
+      onConflict: 'user_id,clip_id',
+      ignoreDuplicates: true,
+    );
+  }
+
+  /// Unwatched clips from other members, keyed by `groupId|yyyy-mm-dd`.
+  Future<Map<String, int>> fetchUnseenCounts({required DateTime since}) async {
+    final rows = await _client.rpc(
+      'unseen_clip_counts',
+      params: {'since': _dateString(since)},
+    ) as List<dynamic>;
+    return {
+      for (final r in rows)
+        '${r['group_id']}|${r['recorded_on']}': r['unseen'] as int,
+    };
+  }
+
   RealtimeChannel subscribeToGroupClips({
     required String groupId,
     required void Function() onChange,
@@ -203,10 +236,20 @@ class ClipService {
     }
   }
 
-  String _extFromPath(String path) {
-    final dot = path.lastIndexOf('.');
-    if (dot < 0 || dot == path.length - 1) return 'mp4';
-    return path.substring(dot + 1).toLowerCase();
+  /// Picks the file extension from the file name, falling back to the
+  /// recorder's MIME type. Web recordings are blob URLs with no extension.
+  String _extFor(String path, String? mimeType) {
+    final name = path.split(RegExp(r'[/\\]')).last;
+    final dot = name.lastIndexOf('.');
+    if (dot >= 0) {
+      final ext = name.substring(dot + 1).toLowerCase();
+      if (const {'mp4', 'webm', 'mov'}.contains(ext)) return ext;
+    }
+    final mime = mimeType?.toLowerCase() ?? '';
+    if (mime.contains('webm')) return 'webm';
+    if (mime.contains('quicktime')) return 'mov';
+    if (mime.isEmpty && kIsWeb) return 'webm';
+    return 'mp4';
   }
 
   String _contentTypeFor(String ext) {

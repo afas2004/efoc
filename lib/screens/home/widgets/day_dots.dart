@@ -29,7 +29,7 @@ class DayDots extends StatelessWidget {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    _DayDot(kind: dot.kind),
+                    _DayDot(kind: dot.kind, hasUnseen: dot.hasUnseenClips),
                     const SizedBox(height: 4),
                     Text(
                       dot.kind == DayDotKind.today
@@ -74,7 +74,12 @@ class DayDots extends StatelessWidget {
 class _DayDot extends StatelessWidget {
   final DayDotKind kind;
 
-  const _DayDot({required this.kind});
+  /// Unwatched clips from others that day. Stitched days already show
+  /// their own watched/unwatched state, so this only recolours today and
+  /// days without a vlog.
+  final bool hasUnseen;
+
+  const _DayDot({required this.kind, this.hasUnseen = false});
 
   @override
   Widget build(BuildContext context) {
@@ -84,8 +89,16 @@ class _DayDot extends StatelessWidget {
           width: 20,
           height: 8,
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: hasUnseen ? EfocColors.accentBright : Colors.white,
             borderRadius: BorderRadius.circular(4),
+            boxShadow: hasUnseen
+                ? [
+                    BoxShadow(
+                      color: EfocColors.accent.withValues(alpha: 0.8),
+                      blurRadius: 8,
+                    ),
+                  ]
+                : null,
           ),
         );
       case DayDotKind.stitchedUnviewed:
@@ -118,7 +131,10 @@ class _DayDot extends StatelessWidget {
           height: 8,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            border: Border.all(color: Colors.white24, width: 1.2),
+            border: Border.all(
+              color: hasUnseen ? EfocColors.accentBright : Colors.white24,
+              width: 1.2,
+            ),
           ),
         );
     }
