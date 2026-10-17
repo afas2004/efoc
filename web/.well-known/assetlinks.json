@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.example.efoc",
+      "sha256_cert_fingerprints": [
+        "D3:6A:3B:E5:75:DA:70:CD:52:05:31:B0:6E:2D:DF:BC:A7:7C:B1:FB:89:88:40:63:E1:54:34:64:35:01:6B:C9"
+      ]
+    }
+  }
+]

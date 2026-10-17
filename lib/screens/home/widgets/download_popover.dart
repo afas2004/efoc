@@ -5,11 +5,15 @@ import '../../../theme/colors.dart';
 class DownloadPopover extends StatelessWidget {
   final LayerLink link;
   final VoidCallback onDismiss;
+  final VoidCallback onToday;
+  final VoidCallback onYesterday;
 
   const DownloadPopover({
     super.key,
     required this.link,
     required this.onDismiss,
+    required this.onToday,
+    required this.onYesterday,
   });
 
   @override
@@ -46,14 +50,22 @@ class DownloadPopover extends StatelessWidget {
               ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
-                children: const [
+                children: [
                   _DlRow(
                     title: '📼 Today · up to now',
-                    subtitle: 'Stitch clips so far',
+                    subtitle: 'Watch clips so far',
+                    onTap: () {
+                      onDismiss();
+                      onToday();
+                    },
                   ),
                   _DlRow(
                     title: '🎬 Yesterday · full',
                     subtitle: 'Stitched at midnight',
+                    onTap: () {
+                      onDismiss();
+                      onYesterday();
+                    },
                   ),
                 ],
               ),
@@ -68,20 +80,18 @@ class DownloadPopover extends StatelessWidget {
 class _DlRow extends StatelessWidget {
   final String title;
   final String subtitle;
+  final VoidCallback onTap;
 
-  const _DlRow({required this.title, required this.subtitle});
+  const _DlRow({
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
     return InkWell(
-      onTap: () {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('$title — coming soon'),
-            duration: const Duration(milliseconds: 1200),
-          ),
-        );
-      },
+      onTap: onTap,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         child: Column(

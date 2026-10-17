@@ -1,12 +1,17 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../state/app_state.dart';
 import '../../../theme/colors.dart';
 
 class CreateJoinSheet extends StatefulWidget {
-  const CreateJoinSheet({super.key});
+  final String? initialCode;
+
+  const CreateJoinSheet({super.key, this.initialCode});
 
   @override
   State<CreateJoinSheet> createState() => _CreateJoinSheetState();
@@ -20,11 +25,91 @@ class _CreateJoinSheetState extends State<CreateJoinSheet> {
   bool _busy = false;
   String? _error;
 
+  // Preview state for the join tab.
+  Map<String, dynamic>? _preview;
+  bool _previewLoading = false;
+  String? _previewError;
+  Timer? _previewDebounce;
+
+  @override
+  void initState() {
+    super.initState();
+
+    final seed = widget.initialCode?.trim().toUpperCase();
+    if (seed != null && seed.isNotEmpty) {
+      _tab = 1;
+      _codeController.text = seed;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _fetchPreview();
+      });
+    }
+
+    _codeController.addListener(_onCodeChanged);
+  }
+
   @override
   void dispose() {
+    _previewDebounce?.cancel();
+    _codeController.removeListener(_onCodeChanged);
     _nameController.dispose();
     _codeController.dispose();
     super.dispose();
+  }
+
+  void _onCodeChanged() {
+    _previewDebounce?.cancel();
+    final code = _codeController.text.trim();
+    if (code.length != 6) {
+      if (_preview != null || _previewError != null || _previewLoading) {
+        setState(() {
+          _preview = null;
+          _previewError = null;
+          _previewLoading = false;
+        });
+      }
+      return;
+    }
+    _previewDebounce = Timer(
+      const Duration(milliseconds: 350),
+      _fetchPreview,
+    );
+  }
+
+  Future<void> _fetchPreview() async {
+    final code = _codeController.text.trim().toUpperCase();
+    if (code.length != 6) return;
+
+    setState(() {
+      _previewLoading = true;
+      _previewError = null;
+    });
+
+    try {
+      final res = await Supabase.instance.client.rpc(
+        'preview_group_by_code',
+        params: {'p_code': code},
+      );
+      if (!mounted) return;
+      if (res == null) {
+        setState(() {
+          _preview = null;
+          _previewLoading = false;
+          _previewError = 'No group found with that code';
+        });
+      } else {
+        setState(() {
+          _preview = Map<String, dynamic>.from(res as Map);
+          _previewLoading = false;
+        });
+      }
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _preview = null;
+        _previewLoading = false;
+        _previewError = 'Could not load group';
+      });
+    }
   }
 
   Future<void> _run(Future<void> Function() action) async {
@@ -64,6 +149,9 @@ class _CreateJoinSheetState extends State<CreateJoinSheet> {
     final state = context.read<AppState>();
     await _run(() => state.joinGroupAndReload(code));
   }
+
+  bool get _isAlreadyMember =>
+      _preview != null && (_preview!['is_member'] as bool? ?? false);
 
   @override
   Widget build(BuildContext context) {
@@ -133,7 +221,7 @@ class _CreateJoinSheetState extends State<CreateJoinSheet> {
             ] else ...[
               TextField(
                 controller: _codeController,
-                autofocus: true,
+                autofocus: widget.initialCode == null,
                 textCapitalization: TextCapitalization.characters,
                 maxLength: 6,
                 inputFormatters: [
@@ -153,6 +241,22 @@ class _CreateJoinSheetState extends State<CreateJoinSheet> {
                 ),
                 onSubmitted: (_) => _busy ? null : _join(),
               ),
+              if (_previewLoading) ...[
+                const SizedBox(height: 12),
+                const _PreviewSkeleton(),
+              ] else if (_preview != null) ...[
+                const SizedBox(height: 12),
+                _PreviewCard(preview: _preview!),
+              ] else if (_previewError != null) ...[
+                const SizedBox(height: 12),
+                Text(
+                  _previewError!,
+                  style: const TextStyle(
+                    color: Colors.white38,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
             ],
 
             if (_error != null) ...[
@@ -168,11 +272,13 @@ class _CreateJoinSheetState extends State<CreateJoinSheet> {
             const SizedBox(height: 16),
 
             GestureDetector(
-              onTap: _busy ? null : (_tab == 0 ? _create : _join),
+              onTap: _busy || _isAlreadyMember
+                  ? null
+                  : (_tab == 0 ? _create : _join),
               child: Container(
                 height: 52,
                 decoration: BoxDecoration(
-                  color: _busy
+                  color: _busy || _isAlreadyMember
                       ? EfocColors.accent.withValues(alpha: 0.4)
                       : EfocColors.accent,
                   borderRadius: BorderRadius.circular(26),
@@ -188,7 +294,9 @@ class _CreateJoinSheetState extends State<CreateJoinSheet> {
                         ),
                       )
                     : Text(
-                        _tab == 0 ? 'Create' : 'Join',
+                        _isAlreadyMember
+                            ? 'Already a member'
+                            : (_tab == 0 ? 'Create' : 'Join'),
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 15,
@@ -262,6 +370,219 @@ class _Tab extends StatelessWidget {
             fontSize: 13,
             fontWeight: FontWeight.w700,
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PreviewSkeleton extends StatelessWidget {
+  const _PreviewSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 72,
+      decoration: BoxDecoration(
+        color: EfocColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white10),
+      ),
+      alignment: Alignment.center,
+      child: const SizedBox(
+        width: 18,
+        height: 18,
+        child: CircularProgressIndicator(
+          strokeWidth: 2,
+          color: Colors.white24,
+        ),
+      ),
+    );
+  }
+}
+
+class _PreviewCard extends StatelessWidget {
+  final Map<String, dynamic> preview;
+
+  const _PreviewCard({required this.preview});
+
+  @override
+  Widget build(BuildContext context) {
+    final name = preview['name'] as String? ?? 'Unnamed group';
+    final count = preview['member_count'] as int? ?? 0;
+    final members = (preview['members'] as List?) ?? const [];
+    final isMember = preview['is_member'] as bool? ?? false;
+
+    final names = members
+        .map((m) => (m as Map)['display_name'] as String? ?? '')
+        .where((n) => n.isNotEmpty)
+        .toList();
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+      decoration: BoxDecoration(
+        color: EfocColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isMember ? EfocColors.accent : Colors.white10,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              const Icon(
+                Icons.people_outline,
+                size: 14,
+                color: Colors.white54,
+              ),
+              const SizedBox(width: 4),
+              Text(
+                '$count',
+                style: const TextStyle(
+                  color: Colors.white54,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+          if (members.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                _AvatarStack(members: members),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    _memberSummary(names, count),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white54,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+          if (isMember) ...[
+            const SizedBox(height: 10),
+            const Text(
+              "You're already in this group",
+              style: TextStyle(
+                color: EfocColors.accentBright,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  static String _memberSummary(List<String> names, int total) {
+    if (names.isEmpty) return '';
+    if (names.length == 1 && total <= 1) return names.first;
+    final shown = names.take(3).join(', ');
+    final remaining = total - names.take(3).length;
+    if (remaining <= 0) return shown;
+    return '$shown and $remaining ${remaining == 1 ? 'other' : 'others'}';
+  }
+}
+
+class _AvatarStack extends StatelessWidget {
+  final List members;
+
+  const _AvatarStack({required this.members});
+
+  @override
+  Widget build(BuildContext context) {
+    const size = 26.0;
+    const overlap = 8.0;
+    final shown = members.take(4).toList();
+    final width = shown.isEmpty
+        ? 0.0
+        : size + (shown.length - 1) * (size - overlap);
+
+    return SizedBox(
+      width: width,
+      height: size,
+      child: Stack(
+        children: [
+          for (int i = 0; i < shown.length; i++)
+            Positioned(
+              left: i * (size - overlap),
+              child: Container(
+                width: size,
+                height: size,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: EfocColors.surface,
+                    width: 2,
+                  ),
+                ),
+                child: _Avatar(member: shown[i] as Map),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Avatar extends StatelessWidget {
+  final Map member;
+
+  const _Avatar({required this.member});
+
+  @override
+  Widget build(BuildContext context) {
+    final url = member['avatar_url'] as String?;
+    final name = (member['display_name'] as String?) ?? '';
+
+    if (url != null && url.isNotEmpty) {
+      return ClipOval(
+        child: Image.network(
+          url,
+          width: 22,
+          height: 22,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => _initial(name),
+        ),
+      );
+    }
+    return _initial(name);
+  }
+
+  Widget _initial(String name) {
+    final letter = name.isEmpty ? '?' : name.characters.first.toUpperCase();
+    return Container(
+      color: EfocColors.accent.withValues(alpha: 0.35),
+      alignment: Alignment.center,
+      child: Text(
+        letter,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 11,
+          fontWeight: FontWeight.w800,
         ),
       ),
     );

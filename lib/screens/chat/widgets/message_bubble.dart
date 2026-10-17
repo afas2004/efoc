@@ -3,12 +3,11 @@ import 'package:video_player/video_player.dart';
 
 import '../../../models/message.dart';
 import '../../../services/clip_service.dart';
-import '../../../theme/colors.dart';
 
 class MessageBubble extends StatelessWidget {
   final EfocMessage message;
   final bool isGrouped;
-  final VoidCallback onLongPress;
+  final void Function(Offset globalTap) onLongPress;
 
   const MessageBubble({
     super.key,
@@ -42,11 +41,13 @@ class MessageBubble extends StatelessWidget {
           if (!isMe) const SizedBox(width: 6),
           Flexible(
             child: GestureDetector(
-              onLongPress: onLongPress,
+              onLongPressStart: (details) =>
+                  onLongPress(details.globalPosition),
               child: Column(
                 crossAxisAlignment: isMe
                     ? CrossAxisAlignment.end
                     : CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   if (!isMe && !isGrouped)
                     Padding(
@@ -85,68 +86,67 @@ class _Bubble extends StatelessWidget {
   Widget build(BuildContext context) {
     final isMe = message.isMe;
     final maxWidth = MediaQuery.of(context).size.width * 0.72;
-
-    // WhatsApp-ish palette: own = light purple, others = dark gray
     final bg = isMe ? const Color(0xFF7C3AED) : const Color(0xFF262629);
 
     final hasText = message.text != null && message.text!.isNotEmpty;
     final hasClip = message.clipStoragePath != null;
+    final hasReply = message.replySenderName != null;
 
     return Container(
       constraints: BoxConstraints(maxWidth: maxWidth),
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.only(
-          topLeft: const Radius.circular(14),
-          topRight: const Radius.circular(14),
-          bottomLeft: Radius.circular(isMe ? 14 : 3),
-          bottomRight: Radius.circular(isMe ? 3 : 14),
+          topLeft: const Radius.circular(16),
+          topRight: const Radius.circular(16),
+          bottomLeft: Radius.circular(isMe ? 16 : 4),
+          bottomRight: Radius.circular(isMe ? 4 : 16),
         ),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (message.replySenderName != null)
-            _ReplyPreview(message: message),
+      child: IntrinsicWidth(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (hasReply) _ReplyPreview(message: message),
 
-          if (hasClip)
-            _ClipPreview(storagePath: message.clipStoragePath!),
+            if (hasClip)
+              Align(
+                alignment: isMe
+                    ? Alignment.centerRight
+                    : Alignment.centerLeft,
+                child: _ClipPreview(storagePath: message.clipStoragePath!),
+              ),
 
-          if (hasText)
+            if (hasText)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(11, 8, 11, 3),
+                child: Text(
+                  message.text!,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                    height: 1.3,
+                  ),
+                ),
+              ),
+
             Padding(
-              padding: const EdgeInsets.fromLTRB(11, 7, 11, 2),
-              child: Text(
-                message.text!,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 15,
-                  height: 1.3,
+              padding: const EdgeInsets.fromLTRB(11, 0, 11, 6),
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: Text(
+                  _formatTime(message.createdAt),
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.55),
+                    fontSize: 10,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
               ),
             ),
-
-          // Timestamp — right-aligned, small
-          Padding(
-            padding: EdgeInsets.fromLTRB(
-              hasText || hasClip ? 11 : 10,
-              hasText ? 0 : 6,
-              11,
-              hasText || hasClip ? 5 : 6,
-            ),
-            child: Align(
-              alignment: Alignment.centerRight,
-              child: Text(
-                _formatTime(message.createdAt),
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.55),
-                  fontSize: 10,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -167,14 +167,18 @@ class _ReplyPreview extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.fromLTRB(4, 4, 4, 0),
-      padding: const EdgeInsets.fromLTRB(8, 5, 8, 5),
+      margin: const EdgeInsets.fromLTRB(6, 6, 6, 0),
       decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.25),
+        color: Colors.black.withValues(alpha: 0.22),
         borderRadius: BorderRadius.circular(8),
+        border: const Border(
+          left: BorderSide(color: Colors.white70, width: 3),
+        ),
       ),
+      padding: const EdgeInsets.fromLTRB(9, 5, 9, 5),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
           Text(
             message.replySenderName ?? 'User',
@@ -189,7 +193,10 @@ class _ReplyPreview extends StatelessWidget {
               message.replyPreviewText!,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: Colors.white60, fontSize: 12),
+              style: const TextStyle(
+                color: Colors.white60,
+                fontSize: 12,
+              ),
             ),
         ],
       ),
@@ -255,7 +262,7 @@ class _ClipPreviewState extends State<_ClipPreview> {
         ClipService.instance.publicThumbnailUrl(widget.storagePath);
 
     return ClipRRect(
-      borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
       child: GestureDetector(
         onTap: _toggle,
         child: SizedBox(
