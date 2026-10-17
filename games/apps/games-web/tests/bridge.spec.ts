@@ -22,10 +22,37 @@ function resolveTs(v) {
   if (isObj(v)) return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, resolveTs(x)]));
   return v;
 }
+// Like Firebase: lists are stored as objects keyed "0", "1", ...; empty
+// lists, empty objects and nulls vanish; on the way out an object with
+// integer keys becomes a list only if more than half of 0..max are present.
+function toStored(v) {
+  if (Array.isArray(v)) v = Object.fromEntries(v.map((x, i) => [String(i), x]));
+  if (!isObj(v)) return v === undefined ? null : v;
+  const o = {};
+  for (const [k, x] of Object.entries(v)) {
+    const y = toStored(x);
+    if (y !== null && !(isObj(y) && !Object.keys(y).length)) o[k] = y;
+  }
+  return o;
+}
+function toRead(v) {
+  if (!isObj(v)) return v;
+  const keys = Object.keys(v);
+  const o = Object.fromEntries(keys.map((k) => [k, toRead(v[k])]));
+  if (keys.length && keys.every((k) => /^(0|[1-9][0-9]*)$/.test(k))) {
+    const max = Math.max(...keys.map(Number));
+    if (keys.length * 2 > max + 1) {
+      const a = new Array(max + 1).fill(null);
+      for (const k of keys) a[Number(k)] = o[k];
+      return a;
+    }
+  }
+  return o;
+}
 function read(path) {
   let n = db.root;
   for (const k of parts(path)) { if (!isObj(n)) return null; n = n[k]; if (n === undefined) return null; }
-  return n ?? null;
+  return toRead(n ?? null);
 }
 function prune(v) {
   if (!isObj(v)) return v;
@@ -33,11 +60,10 @@ function prune(v) {
   return v;
 }
 function write(path, value) {
-  value = resolveTs(value);
-  if (Array.isArray(value)) value = Object.fromEntries(value.map((x, i) => [String(i), x]));
+  value = toStored(resolveTs(value));
   const ks = parts(path); let n = db.root;
   ks.forEach((k, i) => {
-    if (i === ks.length - 1) { if (value === null) delete n[k]; else n[k] = JSON.parse(JSON.stringify(value)); }
+    if (i === ks.length - 1) { if (value === null || (isObj(value) && !Object.keys(value).length)) delete n[k]; else n[k] = JSON.parse(JSON.stringify(value)); }
     else { if (!isObj(n[k])) n[k] = {}; n = n[k]; }
   });
   prune(db.root);
@@ -147,4 +173,55 @@ test('two phones and a bot play a match through the app bridge', async ({ page }
   const p2 = await page.evaluate((room) => (window as any).harness.read(`presence/${room}/b2`), room);
   expect(p2.online).toBe(false);
   expect(p2.lastSeen).toBeGreaterThanOrEqual(before);
+});
+
+test('the host reloads mid-match on Firebase-shaped data: same seats, unique places', async ({ page }) => {
+  test.setTimeout(420_000);
+  await openHarness(page);
+  const room = `brr-${Date.now()}`;
+  const q = 'mute=1&turn=6000&preview=0&autopilot=1&migrate=600000';
+  await page.evaluate(
+    ({ room, q }) => {
+      const h = (window as any).harness;
+      h.addPhone({ room, uid: 'h1', name: 'Host', avatar: '🦁', query: q, create: { groupId: 'g1', allowed: ['h1', 'p2'] } });
+      h.addPhone({ room, uid: 'p2', name: 'Guest', avatar: '🐸', query: q });
+    },
+    { room, q },
+  );
+  const host = page.frameLocator('iframe').nth(0);
+  const guest = page.frameLocator('iframe').nth(1);
+  await expect(guest.locator('.lobby-seat')).toHaveCount(2);
+  for (let i = 0; i < 6; i++) await host.getByRole('button', { name: '+ Add bot' }).click();
+  await expect(guest.locator('.lobby-seat')).toHaveCount(8);
+  await host.getByRole('button', { name: 'Fight Till The End' }).click();
+  for (const f of [host, guest]) await f.getByRole('button', { name: 'Ready?' }).click();
+  await host.getByRole('button', { name: 'Start' }).click();
+
+  // Wait until 5 of 8 have gone out: their empty hands vanish and Firebase
+  // hands the rest back as an object keyed by seat. Then the host's tab reloads and the host carries on from hostState.
+  const outCount = () => page.evaluate((room) => {
+    const log = (window as any).harness.read(`rooms/${room}/log`) ?? {};
+    return Object.values(log).filter((e: any) => (e.events ?? []).some((x: any) => x.type === 'player_out')).length;
+  }, room);
+  await expect.poll(outCount, { timeout: 240_000, intervals: [500] }).toBeGreaterThanOrEqual(5);
+  await page.evaluate(({ room, q }) => {
+    const h = (window as any).harness;
+    h.dropPhone(0);
+    h.addPhone({ room, uid: 'h1', name: 'Host', avatar: '🦁', query: q });
+  }, { room, q });
+
+  const phones = [page.frameLocator('iframe').nth(0), page.frameLocator('iframe').nth(1)];
+  for (const f of phones) await expect(f.locator('.overlay.results')).toBeVisible({ timeout: 300_000 });
+  const res = await page.evaluate((room) => (window as any).harness.read(`rooms/${room}/results`), room);
+  const placings: number[] = res.placings;
+  expect(new Set(placings).size).toBe(8); // every seat a different place
+  const out = await page.evaluate((room) => {
+    const log = (window as any).harness.read(`rooms/${room}/log`) ?? {};
+    const seats: number[] = [];
+    for (const e of Object.values(log) as any[]) for (const x of e.events ?? []) if (x.type === 'player_out') seats.push(x.seat);
+    return seats;
+  }, room);
+  expect(new Set(out).size).toBe(out.length); // nobody goes out twice
+  const drift = await page.evaluate(() => [...document.querySelectorAll('iframe')].map((f) => (f.contentWindow as any).__room?.status().drift));
+  expect(drift).toEqual([0, 0]);
 });

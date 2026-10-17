@@ -11,12 +11,21 @@ import type { Json, RoomStore, Unsubscribe } from './store';
 type State = bigtwo.BigTwoState;
 
 /** Realtime Database stores arrays as objects and drops empty ones; put them back. */
+/**
+ * A list back from the database. Firebase drops empty lists and nulls, and
+ * returns a list with many gaps as an object keyed "0", "3", ... — so every
+ * value keeps its index (a seat's empty hand must not shift the next seat's
+ * hand into its place). Gaps come back as undefined.
+ */
 export function arr<T = Json>(v: unknown): T[] {
   if (Array.isArray(v)) return v as T[];
   if (v && typeof v === 'object') {
-    return Object.keys(v)
-      .sort((a, b) => Number(a) - Number(b))
-      .map((k) => (v as Record<string, T>)[k]!);
+    const out: T[] = [];
+    for (const [k, x] of Object.entries(v as Record<string, T>)) {
+      const i = Number(k);
+      if (Number.isInteger(i) && i >= 0 && i < 10_000) out[i] = x;
+    }
+    return Array.from(out);
   }
   return [];
 }
@@ -25,7 +34,7 @@ export function reviveState(raw: Json, players: number): State {
   const s = raw as unknown as State;
   const fill = <T>(v: unknown, n: number, empty: () => T): T[] => {
     const a = arr<T>(v);
-    while (a.length < n) a.push(empty());
+    for (let i = 0; i < n; i++) if (a[i] === undefined || a[i] === null) a[i] = empty();
     return a;
   };
   return {
