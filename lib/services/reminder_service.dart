@@ -116,6 +116,19 @@ class ReminderService {
     }
   }
 
+  /// Reminders that arrive while efoc is open (the system notification is
+  /// only shown in the background). Null where push isn't supported.
+  Future<Stream<RemoteMessage>?> foregroundMessages() async {
+    if (kIsWeb && kWebPushVapidKey.isEmpty) return null;
+    try {
+      if (!await _messaging.isSupported()) return null;
+      return FirebaseMessaging.onMessage;
+    } catch (e) {
+      debugPrint('Foreground messages unavailable: $e');
+      return null;
+    }
+  }
+
   Future<void> disable() async {
     final userId = _client.auth.currentUser?.id;
     if (userId == null) return;

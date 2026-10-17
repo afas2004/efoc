@@ -408,7 +408,7 @@ class _ProfileSheetState extends State<ProfileSheet> {
                 children: [
                   _SettingRow(
                     icon: Icons.download_outlined,
-                    label: 'Export today\'s vlog',
+                    label: 'Export vlogs',
                     trailing: const Icon(
                       Icons.chevron_right,
                       color: EfocColors.textFaint,

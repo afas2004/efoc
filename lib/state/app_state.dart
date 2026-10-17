@@ -271,6 +271,10 @@ class AppState extends ChangeNotifier {
   bool isClipUnseen(Map<String, dynamic> clip) =>
       clip['user_id'] != _myId && !_viewedClipIds.contains(clip['id']);
 
+  /// You already have a clip for the current hour in the group on screen.
+  bool get recordedThisHour =>
+      _clipsByUserAndHour.containsKey('$_myId-$currentHour');
+
   /// Drives the "new" hint in the dropdown.
   bool hasUnseenClips(String groupId) => _unseenCounts.entries
       .any((e) => e.value > 0 && e.key.startsWith('$groupId|'));

@@ -1,13 +1,18 @@
+import 'dart:async';
+
 import 'package:efoc/screens/capture/capture_screen.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../../services/reminder_service.dart';
 import '../../services/update_service.dart';
 import '../../services/vlog_service.dart';
 import '../../state/app_state.dart';
 import '../../theme/colors.dart';
+import '../../widgets/reminder_banner.dart';
 import '../../widgets/update_banner.dart';
 import '../chat/chat_screen.dart';
 import '../vlog/vlog_viewer_screen.dart';
@@ -51,6 +56,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   /// Guards against overlapping checks when the app resumes rapidly.
   bool _updateCheckInFlight = false;
 
+  // ---------- in-app reminder ----------
+  StreamSubscription<RemoteMessage>? _reminderSub;
+  RemoteNotification? _reminder;
+  Timer? _reminderTimer;
+
   @override
   void initState() {
     super.initState();
@@ -59,6 +69,27 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _maybeHandlePendingInvite();
       _runAutoUpdateCheck();
     });
+    _listenForReminders();
+  }
+
+  // ---------- in-app reminder ----------
+
+  Future<void> _listenForReminders() async {
+    final stream = await ReminderService.instance.foregroundMessages();
+    if (stream == null || !mounted) return;
+    _reminderSub = stream.listen((message) {
+      final n = message.notification;
+      if (n == null || !mounted) return;
+      _reminderTimer?.cancel();
+      setState(() => _reminder = n);
+      // Like a heads-up notification: goes away on its own.
+      _reminderTimer = Timer(const Duration(seconds: 10), _dismissReminder);
+    });
+  }
+
+  void _dismissReminder() {
+    _reminderTimer?.cancel();
+    if (mounted && _reminder != null) setState(() => _reminder = null);
   }
 
   @override
@@ -109,8 +140,36 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     UpdateService.instance.reload();
   }
 
-  /// Wraps any screen state with the floating update banner.
+  /// Wraps any screen state with the floating update banner, or the
+  /// reminder banner when a reminder just arrived (it wins: it's timely).
   Widget _withUpdateBanner(Widget child) {
+    final reminder = _reminder;
+    if (reminder != null) {
+      final state = context.read<AppState>();
+      final canRecord = state.hasGroups && !state.recordedThisHour;
+      return Stack(
+        children: [
+          child,
+          Positioned(
+            left: 0,
+            right: 0,
+            top: 0,
+            child: ReminderBanner(
+              title: reminder.title ?? 'Time to record',
+              body: reminder.body ?? 'Record your 3 seconds for this hour.',
+              onRecord: canRecord
+                  ? () {
+                      _dismissReminder();
+                      _openCapture(state.currentHour);
+                    }
+                  : null,
+              onDismiss: _dismissReminder,
+            ),
+          ),
+        ],
+      );
+    }
+
     final result = _bannerResult;
     if (result == null) return child;
 
@@ -325,6 +384,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    _reminderSub?.cancel();
+    _reminderTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     _closeAllOverlays();
     _hourController.dispose();
