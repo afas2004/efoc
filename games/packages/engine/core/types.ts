@@ -26,9 +26,11 @@ export interface RoundResult {
   placings: SeatId[];
 }
 
+export type BotLevel = 'easy' | 'normal';
+
 export type ValidateResult = { ok: true } | { ok: false; reason: string };
 
-export interface GameModule<Config, State, Move> {
+export interface GameModule<Config, State, Move, View = PlayerView> {
   id: GameId;
   minPlayers: number;
   maxPlayers: number;
@@ -37,7 +39,7 @@ export interface GameModule<Config, State, Move> {
   legalMoves(state: State, seat: SeatId): Move[];
   validate(state: State, seat: SeatId, move: Move): ValidateResult;
   apply(state: State, seat: SeatId, move: Move, rng: Rng): { state: State; events: GameEvent[] };
-  view(state: State, seat: SeatId | 'public'): PlayerView;
+  view(state: State, seat: SeatId | 'public'): View;
   result(state: State): RoundResult | null;
-  bot(view: PlayerView, level: 'easy' | 'normal', rng: Rng): Move;
+  bot(view: View, level: BotLevel, rng: Rng): Move;
 }
