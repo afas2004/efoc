@@ -7,6 +7,7 @@ import '../../services/clip_service.dart';
 import '../../services/vlog_service.dart';
 import '../../state/app_state.dart';
 import '../../theme/colors.dart';
+import '../../widgets/clip_video.dart';
 
 /// Opens a stitched vlog full-screen and marks it viewed everywhere.
 Future<void> openStitchedVlog(
@@ -33,9 +34,8 @@ Future<void> openStitchedVlog(
 /// file only exists after midnight, so this is a preview, not a download.
 Future<void> openTodayPreview(BuildContext context) {
   final state = context.read<AppState>();
-  final paths = state.todaysClipsInOrder
-      .map((c) => c['storage_path'] as String)
-      .toList();
+  final clips = state.todaysClipsInOrder;
+  final paths = clips.map((c) => c['storage_path'] as String).toList();
   if (paths.isEmpty) {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('No clips yet today')),
@@ -48,6 +48,7 @@ Future<void> openTodayPreview(BuildContext context) {
       fullscreenDialog: true,
       builder: (_) => VlogViewerScreen.today(
         clipPaths: paths,
+        clipRotations: clips.map(clipRotationOf).toList(),
         title: 'Today · ${state.currentGroup.name}',
       ),
     ),
@@ -64,16 +65,21 @@ class VlogViewerScreen extends StatefulWidget {
   /// Set for the "today so far" playlist.
   final List<String> clipPaths;
 
+  /// Per clip: 90 for clips recorded sideways (see clip_video.dart).
+  final List<int> clipRotations;
+
   const VlogViewerScreen.stitched({
     super.key,
     required EfocVlog this.vlog,
     required this.title,
     required this.groupName,
-  }) : clipPaths = const [];
+  })  : clipPaths = const [],
+        clipRotations = const [];
 
   const VlogViewerScreen.today({
     super.key,
     required this.clipPaths,
+    this.clipRotations = const [],
     required this.title,
   })  : vlog = null,
         groupName = '';
@@ -108,6 +114,12 @@ class _VlogViewerScreenState extends State<VlogViewerScreen> {
     _next?.dispose();
     super.dispose();
   }
+
+  /// Rotation of the clip on screen (stitched vlogs are already upright).
+  int get _rotation =>
+      widget.isPlaylist && _index < widget.clipRotations.length
+          ? widget.clipRotations[_index]
+          : 0;
 
   Future<VideoPlayerController> _load(String url) async {
     final c = VideoPlayerController.networkUrl(Uri.parse(url));
@@ -325,8 +337,11 @@ class _VlogViewerScreenState extends State<VlogViewerScreen> {
                               alignment: Alignment.center,
                               children: [
                                 AspectRatio(
-                                  aspectRatio: c.value.aspectRatio,
-                                  child: VideoPlayer(c),
+                                  aspectRatio: uprightAspect(c, _rotation),
+                                  child: UprightClip(
+                                    rotation: _rotation,
+                                    child: VideoPlayer(c),
+                                  ),
                                 ),
                                 if (!c.value.isPlaying)
                                   Container(

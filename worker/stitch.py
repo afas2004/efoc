@@ -52,16 +52,18 @@ FONT_FILE = os.environ.get(
 # fall back to FONT_FILE.
 _DEJAVU = "/usr/share/fonts/truetype/dejavu/"
 CAPTION_FONTS = {
-    "classic": (_DEJAVU + "DejaVuSans-Bold.ttf", 56),
-    "bold": (_DEJAVU + "DejaVuSansCondensed-Bold.ttf", 64),
-    "elegant": (_DEJAVU + "DejaVuSerif-Italic.ttf", 58),
-    "mono": (_DEJAVU + "DejaVuSansMono-Bold.ttf", 50),
+    "classic": (_DEJAVU + "DejaVuSans-Bold.ttf", 64),
+    "bold": (_DEJAVU + "DejaVuSansCondensed-Bold.ttf", 72),
+    "elegant": (_DEJAVU + "DejaVuSerif-Italic.ttf", 66),
+    "mono": (_DEJAVU + "DejaVuSansMono-Bold.ttf", 58),
 }
 
 # Where the app puts a caption with no saved position (Alignment(0, -0.3)).
 DEFAULT_CAPTION_ALIGN = (0.0, -0.3)
 
-WIDTH, HEIGHT, FPS = 720, 1280, 30
+# Landscape: clips are recorded with the phone sideways and come out 3:2.
+# Older upright clips are fitted over a blurred copy of themselves.
+WIDTH, HEIGHT, FPS = 1080, 720, 30
 MAX_CLIP_SECONDS = 4  # clips are 3s; cap guards against odd uploads
 
 HEX_COLOR = re.compile(r"^#?([0-9a-fA-F]{6})$")
@@ -210,19 +212,22 @@ def _hour_label(hour: int) -> str:
 
 def normalize_clip(src: Path, dest: Path, label: str, caption: str | None,
                    caption_color: str, work: Path, caption_font: str = "classic",
-                   caption_align: tuple[float, float] = DEFAULT_CAPTION_ALIGN) -> None:
+                   caption_align: tuple[float, float] = DEFAULT_CAPTION_ALIGN,
+                   rotation: int = 0) -> None:
     """Re-encodes one clip to the shared format with label + caption burned in.
 
-    Clips arrive as WebM (web) or MP4 (Android) in 9:16, 1:1 or 16:9. Each is
-    fitted onto a 720x1280 canvas over a blurred copy of itself so the
-    stitched vlog never shows black bars.
+    Clips arrive as WebM (web) or MP4 (Android). rotation=90 clips were
+    filmed with the phone sideways and are turned upright first. Each is
+    fitted onto the WIDTHxHEIGHT canvas over a blurred copy of itself so
+    the stitched vlog never shows black bars.
     """
     label_file = work / f"{dest.stem}.label.txt"
     label_file.write_text(label, encoding="utf-8")
 
     font = _filter_path(Path(FONT_FILE))
+    upright = "transpose=2," if rotation == 90 else ""  # 90° counter-clockwise
     vf = (
-        f"[0:v]split=2[a][b];"
+        f"[0:v]{upright}split=2[a][b];"
         f"[a]scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase,"
         f"crop={WIDTH}:{HEIGHT},boxblur=20:2[bg];"
         f"[b]scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=decrease[fg];"
@@ -323,6 +328,7 @@ def stitch_group(group_id: str, date: str, clips: list[dict],
                         if clip.get("text_x") is not None and clip.get("text_y") is not None
                         else DEFAULT_CAPTION_ALIGN
                     ),
+                    rotation=int(clip.get("rotation") or 0),
                 )
                 segments.append(seg)
             except Exception as e:  # one bad clip shouldn't sink the vlog
@@ -470,7 +476,7 @@ def stitch_day(args: argparse.Namespace) -> int:
 
     params = {
         "select": "user_id,group_id,storage_path,hour_of_day,text_overlay,"
-                  "text_color,text_font,text_x,text_y",
+                  "text_color,text_font,text_x,text_y,rotation",
         "recorded_on": f"eq.{date}",
         "order": "hour_of_day.asc,created_at.asc",
     }

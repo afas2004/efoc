@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:video_player/video_player.dart';
 
@@ -11,8 +13,8 @@ import '../../services/video_remux_service.dart';
 import '../../state/app_state.dart';
 import '../../theme/colors.dart';
 import '../../widgets/caption.dart';
+import '../../widgets/clip_video.dart';
 import 'capture_phase.dart';
-import 'capture_stage.dart';
 import 'widgets/big_countdown.dart';
 import 'widgets/capture_actions.dart';
 import 'widgets/draggable_text_overlay.dart';
@@ -31,8 +33,10 @@ class CaptureScreen extends StatefulWidget {
 
 class _CaptureScreenState extends State<CaptureScreen>
     with TickerProviderStateMixin {
-  // Fixed portrait. No picker, no forced screen rotation.
-  static const String _ratio = '9x16';
+  // Recorded with the phone sideways (top to the left) while the app stays
+  // portrait: the camera's 2:3 portrait frames hold a 3:2 landscape scene.
+  static const String _ratio = '3x2';
+  static const int _sidewaysRotation = 90;
 
   static const _clipLength = Duration(seconds: 3);
   static const _readyLength = Duration(seconds: 1);
@@ -128,6 +132,11 @@ class _CaptureScreenState extends State<CaptureScreen>
     );
     try {
       await controller.initialize();
+      if (!kIsWeb) {
+        // Same as the web: frames stay portrait, the clip is turned
+        // upright on playback (rotation = 90), not by the phone.
+        await controller.lockCaptureOrientation(DeviceOrientation.portraitUp);
+      }
       if (!mounted) {
         await controller.dispose();
         return;
@@ -255,6 +264,7 @@ class _CaptureScreenState extends State<CaptureScreen>
           mimeType: _recordedFile!.mimeType,
           textX: _textAlign.dx,
           textY: _textAlign.dy,
+          rotation: _sidewaysRotation,
         );
         successCount++;
       } catch (e) {
@@ -310,35 +320,10 @@ class _CaptureScreenState extends State<CaptureScreen>
     return '${hour - 12} PM';
   }
 
-  Widget? _buildPreview() {
-    if (_phase == CapturePhase.compose) {
-      final vc = _videoController;
-      if (vc == null || !vc.value.isInitialized) {
-        return Container(
-          color: const Color(0xFF0A0A0A),
-          alignment: Alignment.center,
-          child: const SizedBox(
-            width: 24,
-            height: 24,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              color: Colors.white24,
-            ),
-          ),
-        );
-      }
-      return SizedBox.expand(
-        child: FittedBox(
-          fit: BoxFit.cover,
-          child: SizedBox(
-            width: vc.value.size.width,
-            height: vc.value.size.height,
-            child: VideoPlayer(vc),
-          ),
-        ),
-      );
-    }
-
+  /// Live camera, filling [the landscape canvas]. The canvas is drawn
+  /// rotated for a phone held sideways, so the feed is turned back
+  /// (UprightClip) to stay as the camera sees it.
+  Widget _buildLivePreview() {
     if (_cameraError != null) {
       return Center(
         child: Padding(
@@ -352,7 +337,8 @@ class _CaptureScreenState extends State<CaptureScreen>
       );
     }
 
-    if (!_cameraReady || _cameraController == null) {
+    final controller = _cameraController;
+    if (!_cameraReady || controller == null) {
       return const Center(
         child: SizedBox(
           width: 24,
@@ -365,88 +351,242 @@ class _CaptureScreenState extends State<CaptureScreen>
       );
     }
 
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(16),
-      clipBehavior: Clip.hardEdge,
-      child: SizedBox.expand(
-        child: CameraPreview(_cameraController!),
+    // previewSize is reported landscape (sensor); the feed itself is
+    // portrait because the app is locked to portrait.
+    final ps = controller.value.previewSize ?? const Size(720, 480);
+    final w = ps.shortestSide, h = ps.longestSide;
+    Widget preview = CameraPreview(controller);
+    if (controller.description.lensDirection == CameraLensDirection.front) {
+      // The selfie mirror flips left/right of the upright phone, which is
+      // up/down once it's sideways. Turning it 180° makes it a normal
+      // left/right mirror again.
+      preview = Transform.rotate(angle: math.pi, child: preview);
+    }
+    return ClipRect(
+      child: FittedBox(
+        fit: BoxFit.cover,
+        child: UprightClip(
+          rotation: _sidewaysRotation,
+          child: SizedBox(width: w, height: h, child: preview),
+        ),
       ),
+    );
+  }
+
+  /// Insets of the physical screen, mapped onto the rotated canvas
+  /// (canvas left = screen top, canvas top = screen right, ...).
+  EdgeInsets _canvasInsets(BuildContext context) {
+    final p = MediaQuery.of(context).padding;
+    return EdgeInsets.fromLTRB(
+      p.top + 12,
+      p.right + 12,
+      p.bottom + 12,
+      p.left + 12,
     );
   }
 
   @override
   Widget build(BuildContext context) {
     final phase = _phase;
+    final isSetup = phase == CapturePhase.setup;
     final isCompose = phase == CapturePhase.compose;
     final isCounting = phase == CapturePhase.counting;
     final isRecording = phase == CapturePhase.recording;
+    final pad = _canvasInsets(context);
 
     return Scaffold(
       backgroundColor: Colors.black,
-      body: SafeArea(
-        child: Stack(
-          children: [
-            Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                  child: Row(
-                    children: [
-                      _CircleBtn(
-                        icon: Icons.close,
-                        onTap: _uploading
-                            ? null
-                            : () => Navigator.of(context).pop(),
-                      ),
-                      Expanded(
-                        child: Text(
-                          _formatHour(widget.hour),
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
+      // The keyboard opens along the phone's real bottom edge, which is the
+      // canvas's right side; don't squash the rotated layout for it.
+      resizeToAvoidBottomInset: false,
+      body: RotatedBox(
+        // Drawn for a phone turned counter-clockwise (top to the left).
+        quarterTurns: 1,
+        child: isCompose
+            ? _buildCompose(pad)
+            : Stack(
+                fit: StackFit.expand,
+                children: [
+                  _buildLivePreview(),
+                  if (isCounting) BigCountdown(progress: _ringController),
+                  if (isRecording) const RecPip(),
+
+                  // Top bar: close · hour · flip
+                  Positioned(
+                    left: pad.left,
+                    right: pad.right,
+                    top: pad.top,
+                    child: Row(
+                      children: [
+                        _CircleBtn(
+                          icon: Icons.close,
+                          onTap: isCounting || isRecording
+                              ? null
+                              : () => Navigator.of(context).pop(),
+                        ),
+                        Expanded(
+                          child: Column(
+                            children: [
+                              Text(
+                                _formatHour(widget.hour),
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w800,
+                                  shadows: [
+                                    Shadow(blurRadius: 8, color: Colors.black54),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              const Text(
+                                '3 seconds · one shot · no retakes',
+                                style: TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 11,
+                                  shadows: [
+                                    Shadow(blurRadius: 8, color: Colors.black54),
+                                  ],
+                                ),
+                              ),
+                            ],
                           ),
                         ),
+                        if (isSetup)
+                          _CircleBtn(
+                            icon: Icons.flip_camera_android_rounded,
+                            onTap: _flipCamera,
+                          )
+                        else
+                          const SizedBox(width: 38),
+                      ],
+                    ),
+                  ),
+
+                  if (isSetup) const _RotateHint(),
+
+                  // Start / Ready? / Recording…
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: pad.bottom,
+                    child: Center(
+                      child: SizedBox(
+                        width: 280,
+                        child: CaptureActions(
+                          phase: phase,
+                          selectedCount: _selectedGroups.length,
+                          showFlip: false,
+                          onFlip: _flipCamera,
+                          onStart: _startCapture,
+                          onSend: _sendClip,
+                        ),
                       ),
-                      // Keeps the hour title centred opposite the close button.
-                      const SizedBox(width: 38),
+                    ),
+                  ),
+                ],
+              ),
+      ),
+    );
+  }
+
+  /// After recording: tools on the left (the keyboard covers the right
+  /// side of the canvas), the clip in its real 3:2 shape on the right.
+  Widget _buildCompose(EdgeInsets pad) {
+    final vc = _videoController;
+    final ready = vc != null && vc.value.isInitialized;
+
+    return Stack(
+      children: [
+        Padding(
+          padding: pad,
+          child: Row(
+            children: [
+              SizedBox(
+                width: 300,
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        children: [
+                          _CircleBtn(
+                            icon: Icons.close,
+                            onTap: _uploading
+                                ? null
+                                : () => Navigator.of(context).pop(),
+                          ),
+                          const SizedBox(width: 10),
+                          Text(
+                            _formatHour(widget.hour),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      TextToolbar(
+                        text: _text,
+                        fontKey: _fontKey,
+                        color: _textColor,
+                        onTextChanged: (v) => setState(() => _text = v),
+                        onFontChanged: (v) => setState(() => _fontKey = v),
+                        onColorChanged: (v) => setState(() => _textColor = v),
+                      ),
+                      const SizedBox(height: 10),
+                      GroupChips(
+                        selected: _selectedGroups,
+                        onToggle: _toggleGroup,
+                      ),
+                      const SizedBox(height: 14),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: _uploading
+                            ? const _UploadingBar()
+                            : CaptureActions(
+                                phase: CapturePhase.compose,
+                                selectedCount: _selectedGroups.length,
+                                onFlip: _flipCamera,
+                                onStart: _startCapture,
+                                onSend: _sendClip,
+                              ),
+                      ),
                     ],
                   ),
                 ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Text(
-                    isCompose
-                        ? 'Add text, pick groups, then send'
-                        : '3 seconds · one shot · no retakes',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: Color(0xFF666666),
-                      fontSize: 11,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
-                    ),
-                    child: CaptureStage(
-                      ratio: _ratio,
-                      preview: _buildPreview(),
-                      children: [
-                        if (isCompose)
-                          Container(
-                            color: Colors.black.withValues(alpha: 0.35),
-                          ),
-                        if (isCounting)
-                          BigCountdown(progress: _ringController),
-                        if (isRecording) const RecPip(),
-                        if (isCompose)
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Center(
+                  child: AspectRatio(
+                    aspectRatio: ready ? uprightAspect(vc, _sidewaysRotation) : 3 / 2,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(16),
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          if (ready)
+                            UprightVideoCover(
+                              controller: vc,
+                              rotation: _sidewaysRotation,
+                            )
+                          else
+                            const ColoredBox(
+                              color: Color(0xFF0A0A0A),
+                              child: Center(
+                                child: SizedBox(
+                                  width: 24,
+                                  height: 24,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white24,
+                                  ),
+                                ),
+                              ),
+                            ),
                           DraggableTextOverlay(
                             text: _text,
                             fontKey: _fontKey,
@@ -455,45 +595,50 @@ class _CaptureScreenState extends State<CaptureScreen>
                             onAlignmentChanged: (a) =>
                                 setState(() => _textAlign = a),
                           ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ),
-                if (isCompose) ...[
-                  TextToolbar(
-                    text: _text,
-                    fontKey: _fontKey,
-                    color: _textColor,
-                    onTextChanged: (v) => setState(() => _text = v),
-                    onFontChanged: (v) => setState(() => _fontKey = v),
-                    onColorChanged: (v) => setState(() => _textColor = v),
-                  ),
-                  const SizedBox(height: 10),
-                  GroupChips(
-                    selected: _selectedGroups,
-                    onToggle: _toggleGroup,
-                  ),
-                ],
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 14, 12, 20),
-                  child: _uploading
-                      ? const _UploadingBar()
-                      : CaptureActions(
-                          phase: phase,
-                          selectedCount: _selectedGroups.length,
-                          onFlip: _flipCamera,
-                          onStart: _startCapture,
-                          onSend: _sendClip,
-                        ),
-                ),
-              ],
-            ),
-            if (_uploading)
-              Positioned.fill(
-                child: Container(
-                  color: Colors.black.withValues(alpha: 0.35),
-                ),
               ),
+            ],
+          ),
+        ),
+        if (_uploading)
+          Positioned.fill(
+            child: Container(color: Colors.black.withValues(alpha: 0.35)),
+          ),
+      ],
+    );
+  }
+}
+
+/// "Turn your phone" nudge on the setup screen.
+class _RotateHint extends StatelessWidget {
+  const _RotateHint();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.45),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.screen_rotation_rounded, color: Colors.white, size: 18),
+            SizedBox(width: 8),
+            Text(
+              'Turn your phone sideways',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ],
         ),
       ),

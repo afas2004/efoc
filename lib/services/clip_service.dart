@@ -62,6 +62,7 @@ class ClipService {
     String? mimeType,
     double? textX,
     double? textY,
+    int rotation = 0,
   }) async {
     final userId = _client.auth.currentUser?.id;
     if (userId == null) throw Exception('Not signed in');
@@ -108,6 +109,7 @@ class ClipService {
         'text_color': textColorHex,
         'text_x': textX,
         'text_y': textY,
+        'rotation': rotation,
       },
       onConflict: 'user_id,group_id,hour_of_day,recorded_on',
     );

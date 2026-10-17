@@ -75,7 +75,7 @@ class _HourPage extends StatelessWidget {
             for (int i = 0; i < members.length; i++) ...[
               if (i > 0) const SizedBox(height: 2),
               AspectRatio(
-                aspectRatio: 16 / 10,
+                aspectRatio: 3 / 2,
                 child: EfocGridCell(
                   memberIdx: i,
                   hourIdx: hourIdx,
@@ -91,7 +91,7 @@ class _HourPage extends StatelessWidget {
                 children: [
                   Expanded(
                     child: AspectRatio(
-                      aspectRatio: 1 / 1.05,
+                      aspectRatio: 3 / 2,
                       child: EfocGridCell(
                         memberIdx: row * 2,
                         hourIdx: hourIdx,
@@ -103,7 +103,7 @@ class _HourPage extends StatelessWidget {
                   if (row * 2 + 1 < members.length)
                     Expanded(
                       child: AspectRatio(
-                        aspectRatio: 1 / 1.05,
+                        aspectRatio: 3 / 2,
                         child: EfocGridCell(
                           memberIdx: row * 2 + 1,
                           hourIdx: hourIdx,
