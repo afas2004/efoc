@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../services/export_service.dart';
 import '../../../theme/colors.dart';
 
 class DownloadPopover extends StatelessWidget {
@@ -7,6 +8,11 @@ class DownloadPopover extends StatelessWidget {
   final VoidCallback onDismiss;
   final VoidCallback onToday;
   final VoidCallback onYesterday;
+  final VoidCallback onMake;
+
+  /// A "Make a vlog" result that finished while the sheet was closed.
+  final Future<EfocExport?> ready;
+  final ValueChanged<EfocExport> onSaveReady;
 
   const DownloadPopover({
     super.key,
@@ -14,6 +20,9 @@ class DownloadPopover extends StatelessWidget {
     required this.onDismiss,
     required this.onToday,
     required this.onYesterday,
+    required this.onMake,
+    required this.ready,
+    required this.onSaveReady,
   });
 
   @override
@@ -51,6 +60,29 @@ class DownloadPopover extends StatelessWidget {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  FutureBuilder<EfocExport?>(
+                    future: ready,
+                    builder: (context, snap) {
+                      final e = snap.data;
+                      if (e == null) return const SizedBox.shrink();
+                      return _DlRow(
+                        title: '✅ Ready to save',
+                        subtitle: '${e.clipCount ?? 0} clips · from Make a vlog',
+                        onTap: () {
+                          onDismiss();
+                          onSaveReady(e);
+                        },
+                      );
+                    },
+                  ),
+                  _DlRow(
+                    title: '✂️ Make a vlog…',
+                    subtitle: 'Pick Logs and hours',
+                    onTap: () {
+                      onDismiss();
+                      onMake();
+                    },
+                  ),
                   _DlRow(
                     title: '📼 Today · up to now',
                     subtitle: 'Watch clips so far',

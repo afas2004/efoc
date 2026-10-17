@@ -1,8 +1,8 @@
 import 'package:http/http.dart' as http;
-import 'package:share_plus/share_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/vlog.dart';
+import 'save_file.dart';
 
 class VlogService {
   VlogService._();
@@ -52,8 +52,8 @@ class VlogService {
     return _client.storage.from('vlogs').createSignedUrl(storagePath, 3600);
   }
 
-  /// Downloads the vlog and hands it to the system share sheet. On web this
-  /// is the Web Share API where supported, otherwise a browser download.
+  /// Downloads the vlog to the phone (a browser download on the web, the
+  /// share sheet in the Android app).
   Future<void> shareVlog(EfocVlog vlog, {required String groupName}) async {
     final url = await signedUrl(vlog.storagePath);
     final response = await http.get(Uri.parse(url));
@@ -61,10 +61,8 @@ class VlogService {
       throw Exception('Download failed (${response.statusCode})');
     }
     final name = 'efoc-${_slug(groupName)}-${_dateString(vlog.date)}.mp4';
-    await Share.shareXFiles(
-      [XFile.fromData(response.bodyBytes, mimeType: 'video/mp4', name: name)],
-      fileNameOverrides: [name],
-    );
+    // Straight to Downloads on the web; share sheet in the Android app.
+    await saveVideo(response.bodyBytes, name);
   }
 
   String _slug(String s) {

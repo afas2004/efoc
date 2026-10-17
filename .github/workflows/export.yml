@@ -1,0 +1,50 @@
+name: Make a vlog (on demand)
+
+# Started by the start-export Supabase Edge Function when someone taps
+# "Make a vlog" in the app. Stitches one exports row (worker/export.py).
+on:
+  workflow_dispatch:
+    inputs:
+      export_id:
+        description: "exports row id"
+        required: true
+
+concurrency:
+  group: export-${{ inputs.export_id }}
+  cancel-in-progress: false
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ffmpeg
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg fonts-dejavu-core fonts-dejavu-extra
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install requests google-auth
+
+      - name: Fetch caption fonts
+        run: |
+          mkdir -p /tmp/efoc-fonts && cd /tmp/efoc-fonts
+          base=https://github.com/google/fonts/raw/main/ofl
+          get() { curl -fsSL -o "$1" "$base/$2" || echo "::warning::font $1 missing, using fallback"; }
+          get Poppins-Bold.ttf poppins/Poppins-Bold.ttf
+          get Anton-Regular.ttf anton/Anton-Regular.ttf
+          get PlayfairDisplay-Italic.ttf "playfairdisplay/PlayfairDisplay-Italic%5Bwght%5D.ttf"
+          get JetBrainsMono.ttf "jetbrainsmono/JetBrainsMono%5Bwght%5D.ttf"
+          get Caveat.ttf "caveat/Caveat%5Bwght%5D.ttf"
+          get Pacifico-Regular.ttf pacifico/Pacifico-Regular.ttf
+
+      - name: Stitch
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          APP_TZ: ${{ vars.APP_TZ || 'Asia/Kuala_Lumpur' }}
+        run: python worker/export.py --id "${{ inputs.export_id }}"

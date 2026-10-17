@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../../services/export_service.dart';
 import '../../services/reminder_service.dart';
 import '../../services/update_service.dart';
 import '../../services/vlog_service.dart';
@@ -19,6 +20,7 @@ import '../vlog/vlog_viewer_screen.dart';
 import 'widgets/clip_popup.dart';
 import 'widgets/create_join_sheet.dart';
 import 'widgets/download_popover.dart';
+import 'widgets/make_vlog_sheet.dart';
 import 'widgets/group_dropdown.dart';
 import 'widgets/group_setting_sheet.dart';
 import 'widgets/home_top_bar.dart';
@@ -290,9 +292,31 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         onDismiss: _closeAllOverlays,
         onToday: () => openTodayPreview(context),
         onYesterday: _downloadYesterday,
+        onMake: () => showMakeVlogSheet(context),
+        ready: ExportService.instance.latestDone().catchError((_) => null),
+        onSaveReady: _saveReadyExport,
       ),
     );
     Overlay.of(context).insert(_dlOverlay!);
+  }
+
+  Future<void> _saveReadyExport(EfocExport e) async {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.showSnackBar(const SnackBar(content: Text('Downloading…')));
+    try {
+      final d = e.createdAt;
+      await ExportService.instance.save(
+        e,
+        fileName: 'efoc-${d.year}-${d.month.toString().padLeft(2, '0')}-'
+            '${d.day.toString().padLeft(2, '0')}-custom.mp4',
+      );
+      messenger.showSnackBar(const SnackBar(content: Text('Saved ✓')));
+    } catch (err) {
+      debugPrint('Save export error: $err');
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Download failed. Try again.')),
+      );
+    }
   }
 
   Future<void> _downloadYesterday() async {
