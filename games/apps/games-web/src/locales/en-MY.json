@@ -1,0 +1,144 @@
+{
+  "ui": {
+    "play": "Play",
+    "pass": "Pass",
+    "sort": "Sort",
+    "sortRank": "Sort: rank",
+    "sortSuit": "Sort: suit",
+    "menu": "Menu",
+    "rules": "Rules",
+    "leave": "Leave",
+    "close": "Close",
+    "you": "You",
+    "yourTurn": "Your turn",
+    "waiting": "Waiting for players",
+    "tooSlow": "Too slow!",
+    "afk": "AFK",
+    "imBack": "I'm back",
+    "playAgain": "Play again",
+    "results": "Results",
+    "round": "Round {n}",
+    "points": "{n} pts",
+    "cardsLeft": "{n} cards",
+    "oneCard": "1 card",
+    "pass_chip": "Pass",
+    "out": "Out",
+    "place": "#{n}",
+    "unfinished": "Unfinished",
+    "humour": "Humour",
+    "humourOff": "Off",
+    "humourMild": "Mild",
+    "humourSpicy": "Spicy",
+    "sound": "Sound",
+    "on": "On",
+    "off": "Off",
+    "reducedMotion": "Reduced motion",
+    "fourColour": "Four-colour deck",
+    "skipTutorial": "Skip tutorial",
+    "gotIt": "Got it",
+    "secondsLeft": "{n} seconds left",
+    "doubled": "Doubled",
+    "bomb": "BOMB!",
+    "doubleIt": "Double it!",
+    "finalRound": "Final round counts double!",
+    "nobody": "Nobody? Nobody.",
+    "practice": "Practice vs bots",
+    "suitNames": { "d": "diamonds", "c": "clubs", "h": "hearts", "s": "spades" },
+    "rankNames": { "3": "Three", "4": "Four", "5": "Five", "6": "Six", "7": "Seven", "8": "Eight", "9": "Nine", "T": "Ten", "J": "Jack", "Q": "Queen", "K": "King", "A": "Ace", "2": "Two" },
+    "cardLabel": "{rank} of {suit}",
+    "selected": "selected",
+    "combo": {
+      "single": "Single",
+      "pair": "Pair",
+      "triple": "Triple",
+      "quad": "Four of a kind",
+      "straight": "Straight",
+      "flush": "Flush",
+      "fullhouse": "Full house",
+      "fourkind": "Four of a kind",
+      "straightflush": "Straight flush"
+    }
+  },
+  "tutorial": {
+    "lead3d": "You hold 3♦, so you start. Tap the 3♦ (you can add cards that make a pair, triple or 5-card hand), then tap Play.",
+    "beatIt": "Someone played. Beat it with the same number of cards but higher, or tap Pass.",
+    "freeLead": "Everyone passed, so you lead! Play anything: a single, pair, triple or 5-card hand.",
+    "order": "Order: 3 is lowest, then up to K, A, and 2 is highest. Suits: ♦ < ♣ < ♥ < ♠.",
+    "goal": "Empty your hand first. Everyone else takes a point for each card left."
+  },
+  "rules": {
+    "bigtwo": [
+      "Get rid of all your cards first.",
+      "Ranks: 3 lowest, then 4 to K, A, and 2 highest. Suits: ♦ < ♣ < ♥ < ♠.",
+      "Whoever holds 3♦ starts, and the first play must include it.",
+      "Play a single, pair, triple or a 5-card hand. You must play the same number of cards as the last play, and beat it.",
+      "5-card hands, low to high: straight, flush, full house, four of a kind + 1, straight flush.",
+      "A straight is 5 in a row from 3 up to 2 (J-Q-K-A-2 is the highest). No wrapping.",
+      "A better suit wins between flushes; within a suit, the highest card wins.",
+      "When everyone else passes, the last player to play leads anything.",
+      "Standard: the round ends when someone goes out. Others score a point per card left; 10 to 12 cards count double, 13 triple.",
+      "Fight Till The End: play on until one player still holds cards. 1st scores 0, each later place +1, and last also adds cards left."
+    ]
+  },
+  "jester": {
+    "round_start": [
+      { "text": "Shuffle up. Who's crying first?", "tone": "neutral" },
+      { "text": "New round, new chance to embarrass yourselves.", "tone": "neutral", "spicy": true },
+      { "text": "Okay okay, fresh cards. Focus, everyone.", "tone": "neutral" }
+    ],
+    "bomb": [
+      { "text": "BOOM! Who ordered that?", "tone": "neutral" },
+      { "text": "{name} brought a bomb to a card game. Respect.", "tone": "cheer" },
+      { "text": "Walao eh, {name} not playing around.", "tone": "cheer" }
+    ],
+    "all_passed": [
+      { "text": "Nobody? Nobody.", "tone": "neutral" },
+      { "text": "Pass, pass, pass. Riveting.", "tone": "tease" },
+      { "text": "{name} runs this table now.", "tone": "cheer" }
+    ],
+    "two_early": [
+      { "text": "Spending your 2 already? Bold.", "tone": "tease" },
+      { "text": "Alamak, spend your 2 so early ah?", "tone": "tease" },
+      { "text": "A 2 this early? {name} has a plan. Probably.", "tone": "neutral" }
+    ],
+    "pass_streak": [
+      { "text": "Walao, pass again?", "tone": "tease" },
+      { "text": "{name} is saving cards for retirement.", "tone": "tease", "spicy": true },
+      { "text": "Patience, {name}. Your moment is coming.", "tone": "cheer" }
+    ],
+    "too_slow": [
+      { "text": "Too slow! The bot played for you.", "tone": "tease" },
+      { "text": "{name} went to makan, is it?", "tone": "tease" },
+      { "text": "No rush, {name}. Except there is.", "tone": "neutral" }
+    ],
+    "double_it": [
+      { "text": "Third time too slow. {name}'s penalty is doubled!", "tone": "tease" },
+      { "text": "Slowpoke tax! {name} pays double.", "tone": "tease" }
+    ],
+    "player_out": [
+      { "text": "{name} is out! Very clean.", "tone": "cheer" },
+      { "text": "{name} escapes. The rest of you, keep suffering.", "tone": "cheer", "spicy": true }
+    ],
+    "one_card": [
+      { "text": "{name} on one card. Panic now.", "tone": "neutral" },
+      { "text": "Last card for {name}! Somebody do something.", "tone": "neutral" }
+    ],
+    "win": [
+      { "text": "{name} wins! Steady lah.", "tone": "cheer" },
+      { "text": "Champion {name}. Take a bow.", "tone": "cheer" }
+    ],
+    "last_place": [
+      { "text": "{name}, next round is yours. Confirm.", "tone": "cheer" },
+      { "text": "{name} lost, but with style. Sort of.", "tone": "tease" },
+      { "text": "Comeback arc loading… {name}.", "tone": "cheer" },
+      { "text": "{name} holding cards like souvenirs.", "tone": "tease", "spicy": true }
+    ],
+    "comeback": [
+      { "text": "Comeback! Nobody saw that coming.", "tone": "cheer" }
+    ],
+    "cheer": [
+      { "text": "Chin up, {name}. Still got time.", "tone": "cheer" },
+      { "text": "{name}, you got this.", "tone": "cheer" }
+    ]
+  }
+}

@@ -1,0 +1,879 @@
+// The Big Two table: seats, hand, centre, action bar, timers, and every
+// key moment from the spec mapped to a tier. State always renders at once;
+// effects play on top and never hold the rules back.
+
+import { bigtwo, type Card, type GameEvent, type SeatId } from '@efoc/engine';
+import { haptic } from '../../bridge';
+import { banner, burst, confetti, dim, shake, type ColourRole } from '../../feel/effects';
+import { Jester, type Humour } from '../../feel/jester';
+import { sound, unlockAudio, setMuted } from '../../feel/sound';
+import { FeelQueue, type Tier } from '../../feel/tiers';
+import { L, fmt } from '../../strings';
+import { cardLabel, cardsText, makeCard } from '../../table/cardFace';
+import { computeLayout, handPlaces, RAISE_PX, type Box, type TableLayout } from '../../table/layout';
+
+type View = bigtwo.BigTwoView;
+type Move = bigtwo.BigTwoMove;
+
+export interface SeatMeta {
+  name: string;
+  avatar: string;
+  bot: boolean;
+}
+
+export interface TableSettings {
+  humour: Humour;
+  sound: boolean;
+  reducedMotion: boolean;
+  fourColour: boolean;
+}
+
+export interface TableHooks {
+  move(move: Move): void;
+  playAgain?: () => void;
+  nextRound?: () => void;
+  back(): void;
+  exit(): void;
+}
+
+export interface UpdateMeta {
+  deadline: number | null;
+  afk: boolean[];
+  totals?: number[];
+}
+
+interface TrickPlay {
+  seat: SeatId;
+  cards: Card[];
+  kind: string;
+}
+
+type SortMode = 'rank' | 'suit' | 'custom';
+
+const TWO = 12;
+const LONG_PRESS_MS = 350;
+
+export class BigTwoTable {
+  readonly feel = new FeelQueue();
+  readonly jester = new Jester();
+  private layout!: TableLayout;
+  private view: View | null = null;
+  private meta: UpdateMeta = { deadline: null, afk: [] };
+  private sprites = new Map<Card, HTMLElement>();
+  private selected = new Set<Card>();
+  private pending: Card[] | null = null;
+  private trick: TrickPlay[] = [];
+  private sortMode: SortMode = 'rank';
+  private customOrder: Card[] = [];
+  private passStreak: number[] = [];
+  private outSeats = new Map<SeatId, number>();
+  private initialHand = 13;
+  private lastTickSecond = -1;
+  private announced10 = false;
+  private resultsOpen = false;
+
+  // DOM
+  private table: HTMLElement;
+  private cardLayer: HTMLElement;
+  private seatEls: HTMLElement[] = [];
+  private centreLabel: HTMLElement;
+  private timerBar: HTMLElement;
+  private timerFill: HTMLElement;
+  private actionBar: HTMLElement;
+  private playBtn: HTMLButtonElement;
+  private passBtn: HTMLButtonElement;
+  private sortBtn: HTMLButtonElement;
+  private backBtn: HTMLButtonElement;
+  private fx: HTMLElement;
+  private jesterEl: HTMLElement;
+  private overlay: HTMLElement;
+  private live: HTMLElement;
+  private tipEl: HTMLElement;
+
+  constructor(
+    private readonly root: HTMLElement,
+    readonly me: SeatId,
+    private readonly seatMeta: SeatMeta[],
+    private readonly isHost: boolean,
+    private readonly hooks: TableHooks,
+    public settings: TableSettings,
+  ) {
+    root.innerHTML = '';
+    root.className = 'efoc-root felt-bigtwo';
+    this.table = el('div', 'table', root);
+    this.cardLayer = el('div', 'card-layer', this.table);
+    this.centreLabel = el('div', 'centre-label', this.table);
+    this.timerBar = el('div', 'timer-bar', this.table);
+    this.timerFill = el('div', 'timer-fill', this.timerBar);
+    this.actionBar = el('div', 'action-bar', this.table);
+    const menuBtn = button(this.actionBar, 'btn btn-icon', '☰', L().ui.menu);
+    this.sortBtn = button(this.actionBar, 'btn btn-ghost', L().ui.sortRank, L().ui.sort);
+    this.backBtn = button(this.actionBar, 'btn btn-turn hidden', L().ui.imBack, L().ui.imBack);
+    this.passBtn = button(this.actionBar, 'btn btn-secondary', L().ui.pass, L().ui.pass);
+    this.playBtn = button(this.actionBar, 'btn btn-primary', L().ui.play, L().ui.play);
+    this.fx = el('div', 'fx-layer', root);
+    this.jesterEl = el('div', 'jester hidden', root);
+    this.jesterEl.setAttribute('aria-live', 'polite');
+    this.tipEl = el('div', 'tip hidden', root);
+    this.overlay = el('div', 'overlay hidden', root);
+    this.live = el('div', 'sr-only', root);
+    this.live.setAttribute('aria-live', 'assertive');
+
+    menuBtn.addEventListener('click', () => this.openMenu());
+    this.sortBtn.addEventListener('click', () => this.toggleSort());
+    this.passBtn.addEventListener('click', () => this.pass());
+    this.playBtn.addEventListener('click', () => this.play());
+    this.backBtn.addEventListener('click', () => this.hooks.back());
+    document.addEventListener('pointerdown', () => unlockAudio(), { capture: true });
+    window.addEventListener('resize', () => this.render());
+    this.applySettings();
+    this.tick();
+  }
+
+  // ------------------------------------------------------------ settings
+
+  applySettings(): void {
+    const reduced = this.settings.reducedMotion || matchMedia('(prefers-reduced-motion: reduce)').matches;
+    this.feel.reduced = reduced;
+    this.root.classList.toggle('reduced-motion', reduced);
+    this.root.classList.toggle('four-colour', this.settings.fourColour);
+    this.jester.humour = this.settings.humour;
+    setMuted(!this.settings.sound);
+  }
+
+  // ------------------------------------------------------------- updates
+
+  /** New state from the host, with the events that produced it. */
+  update(view: View, events: GameEvent[], meta: UpdateMeta): void {
+    const prev = this.view;
+    this.view = view;
+    this.meta = meta;
+    if (this.passStreak.length !== view.players) this.passStreak = new Array<number>(view.players).fill(0);
+    // A confirmed play replaces the optimistic one.
+    if (this.pending && events.some((e) => e.type === 'card_played' && e.seat === this.me)) this.pending = null;
+    if (this.pending && view.turn !== this.me) this.pending = null;
+    for (const c of [...this.selected]) if (!view.hand.includes(c)) this.selected.delete(c);
+    for (const e of events) this.trackTrick(e);
+    this.render(prev, events);
+    for (const e of events) this.moment(e, view);
+  }
+
+  /** The host rejected my move: snap back with the reason. */
+  reject(reason: string): void {
+    this.pending = null;
+    this.render();
+    sound.error();
+    haptic('error');
+    this.feel.play(1, 'rejected', (ctx) => {
+      shake(this.cardLayer, 'small', ctx);
+      banner(this.fx, reason, 'danger', 'pop', ctx, this.handTop());
+    });
+  }
+
+  private trackTrick(e: GameEvent): void {
+    if (e.type === 'round_started') {
+      this.trick = [];
+      this.outSeats.clear();
+      this.customOrder = [];
+      this.resultsOpen = false;
+      this.closeOverlay();
+      this.initialHand = this.view?.hand.length || 13;
+      this.passStreak.fill(0);
+    } else if (e.type === 'card_played') {
+      this.trick.push({ seat: e.seat as number, cards: e.cards as Card[], kind: e.kind as string });
+      this.passStreak[e.seat as number] = 0;
+    } else if (e.type === 'all_passed') {
+      this.trick = [];
+    } else if (e.type === 'player_out') {
+      this.outSeats.set(e.seat as number, e.place as number);
+    } else if (e.type === 'passed') {
+      this.passStreak[e.seat as number] = (this.passStreak[e.seat as number] ?? 0) + 1;
+    }
+  }
+
+  // -------------------------------------------------------------- render
+
+  private relSeat(seat: SeatId): number {
+    const n = this.view?.players ?? this.seatMeta.length;
+    return (seat - this.me + n) % n;
+  }
+
+  private seatBox(seat: SeatId): Box | null {
+    const r = this.relSeat(seat);
+    return r === 0 ? null : this.layout.seats[r - 1] ?? null;
+  }
+
+  private seatCentre(seat: SeatId): { x: number; y: number } {
+    const b = this.seatBox(seat);
+    if (!b) return this.handTop();
+    return { x: b.x + b.w / 2, y: b.y + b.h / 2 };
+  }
+
+  private handTop(): { x: number; y: number } {
+    return { x: this.layout.hand.x + this.layout.hand.w / 2, y: this.layout.hand.y };
+  }
+
+  private sortedHand(hand: Card[]): Card[] {
+    if (this.sortMode === 'custom') {
+      const known = this.customOrder.filter((c) => hand.includes(c));
+      return [...known, ...bigtwo.sortCards(hand.filter((c) => !known.includes(c)))];
+    }
+    if (this.sortMode === 'suit') {
+      return [...hand].sort((a, b) => bigtwo.suitIndex(a) - bigtwo.suitIndex(b) || bigtwo.rankIndex(a) - bigtwo.rankIndex(b));
+    }
+    return bigtwo.sortCards(hand);
+  }
+
+  render(prev?: View | null, events: GameEvent[] = []): void {
+    const v = this.view;
+    if (!v) return;
+    const vw = this.root.clientWidth || window.innerWidth;
+    const vh = this.root.clientHeight || window.innerHeight;
+    this.layout = computeLayout(vw, vh, v.players, readInsets(), Math.max(v.hand.length, 1));
+    const lay = this.layout;
+    this.root.style.setProperty('--card-w', `${lay.handW}px`);
+    this.root.style.setProperty('--card-h', `${lay.handH}px`);
+
+    this.renderSeats(v);
+    place(this.timerBar, lay.timerBar);
+    place(this.actionBar, lay.actionBar);
+
+    // Cards: my hand (minus an optimistic play) and the centre trick.
+    const handCards = this.sortedHand(v.hand.filter((c) => !this.pending?.includes(c)));
+    const places = handPlaces(handCards.length, lay);
+    const wanted = new Map<Card, { x: number; y: number; rot: number; scale: number; z: number; opacity: number }>();
+    handCards.forEach((c, i) => {
+      const p = places[i]!;
+      const up = this.selected.has(c) ? RAISE_PX : 0;
+      wanted.set(c, { x: p.x, y: p.y - up, rot: p.rot, scale: 1, z: 10 + p.z, opacity: 1 });
+    });
+    const plays: TrickPlay[] = [...this.trick];
+    if (this.pending) plays.push({ seat: this.me, cards: this.pending, kind: '' });
+    const shown = plays.slice(-2);
+    const c = lay.centre;
+    // Centre cards shrink to fit the play area: five cards across, current play plus the one under it.
+    const tableScale = Math.min(1, (lay.cardW * 1.25) / lay.handW, c.w / (3.5 * lay.handW), Math.max(0.3, (c.h - 24) / (lay.handH * 1.4)));
+    shown.forEach((play, idx) => {
+      const current = idx === shown.length - 1;
+      const s = current ? tableScale : tableScale * 0.8;
+      const w = lay.handW * s;
+      const step = w * 0.62;
+      const total = w + step * (play.cards.length - 1);
+      const x0 = c.x + (c.w - total) / 2;
+      const y = c.y + c.h * 0.42 - (lay.handH * s) / 2 - (current ? 0 : lay.handH * s * 0.35);
+      play.cards.forEach((card, i) => {
+        wanted.set(card, { x: x0 + i * step, y, rot: current ? (i - (play.cards.length - 1) / 2) * 2 : -4, scale: s, z: (current ? 300 : 200) + i, opacity: current ? 1 : 0.55 });
+      });
+    });
+
+    // Remove sprites that left the table.
+    for (const [card, sprite] of this.sprites) {
+      if (wanted.has(card)) continue;
+      this.sprites.delete(card);
+      sprite.style.opacity = '0';
+      sprite.style.pointerEvents = 'none';
+      setTimeout(() => sprite.remove(), 260);
+    }
+    // Place sprites; new ones start where they come from.
+    const playedBy = new Map<Card, SeatId>();
+    for (const e of events) if (e.type === 'card_played') for (const card of e.cards as Card[]) playedBy.set(card, e.seat as number);
+    const dealing = events.some((e) => e.type === 'round_started');
+    let dealIndex = 0;
+    for (const [card, t] of wanted) {
+      let sprite = this.sprites.get(card);
+      if (!sprite) {
+        sprite = makeCard(card);
+        this.cardLayer.appendChild(sprite);
+        this.sprites.set(card, sprite);
+        this.bindCard(sprite, card);
+        const from = playedBy.has(card) ? this.seatCentre(playedBy.get(card)!) : dealing ? { x: c.x + c.w / 2, y: c.y + c.h / 2 } : null;
+        if (from) {
+          sprite.classList.add('no-anim');
+          sprite.style.transform = `translate(${from.x - lay.handW * 0.2}px, ${from.y - lay.handH * 0.2}px) scale(0.4)`;
+          sprite.style.opacity = '0';
+          void sprite.offsetWidth;
+          sprite.classList.remove('no-anim');
+          if (dealing) sprite.style.transitionDelay = `${Math.min(dealIndex++ * 25, 300)}ms`;
+        }
+      }
+      sprite.style.transform = `translate(${t.x}px, ${t.y}px) rotate(${t.rot}deg) scale(${t.scale})`;
+      sprite.style.opacity = String(t.opacity);
+      sprite.style.zIndex = String(t.z);
+      const inHand = t.z < 200;
+      sprite.classList.toggle('in-hand', inHand);
+      sprite.classList.toggle('selected', this.selected.has(card));
+      sprite.setAttribute('aria-label', cardLabel(card, this.selected.has(card)));
+      sprite.tabIndex = inHand ? 0 : -1;
+      sprite.setAttribute('role', inHand ? 'button' : 'img');
+      sprite.setAttribute('aria-pressed', inHand ? String(this.selected.has(card)) : 'false');
+      if (dealing) setTimeout(() => (sprite!.style.transitionDelay = ''), 400);
+    }
+
+    // Centre label: what is on the table and who played it.
+    const top = this.trick[this.trick.length - 1];
+    this.centreLabel.textContent = top
+      ? `${(L().ui.combo as Record<string, string>)[top.kind] ?? ''} · ${this.nameOf(top.seat)}`
+      : v.turn === this.me && v.phase === 'play'
+        ? L().ui.yourTurn
+        : '';
+    place(this.centreLabel, { x: c.x, y: c.y + c.h * 0.42 + lay.handH * tableScale * 0.6, w: c.w, h: 22 });
+
+    this.renderButtons();
+    void prev;
+  }
+
+  private renderSeats(v: View): void {
+    const lay = this.layout;
+    while (this.seatEls.length < v.players - 1) {
+      const s = el('div', 'seat', this.table);
+      s.innerHTML =
+        '<div class="avatar"><svg class="ring" viewBox="0 0 36 36"><circle class="ring-bg" cx="18" cy="18" r="16"/><circle class="ring-fg" cx="18" cy="18" r="16"/></svg><span class="face"></span><span class="dot"></span></div>' +
+        '<div class="name"></div><div class="info"><span class="count"></span><span class="score"></span></div><div class="chip hidden"></div>';
+      this.seatEls.push(s);
+    }
+    for (let r = 1; r < v.players; r++) {
+      const seat = (this.me + r) % v.players;
+      const s = this.seatEls[r - 1]!;
+      place(s, lay.seats[r - 1]!);
+      s.classList.toggle('compact', lay.compact);
+      s.dataset.seat = String(seat);
+      const meta = this.seatMeta[seat]!;
+      s.querySelector('.face')!.textContent = meta.avatar;
+      s.querySelector('.name')!.textContent = meta.name.slice(0, 8);
+      const count = v.handCounts[seat]!;
+      s.querySelector('.count')!.textContent = count === 1 ? L().ui.oneCard : fmt(L().ui.cardsLeft, { n: count });
+      const total = this.meta.totals?.[seat] ?? v.scores[seat] ?? 0;
+      s.querySelector('.score')!.textContent = v.round > 1 || total ? fmt(L().ui.points, { n: total }) : '';
+      const isTurn = v.phase === 'play' && v.turn === seat;
+      s.classList.toggle('turn', isTurn);
+      s.classList.toggle('passed', v.passed[seat] === true && v.lead !== null);
+      s.classList.toggle('out', this.outSeats.has(seat));
+      s.classList.toggle('last-card', count === 1);
+      const afk = this.meta.afk[seat] === true;
+      s.classList.toggle('bot', meta.bot || afk);
+      const chip = s.querySelector('.chip') as HTMLElement;
+      if (this.outSeats.has(seat)) {
+        chip.textContent = fmt(L().ui.place, { n: this.outSeats.get(seat)! });
+        chip.className = 'chip chip-gold';
+      } else if (afk) {
+        chip.textContent = L().ui.afk;
+        chip.className = 'chip chip-danger';
+      } else if (v.passed[seat] && v.lead) {
+        chip.textContent = L().ui.pass_chip;
+        chip.className = 'chip';
+      } else chip.className = 'chip hidden';
+      s.setAttribute('aria-label', `${meta.name}, ${s.querySelector('.count')!.textContent}${isTurn ? ', ' + L().ui.yourTurn.toLowerCase() : ''}`);
+    }
+    for (let r = v.players - 1; r < this.seatEls.length; r++) this.seatEls[r]!.remove();
+    this.seatEls.length = v.players - 1;
+  }
+
+  private selectionPlay(): bigtwo.Combo | null {
+    const v = this.view;
+    if (!v || v.phase !== 'play' || v.turn !== this.me || this.pending) return null;
+    const cards = [...this.selected];
+    const combo = bigtwo.classify(cards, v.config);
+    if (!combo) return null;
+    if (v.mustInclude && !cards.includes(v.mustInclude)) return null;
+    if (v.lead) {
+      const lead = bigtwo.classify(v.lead.cards, v.config);
+      if (!lead || !bigtwo.beats(combo, lead)) return null;
+    }
+    return combo;
+  }
+
+  private renderButtons(): void {
+    const v = this.view!;
+    const myTurn = v.phase === 'play' && v.turn === this.me && !this.pending;
+    const combo = this.selectionPlay();
+    this.playBtn.disabled = !combo;
+    this.playBtn.textContent = combo ? `${L().ui.play} ${(L().ui.combo as Record<string, string>)[combo.kind]}` : L().ui.play;
+    this.passBtn.disabled = !(myTurn && v.lead);
+    const afk = this.meta.afk[this.me] === true;
+    this.backBtn.classList.toggle('hidden', !afk);
+    this.passBtn.classList.toggle('hidden', afk);
+    this.actionBar.classList.toggle('my-turn', myTurn);
+    this.timerBar.classList.toggle('hidden', !(v.phase === 'play' && this.meta.deadline));
+    this.sortBtn.textContent = this.sortMode === 'suit' ? L().ui.sortSuit : L().ui.sortRank;
+  }
+
+  // --------------------------------------------------------------- input
+
+  private bindCard(sprite: HTMLElement, card: Card): void {
+    let startX = 0;
+    let startY = 0;
+    let pressTimer: ReturnType<typeof setTimeout> | null = null;
+    let dragging = false;
+    let moved = false;
+    let pointer: number | null = null;
+    const base = (): string => sprite.style.transform;
+    let startTransform = '';
+
+    sprite.addEventListener('pointerdown', (e) => {
+      if (!sprite.classList.contains('in-hand')) return;
+      pointer = e.pointerId;
+      startX = e.clientX;
+      startY = e.clientY;
+      moved = false;
+      dragging = false;
+      startTransform = base();
+      try {
+        sprite.setPointerCapture(e.pointerId);
+      } catch {
+        /* synthetic events */
+      }
+      pressTimer = setTimeout(() => {
+        dragging = true;
+        sprite.classList.add('dragging');
+        haptic('light');
+      }, LONG_PRESS_MS);
+    });
+    sprite.addEventListener('pointermove', (e) => {
+      if (pointer !== e.pointerId) return;
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      if (Math.abs(dx) > 8 || Math.abs(dy) > 8) moved = true;
+      if (dragging) {
+        sprite.style.transform = `${startTransform} translate(${dx}px, ${dy}px)`;
+        return;
+      }
+      if (moved && pressTimer) {
+        clearTimeout(pressTimer);
+        pressTimer = null;
+      }
+    });
+    const up = (e: PointerEvent): void => {
+      if (pointer !== e.pointerId) return;
+      pointer = null;
+      if (pressTimer) clearTimeout(pressTimer);
+      pressTimer = null;
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      if (dragging) {
+        dragging = false;
+        sprite.classList.remove('dragging');
+        this.dropAt(card, e.clientX);
+        return;
+      }
+      if (dy < -40 && Math.abs(dx) < 50 && this.selected.has(card)) {
+        this.play(); // swipe up on a selected card plays
+        return;
+      }
+      if (!moved) this.toggle(card);
+    };
+    sprite.addEventListener('pointerup', up);
+    sprite.addEventListener('pointercancel', (e) => {
+      if (pointer !== e.pointerId) return;
+      pointer = null;
+      if (pressTimer) clearTimeout(pressTimer);
+      dragging = false;
+      sprite.classList.remove('dragging');
+      this.render();
+    });
+    sprite.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        if (sprite.classList.contains('in-hand')) this.toggle(card);
+      }
+    });
+  }
+
+  private toggle(card: Card): void {
+    if (this.selected.has(card)) this.selected.delete(card);
+    else this.selected.add(card);
+    sound.click();
+    haptic('light');
+    this.feel.play(0, 'select', () => {});
+    this.render();
+  }
+
+  private dropAt(card: Card, clientX: number): void {
+    const v = this.view!;
+    const order = this.sortedHand(v.hand).filter((c) => c !== card);
+    const rect = this.root.getBoundingClientRect();
+    const x = clientX - rect.left;
+    const places = handPlaces(order.length + 1, this.layout);
+    let idx = places.findIndex((p) => p.x + this.layout.handW / 2 > x);
+    if (idx < 0) idx = order.length;
+    order.splice(idx, 0, card);
+    this.customOrder = order;
+    this.sortMode = 'custom';
+    this.feel.play(0, 'reorder', () => {});
+    sound.click();
+    this.render();
+  }
+
+  private toggleSort(): void {
+    this.sortMode = this.sortMode === 'suit' ? 'rank' : 'suit';
+    sound.click();
+    this.feel.play(0, 'sort', () => {});
+    this.render();
+  }
+
+  private play(): void {
+    const combo = this.selectionPlay();
+    if (!combo) return;
+    const cards = bigtwo.sortCards([...this.selected]);
+    this.selected.clear();
+    // Animate at once; the host confirms (or snaps it back) right after.
+    this.pending = cards;
+    haptic('light');
+    this.render();
+    this.hooks.move({ type: 'play', cards });
+  }
+
+  private pass(): void {
+    const v = this.view;
+    if (!v || v.turn !== this.me || !v.lead) return;
+    this.selected.clear();
+    this.hooks.move({ type: 'pass' });
+  }
+
+  // ------------------------------------------------------------- moments
+
+  private nameOf(seat: SeatId): string {
+    return seat === this.me ? L().ui.you : this.seatMeta[seat]?.name ?? '';
+  }
+
+  private say(event: string, seat: SeatId | null, force = false): void {
+    const line = this.jester.say(event, seat, seat === null ? '' : this.seatMeta[seat]?.name ?? '', force);
+    if (!line) return;
+    const j = this.jesterEl;
+    j.innerHTML = `<span class="jester-face" aria-hidden="true">🃏</span><span class="jester-text"></span>`;
+    j.querySelector('.jester-text')!.textContent = line.text;
+    j.classList.remove('hidden');
+    j.classList.toggle('laugh', line.tone === 'tease');
+    const lay = this.layout;
+    j.style.left = `${lay.centre.x + 4}px`;
+    j.style.top = `${lay.centre.y + 4}px`;
+    j.style.maxWidth = `${Math.max(160, lay.centre.w - 8)}px`;
+    clearTimeout((j as unknown as { _t?: number })._t);
+    (j as unknown as { _t?: number })._t = window.setTimeout(() => j.classList.add('hidden'), 3200);
+  }
+
+  private pop(tier: Tier, name: string, text: string, role: ColourRole, at: { x: number; y: number }): void {
+    this.feel.play(tier, name, (ctx) => banner(this.fx, text, role, 'pop', ctx, at));
+  }
+
+  private moment(e: GameEvent, v: View): void {
+    const seat = typeof e.seat === 'number' ? e.seat : null;
+    switch (e.type) {
+      case 'round_started': {
+        this.feel.play(1, 'deal', () => {
+          for (let i = 0; i < 4; i++) setTimeout(() => sound.thud(i), i * 60);
+        });
+        this.say('round_start', null);
+        if (v.config.roundsToPlay > 1 && v.round === v.config.roundsToPlay) {
+          this.big('final_round', L().ui.finalRound, 'danger');
+        }
+        if (v.turn === this.me) this.myTurnCue();
+        break;
+      }
+      case 'card_played': {
+        const cards = e.cards as Card[];
+        this.feel.play(1, 'card_played', () => cards.forEach((_, i) => setTimeout(() => sound.thud(i), i * 45)));
+        if (seat === this.me) haptic('light');
+        const at = seat === null ? this.handTop() : this.seatCentre(seat);
+        const isTwoSingle = cards.length === 1 && bigtwo.rankIndex(cards[0]!) === TWO;
+        if (isTwoSingle && seat !== null) {
+          this.pop(2, 'two', '2!', 'danger', { x: this.layout.centre.x + this.layout.centre.w / 2, y: this.layout.centre.y + 20 });
+          sound.whoosh();
+          if ((e.left as number) >= this.initialHand / 2) this.say('two_early', seat);
+        }
+        if ((e.left as number) === 1 && seat !== null) {
+          this.pop(2, 'one_card', '1!', 'danger', at);
+          haptic('medium');
+          this.say('one_card', seat);
+        }
+        if (v.phase === 'play' && v.turn === this.me) this.myTurnCue();
+        break;
+      }
+      case 'bomb': {
+        this.big('bomb', L().ui.bomb, 'danger', true);
+        this.say('bomb', seat, true);
+        break;
+      }
+      case 'passed': {
+        this.feel.play(1, 'passed', () => sound.pass());
+        if (seat !== null && (this.passStreak[seat] ?? 0) >= 3) this.say('pass_streak', seat);
+        if (v.phase === 'play' && v.turn === this.me) this.myTurnCue();
+        break;
+      }
+      case 'all_passed': {
+        const winner = seat!;
+        this.feel.play(2, 'all_passed', (ctx) => {
+          sound.whoosh();
+          setTimeout(() => sound.chime(), 120);
+          if (winner === this.me) haptic('medium');
+          banner(this.fx, L().ui.nobody, 'good', 'pop', ctx, this.seatCentre(winner));
+        });
+        this.say('all_passed', winner);
+        break;
+      }
+      case 'player_out': {
+        this.feel.play(2, 'player_out', (ctx) => {
+          sound.chime();
+          haptic('medium');
+          const at = this.seatCentre(seat!);
+          banner(this.fx, fmt(L().ui.place, { n: e.place as number }), 'good', 'pop', ctx, at);
+          burst(this.fx, at.x, at.y, 14, 'good', ctx, 70);
+        });
+        if (v.phase === 'play') this.say('player_out', seat);
+        break;
+      }
+      case 'too_slow': {
+        this.pop(1, 'too_slow', L().ui.tooSlow, 'danger', this.seatCentre(seat!));
+        this.say('too_slow', seat);
+        break;
+      }
+      case 'afk':
+        if (seat === this.me) haptic('error');
+        break;
+      case 'double_it': {
+        this.big('double_it', L().ui.doubleIt, 'danger');
+        this.say('double_it', seat, true);
+        break;
+      }
+      case 'match_points':
+        this.results(v, e);
+        break;
+      default:
+        break;
+    }
+  }
+
+  /** A T3: table dims, banner, big shake, burst, bass hit, strong haptic. */
+  private big(name: string, text: string, role: ColourRole, explode = false): void {
+    this.feel.play(3, name, (ctx) => {
+      dim(this.fx, ctx);
+      banner(this.fx, text, role, 'banner', ctx);
+      shake(this.table, 'big', ctx);
+      const c = this.layout.centre;
+      if (explode) burst(this.fx, c.x + c.w / 2, c.y + c.h * 0.42, 28, role, ctx, 160);
+      sound.bass();
+      haptic('strong');
+    });
+  }
+
+  private myTurnCue(): void {
+    this.lastTickSecond = -1;
+    this.announced10 = false;
+    haptic('light');
+  }
+
+  // ------------------------------------------------------------- results
+
+  private results(v: View, e: GameEvent): void {
+    const placings = e.placings as number[];
+    const points = e.points as number[];
+    const totals = e.totals as number[];
+    const doubled = e.doubled as boolean[];
+    const winner = placings[0]!;
+    const last = placings[placings.length - 1]!;
+    const matchOver = v.phase === 'matchOver';
+    this.resultsOpen = true;
+    this.feel.play(4, 'results', (ctx) => {
+      if (winner === this.me) sound.fanfare();
+      else if (last === this.me) sound.trombone();
+      else sound.chime();
+      haptic(winner === this.me ? 'strong' : 'medium');
+      confetti(this.fx, this.layout.vw, ctx);
+    });
+    const roast = this.jester.say('last_place', last, this.seatMeta[last]?.name ?? '', true);
+    const o = this.overlay;
+    o.innerHTML = '';
+    o.className = 'overlay results';
+    const card = el('div', 'sheet results-sheet', o);
+    el('h2', '', card).textContent = matchOver ? L().ui.results : fmt(L().ui.round, { n: v.round });
+    const podium = el('ol', 'standings', card);
+    placings.forEach((seat, place) => {
+      const li = el('li', `standing place-${place + 1}${seat === winner ? ' winner' : ''}${seat === last ? ' last' : ''}`, podium);
+      const medal = ['🥇', '🥈', '🥉'][place] ?? `${place + 1}.`;
+      li.innerHTML = `<span class="medal"></span><span class="who"></span><span class="pts"></span>`;
+      li.querySelector('.medal')!.textContent = medal;
+      li.querySelector('.who')!.textContent = `${this.seatMeta[seat]!.avatar} ${this.nameOf(seat)}`;
+      const left = v.handCounts[seat]!;
+      li.querySelector('.pts')!.textContent =
+        `+${points[seat]}${doubled[seat] ? ` (${L().ui.doubled})` : ''}` + (matchOver && v.round > 1 ? ` · ${totals[seat]}` : '') + (left ? ` · ${fmt(L().ui.cardsLeft, { n: left })}` : '');
+    });
+    if (roast) {
+      const r = el('div', 'roast', card);
+      r.innerHTML = `<span aria-hidden="true">🃏</span> <span></span>`;
+      r.lastElementChild!.textContent = roast.text;
+    }
+    const actions = el('div', 'sheet-actions', card);
+    if (this.isHost) {
+      if (!matchOver && this.hooks.nextRound) {
+        button(actions, 'btn btn-primary', L().ui.round.replace('{n}', String(v.round + 1)), '').addEventListener('click', () => this.hooks.nextRound!());
+      } else if (this.hooks.playAgain) {
+        button(actions, 'btn btn-primary', L().ui.playAgain, L().ui.playAgain).addEventListener('click', () => this.hooks.playAgain!());
+      }
+    }
+    button(actions, 'btn btn-secondary', L().ui.leave, L().ui.leave).addEventListener('click', () => this.hooks.exit());
+  }
+
+  private closeOverlay(): void {
+    this.overlay.className = 'overlay hidden';
+    this.overlay.innerHTML = '';
+  }
+
+  // ---------------------------------------------------------- menu sheet
+
+  private openMenu(): void {
+    const o = this.overlay;
+    o.innerHTML = '';
+    o.className = 'overlay';
+    const sheet = el('div', 'sheet', o);
+    el('h2', '', sheet).textContent = L().ui.menu;
+    const row = (label: string, value: string, onClick: () => void): void => {
+      const b = button(sheet, 'menu-row', '', label);
+      b.innerHTML = `<span></span><span class="menu-value"></span>`;
+      b.firstElementChild!.textContent = label;
+      b.lastElementChild!.textContent = value;
+      b.addEventListener('click', onClick);
+    };
+    row(L().ui.rules, '›', () => this.openRules());
+    if (this.isHost) {
+      const h = this.settings.humour;
+      const label = { off: L().ui.humourOff, mild: L().ui.humourMild, spicy: L().ui.humourSpicy }[h];
+      row(L().ui.humour, label, () => {
+        this.settings.humour = h === 'off' ? 'mild' : h === 'mild' ? 'spicy' : 'off';
+        this.applySettings();
+        this.openMenu();
+      });
+    }
+    row(L().ui.sound, this.settings.sound ? L().ui.on : L().ui.off, () => {
+      this.settings.sound = !this.settings.sound;
+      this.applySettings();
+      this.openMenu();
+    });
+    row(L().ui.reducedMotion, this.settings.reducedMotion ? L().ui.on : L().ui.off, () => {
+      this.settings.reducedMotion = !this.settings.reducedMotion;
+      this.applySettings();
+      this.openMenu();
+    });
+    row(L().ui.fourColour, this.settings.fourColour ? L().ui.on : L().ui.off, () => {
+      this.settings.fourColour = !this.settings.fourColour;
+      this.applySettings();
+      this.openMenu();
+    });
+    const actions = el('div', 'sheet-actions', sheet);
+    button(actions, 'btn btn-secondary', L().ui.leave, L().ui.leave).addEventListener('click', () => this.hooks.exit());
+    button(actions, 'btn btn-primary', L().ui.close, L().ui.close).addEventListener('click', () => this.closeOverlay());
+  }
+
+  private openRules(): void {
+    const o = this.overlay;
+    o.innerHTML = '';
+    o.className = 'overlay';
+    const sheet = el('div', 'sheet rules-sheet', o);
+    el('h2', '', sheet).textContent = L().ui.rules;
+    const ul = el('ul', 'rules-list', sheet);
+    for (const line of L().rules.bigtwo) el('li', '', ul).textContent = line;
+    const actions = el('div', 'sheet-actions', sheet);
+    button(actions, 'btn btn-primary', L().ui.close, L().ui.close).addEventListener('click', () => this.closeOverlay());
+  }
+
+  // ------------------------------------------------------------ tutorial
+
+  showTip(text: string, onDone: () => void, onSkip: () => void): void {
+    const t = this.tipEl;
+    t.innerHTML = '';
+    t.className = 'tip';
+    el('div', 'tip-text', t).textContent = text;
+    const a = el('div', 'tip-actions', t);
+    button(a, 'btn btn-ghost', L().ui.skipTutorial, L().ui.skipTutorial).addEventListener('click', () => {
+      this.hideTip();
+      onSkip();
+    });
+    button(a, 'btn btn-primary', L().ui.gotIt, L().ui.gotIt).addEventListener('click', () => {
+      this.hideTip();
+      onDone();
+    });
+    const lay = this.layout;
+    t.style.left = `${lay.centre.x}px`;
+    t.style.width = `${lay.centre.w}px`;
+    t.style.top = `${lay.centre.y + lay.centre.h * 0.55}px`;
+  }
+
+  hideTip(): void {
+    this.tipEl.className = 'tip hidden';
+  }
+
+  get resultsShowing(): boolean {
+    return this.resultsOpen;
+  }
+
+  // --------------------------------------------------------------- clock
+
+  private tick = (): void => {
+    requestAnimationFrame(this.tick);
+    const v = this.view;
+    if (!v || !this.meta.deadline || v.phase !== 'play') return;
+    const total = this.meta.deadline - Date.now();
+    const left = Math.max(0, total);
+    const turnMs = Number(this.root.dataset.turnMs || 20000);
+    const frac = Math.max(0, Math.min(1, left / turnMs));
+    const mine = v.turn === this.me;
+    this.timerFill.style.transform = `scaleX(${mine ? frac : 0})`;
+    this.timerBar.classList.toggle('urgent', mine && left <= 5000);
+    // The ring on whoever's turn it is.
+    for (const s of this.seatEls) {
+      const fg = s.querySelector('.ring-fg') as SVGCircleElement | null;
+      if (!fg) continue;
+      const isTurn = Number(s.dataset.seat) === v.turn;
+      fg.style.strokeDashoffset = String(isTurn ? 100.5 * (1 - frac) : 100.5);
+      s.classList.toggle('urgent', isTurn && left <= 5000);
+    }
+    if (mine) {
+      const sec = Math.ceil(left / 1000);
+      if (left <= 5000 && sec !== this.lastTickSecond && sec > 0) {
+        this.lastTickSecond = sec;
+        sound.tick();
+      }
+      if (left <= 10000 && !this.announced10) {
+        this.announced10 = true;
+        this.live.textContent = fmt(L().ui.secondsLeft, { n: 10 });
+      }
+    }
+  };
+
+  /** Plain description of what is on the table, for tests and screen readers. */
+  describe(): string {
+    const v = this.view;
+    if (!v) return '';
+    return v.lead ? cardsText(v.lead.cards) : '';
+  }
+}
+
+// ---------------------------------------------------------------- helpers
+
+function el(tag: string, cls: string, parent: HTMLElement): HTMLElement {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  parent.appendChild(e);
+  return e;
+}
+
+function button(parent: HTMLElement, cls: string, text: string, label: string): HTMLButtonElement {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = cls;
+  b.textContent = text;
+  if (label) b.setAttribute('aria-label', label);
+  parent.appendChild(b);
+  return b;
+}
+
+function place(e: HTMLElement, b: Box): void {
+  e.style.left = `${b.x}px`;
+  e.style.top = `${b.y}px`;
+  e.style.width = `${b.w}px`;
+  e.style.height = `${b.h}px`;
+}
+
+function readInsets(): { top: number; right: number; bottom: number; left: number } {
+  const cs = getComputedStyle(document.documentElement);
+  const n = (v: string): number => parseFloat(cs.getPropertyValue(v)) || 0;
+  return { top: n('--sat'), right: n('--sar'), bottom: n('--sab'), left: n('--sal') };
+}
