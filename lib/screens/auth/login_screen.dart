@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../../services/auth_service.dart';
 import '../../theme/colors.dart';
 import 'check_email_screen.dart';
+import 'username_screen.dart';
+import 'what_we_store_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -48,6 +50,12 @@ class _LoginScreenState extends State<LoginScreen> {
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  void _openUsername(bool signUp) {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => UsernameScreen(signUp: signUp)),
+    );
   }
 
   @override
@@ -148,6 +156,9 @@ class _LoginScreenState extends State<LoginScreen> {
                       r'^[\w\.\-\+]+@[\w\-]+\.[\w\-\.]+$',
                     ).hasMatch(value);
                     if (!ok) return 'Enter a valid email';
+                    if (AuthService.isUsernameEmail(value)) {
+                      return 'Use "No email?" below';
+                    }
                     return null;
                   },
                 ),
@@ -196,6 +207,49 @@ class _LoginScreenState extends State<LoginScreen> {
                     style: TextStyle(
                       color: Colors.white.withValues(alpha: 0.35),
                       fontSize: 11,
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 18),
+
+                Center(
+                  child: TextButton(
+                    onPressed: _loading ? null : () => _openUsername(true),
+                    child: Text(
+                      'No email? Join with just a username',
+                      style: TextStyle(
+                        color: EfocColors.accentBright,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+                Center(
+                  child: TextButton(
+                    onPressed: _loading ? null : () => _openUsername(false),
+                    child: Text(
+                      'Have a recovery code? Sign in',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.6),
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                ),
+                Center(
+                  child: TextButton(
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const WhatWeStoreScreen(),
+                      ),
+                    ),
+                    child: const Text(
+                      'What we store',
+                      style: TextStyle(
+                        color: EfocColors.textMuted,
+                        fontSize: 12,
+                      ),
                     ),
                   ),
                 ),

@@ -17,6 +17,12 @@ class GamesDatabase {
 
   int _users = 0;
 
+  /// Set on the /play guest page: sign in with this guest-token token
+  /// instead of the Supabase route. See guest_pass.dart.
+  ({String token, String uid})? _guest;
+
+  void useGuestToken(String token, String uid) => _guest = (token: token, uid: uid);
+
   FirebaseDatabase get db => FirebaseDatabase.instanceFor(
         app: Firebase.app(),
         databaseURL: kGamesDatabaseUrl,
@@ -39,6 +45,9 @@ class GamesDatabase {
   /// whose uid is the Supabase user id, so the database rules
   /// (`allowed/{uid}`, `hands/{uid}`, ...) see the same id as the groups.
   Future<String> signIn() async {
+    final guest = _guest;
+    if (guest != null) return _signInAsGuest(guest.token, guest.uid);
+
     final supabaseUid = Supabase.instance.client.auth.currentUser?.id;
     if (supabaseUid == null) throw StateError('Not signed in');
     final auth = FirebaseAuth.instance;
@@ -70,6 +79,23 @@ class GamesDatabase {
       throw GamesSignInError('firebase uid mismatch');
     }
     return uid!;
+  }
+}
+
+extension on GamesDatabase {
+  Future<String> _signInAsGuest(String token, String uid) async {
+    final auth = FirebaseAuth.instance;
+    if (auth.currentUser?.uid == uid) return uid;
+    try {
+      final cred = await auth.signInWithCustomToken(token);
+      if (cred.user?.uid != uid) {
+        await auth.signOut();
+        throw GamesSignInError('firebase uid mismatch');
+      }
+    } on FirebaseAuthException catch (e) {
+      throw GamesSignInError('firebase ${e.code}: ${e.message ?? ''}');
+    }
+    return uid;
   }
 }
 

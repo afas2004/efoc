@@ -19,6 +19,11 @@
     server time); players in the room take it down.
   - Chat (Phase 4): 1 message per second via `chatRate/{room}/{uid}`, text
     1–200 characters, as yourself.
+  - One-time guests: a token from Supabase's `guest-token` function
+    carries `guest_room` and `guest_until`. Wherever the rules check
+    `allowed/{uid}`, that room also lets the guest in until `guest_until`.
+    Guests can't read any group's `tables` list, can't take over as host,
+    and can't touch Firestore.
 - `firestore.rules`: stats, achievements and reports.
 
 ## Tests
