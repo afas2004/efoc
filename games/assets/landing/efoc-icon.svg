@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+<defs>
+  <radialGradient id="bg" cx="50%" cy="40%" r="75%">
+    <stop offset="0" stop-color="#3A1468"/>
+    <stop offset="0.6" stop-color="#1A0B2E"/>
+    <stop offset="1" stop-color="#0A0A0A"/>
+  </radialGradient>
+  <linearGradient id="mug" x1="0" y1="0" x2="1" y2="0">
+    <stop offset="0" stop-color="#B66BFF"/>
+    <stop offset="0.55" stop-color="#C77DFF"/>
+    <stop offset="1" stop-color="#8B3FE0"/>
+  </linearGradient>
+  <linearGradient id="mugTop" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0" stop-color="#D9A6FF"/>
+    <stop offset="1" stop-color="#A855F7"/>
+  </linearGradient>
+  <radialGradient id="coffee" cx="45%" cy="40%" r="65%">
+    <stop offset="0" stop-color="#8A5A3B"/>
+    <stop offset="0.7" stop-color="#5A3622"/>
+    <stop offset="1" stop-color="#3B2416"/>
+  </radialGradient>
+  <radialGradient id="crema" cx="50%" cy="45%" r="60%">
+    <stop offset="0" stop-color="#E8C39E"/>
+    <stop offset="1" stop-color="#C8915F"/>
+  </radialGradient>
+</defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <!-- saucer shadow -->
+  <ellipse cx="236" cy="404" rx="150" ry="22" fill="#000" fill-opacity="0.35"/>
+  <!-- handle -->
+  <path d="M 328 238 C 418 230 420 342 326 334" fill="none" stroke="#9B4DF0"
+        stroke-width="34" stroke-linecap="round"/>
+  <!-- body -->
+  <path d="M 116 206 L 356 206 L 344 340 C 340 380 312 398 276 398 L 196 398
+           C 160 398 132 380 128 340 Z" fill="url(#mug)"/>
+  <!-- rim + coffee -->
+  <ellipse cx="236" cy="206" rx="120" ry="28" fill="url(#mugTop)"/>
+  <ellipse cx="236" cy="208" rx="104" ry="20" fill="url(#coffee)"/>
+  <!-- highlight -->
+  <path d="M 150 236 L 158 330" stroke="#fff" stroke-opacity="0.35"
+        stroke-width="14" stroke-linecap="round"/>
+  <!-- steam -->
+  <g fill="none" stroke="#fff" stroke-width="16" stroke-linecap="round" stroke-opacity="0.9">
+    <path d="M 196 162 C 176 138 216 122 196 96"/>
+    <path d="M 236 166 C 216 136 260 118 236 82" stroke-opacity="1"/>
+    <path d="M 276 162 C 256 138 296 122 276 96"/>
+  </g>
+</svg>
