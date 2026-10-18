@@ -1,5 +1,5 @@
 {
-    "latest_version":  "1.8.1",
-    "latest_build":  26,
-    "release_notes":  "Clips and daily vlogs now show up in your Log\u0027s chat. React and reply right from the clip."
+    "latest_version":  "1.8.2",
+    "latest_build":  27,
+    "release_notes":  "Make a vlog shows its progress, and making the same one again is instant."
 }
