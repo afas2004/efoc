@@ -1484,6 +1484,7 @@ table.stats tr.me {
 }
 .l7-seat .avatar {
   position: relative;
+  flex-shrink: 0;
   width: 22px;
   height: 22px;
   display: grid;
@@ -1507,8 +1508,11 @@ table.stats tr.me {
 }
 .l7-seat .chip {
   position: static;
+  min-width: 0;
+  overflow: hidden;
   transform: none;
   white-space: nowrap;
+  text-overflow: ellipsis;
   font-size: 11px;
 }
 .l7-seat.turn {
@@ -1615,6 +1619,36 @@ table.stats tr.me {
 }
 .l7-mine .l7-lock b {
   --lock-size: calc(var(--card-w) * 0.42);
+}
+/* 5+ players: other seats rest as mini cards; whoever's turn it is grows over the felt. */
+.l7-card.mini .l7-slot-card {
+  border-radius: 3px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.45);
+}
+.l7-card.mini .l7-lock b {
+  --lock-size: 13px;
+}
+.l7-card.mini.lifted::after {
+  top: -20px;
+  font-size: 15px;
+}
+.l7-card.grown {
+  z-index: 6;
+}
+.l7-card.grown .l7-slot-card {
+  box-shadow: 0 0 0 2px var(--turn), 0 8px 18px rgba(0, 0, 0, 0.55);
+}
+.l7-card.grown .l7-lock b {
+  --lock-size: 18px;
+}
+.l7-card.pop .l7-slot-card {
+  animation: grow-pop 260ms var(--spring);
+}
+@keyframes grow-pop {
+  from { transform: scale(0.5); }
+}
+.l7-card[data-peek-left] {
+  z-index: 7;
 }
 @keyframes lock-slam {
   from { transform: translateY(-140%) scale(1.8); opacity: 0; }
@@ -1867,7 +1901,8 @@ table.stats tr.me {
 }
 .reduced-motion .l7-card,
 .reduced-motion .l7-pile.pickable,
-.reduced-motion .l7-card.pickable {
+.reduced-motion .l7-card.pickable,
+.reduced-motion .l7-card.pop .l7-slot-card {
   animation: none !important;
   transition: none !important;
 }
