@@ -174,7 +174,7 @@ class _TableScreenState extends State<TableScreen> with WidgetsBindingObserver {
       _toast('Only Log members can invite people');
       return;
     }
-    final choice = await showModalBottomSheet<String>(
+    final choice = await _controller.whileCovered(() => showModalBottomSheet<String>(
       context: context,
       backgroundColor: EfocColors.sheetBg,
       builder: (ctx) => SafeArea(
@@ -202,7 +202,7 @@ class _TableScreenState extends State<TableScreen> with WidgetsBindingObserver {
           ],
         ),
       ),
-    );
+    ));
     if (choice == 'group') {
       await _shareText(
         'Join my ${link.gameName()} table on EFOC: ${link.toUri()}',
@@ -318,7 +318,7 @@ class _TableScreenState extends State<TableScreen> with WidgetsBindingObserver {
   }
 
   Future<bool> _confirmLeave() async {
-    final ok = await showDialog<bool>(
+    final ok = await _controller.whileCovered(() => showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: EfocColors.surface,
@@ -341,7 +341,7 @@ class _TableScreenState extends State<TableScreen> with WidgetsBindingObserver {
           ),
         ],
       ),
-    );
+    ));
     return ok == true;
   }
 
