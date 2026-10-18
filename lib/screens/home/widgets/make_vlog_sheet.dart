@@ -23,6 +23,9 @@ Future<void> showMakeVlogSheet(BuildContext context) {
 
 enum _Phase { pick, working, saved, failed }
 
+/// Where a working vlog is, for the step row and the bar.
+enum _Step { waiting, stitching, downloading }
+
 class _MakeVlogSheet extends StatefulWidget {
   const _MakeVlogSheet();
 
@@ -42,18 +45,71 @@ class _MakeVlogSheetState extends State<_MakeVlogSheet> {
   String? _error;
   StreamSubscription<EfocExport>? _watch;
 
+  _Step _step = _Step.waiting;
+  DateTime _startedAt = DateTime.now();
+  DateTime _stepAt = DateTime.now();
+  double? _download; // 0–1 once the size is known
+  int _stitchClips = 0;
+  bool _reused = false;
+  Timer? _tick;
+
+  /// Fresh stitches left in the rolling 24 hours, once loaded.
+  int? _left;
+
   @override
   void initState() {
     super.initState();
     final state = context.read<AppState>();
     _groups = {if (state.hasGroups) state.currentGroup.id};
     _loadHours();
+    _loadLeft();
   }
 
   @override
   void dispose() {
     _watch?.cancel();
+    _tick?.cancel();
     super.dispose();
+  }
+
+  Future<void> _loadLeft() async {
+    try {
+      final used = await ExportService.instance.usedToday();
+      if (mounted) {
+        setState(() => _left = (ExportService.dailyLimit - used).clamp(0, 99));
+      }
+    } catch (e) {
+      debugPrint('Export quota error: $e');
+    }
+  }
+
+  void _setStep(_Step step) {
+    if (_step == step) return;
+    setState(() {
+      _step = step;
+      _stepAt = DateTime.now();
+    });
+  }
+
+  void _stopTicking() {
+    _tick?.cancel();
+    _tick = null;
+  }
+
+  /// A rough bar: GitHub takes ~20s to start a runner, then about 3s a
+  /// clip plus ~20s to join and upload. Never claims done before it is.
+  double get _progress {
+    final inStep =
+        DateTime.now().difference(_stepAt).inMilliseconds / 1000.0;
+    switch (_step) {
+      case _Step.waiting:
+        return 0.15 * (inStep / 25).clamp(0.0, 1.0);
+      case _Step.stitching:
+        final expected = _stitchClips * 3 + 20;
+        return 0.15 + 0.7 * (inStep / expected).clamp(0.0, 0.95);
+      case _Step.downloading:
+        return 0.85 + 0.15 * (_download ?? 0);
+    }
   }
 
   Future<void> _loadHours() async {
@@ -89,51 +145,115 @@ class _MakeVlogSheetState extends State<_MakeVlogSheet> {
 
   Future<void> _make() async {
     final fileName = _fileName();
+    final groupIds = _groups.toList();
+    final hours = _hours.isEmpty ? null : (_hours.toList()..sort());
+    final clips = _clipCount;
     setState(() {
       _phase = _Phase.working;
-      _status = 'Starting…';
+      _status = 'Checking…';
       _error = null;
+      _download = null;
+      _reused = false;
+      _stitchClips = clips;
+      _step = _Step.waiting;
+      _startedAt = DateTime.now();
+      _stepAt = DateTime.now();
     });
+    _tick?.cancel();
+    _tick = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+    });
+
+    // Same vlog as last time and nothing new since: just save it again.
+    try {
+      final again = await ExportService.instance.findReusable(
+        day: DateTime.now(),
+        groupIds: groupIds,
+        hours: hours,
+        clipCount: clips,
+      );
+      if (again != null && mounted) {
+        _reused = true;
+        if (await _save(again, fileName)) return;
+        // The file's gone (nightly cleanup): stitch a fresh one.
+        _reused = false;
+      }
+    } catch (e) {
+      debugPrint('Reuse check error: $e');
+    }
+    if (!mounted) return;
+
+    if (_left != null && _left! <= 0) {
+      _fail("You've made ${ExportService.dailyLimit} vlogs in the last "
+          '24 hours. Try again later.');
+      return;
+    }
+
+    _setStep(_Step.waiting);
+    setState(() => _status = 'Waiting for a stitcher…');
     try {
       final id = await ExportService.instance.start(
         day: DateTime.now(),
-        groupIds: _groups.toList(),
-        hours: _hours.isEmpty ? null : (_hours.toList()..sort()),
+        groupIds: groupIds,
+        hours: hours,
       );
       if (!mounted) return;
-      setState(() => _status = 'Stitching… usually 1–2 minutes');
+      setState(() => _left = _left == null ? null : _left! - 1);
       _watch = ExportService.instance.watch(id).listen((e) async {
         if (!mounted) return;
         if (e.status == 'running') {
-          setState(() => _status = 'Stitching your clips…');
+          _setStep(_Step.stitching);
+          setState(() => _status =
+              'Stitching $clips clip${clips == 1 ? '' : 's'}…');
         } else if (e.isFailed) {
-          setState(() {
-            _phase = _Phase.failed;
-            _error = e.error ?? 'Something went wrong.';
-          });
+          _fail(e.error ?? 'Something went wrong.');
         } else if (e.isDone) {
-          setState(() => _status = 'Downloading…');
-          try {
-            await ExportService.instance.save(e, fileName: fileName);
-            if (mounted) setState(() => _phase = _Phase.saved);
-          } catch (err) {
-            if (mounted) {
-              setState(() {
-                _phase = _Phase.failed;
-                _error = "It's ready but the download failed. Try ⬇ again.";
-              });
-            }
+          if (!await _save(e, fileName) && mounted) {
+            _fail("It's ready but the download failed. Try ⬇ again.");
           }
         }
       });
     } catch (e) {
       debugPrint('Make vlog error: $e');
       if (!mounted) return;
-      setState(() {
-        _phase = _Phase.failed;
-        _error = "Couldn't start. Check your connection and try again.";
-      });
+      // Most likely the daily cap (RLS) or no connection.
+      _loadLeft();
+      _fail(_left != null && _left! <= 0
+          ? "You've made ${ExportService.dailyLimit} vlogs in the last "
+              '24 hours. Try again later.'
+          : "Couldn't start. Check your connection and try again.");
     }
+  }
+
+  /// Downloads [e] to the phone. False if the download failed.
+  Future<bool> _save(EfocExport e, String fileName) async {
+    _setStep(_Step.downloading);
+    setState(() => _status = _reused
+        ? 'No new clips since your last one. Saving it again…'
+        : 'Downloading…');
+    try {
+      await ExportService.instance.save(
+        e,
+        fileName: fileName,
+        onProgress: (p) {
+          if (mounted) setState(() => _download = p);
+        },
+      );
+      _stopTicking();
+      if (mounted) setState(() => _phase = _Phase.saved);
+      return true;
+    } catch (err) {
+      debugPrint('Save vlog error: $err');
+      return false;
+    }
+  }
+
+  void _fail(String message) {
+    _stopTicking();
+    setState(() {
+      _phase = _Phase.failed;
+      _error = message;
+    });
   }
 
   @override
@@ -274,10 +394,15 @@ class _MakeVlogSheetState extends State<_MakeVlogSheet> {
         ),
       ),
       const SizedBox(height: 8),
-      const Text(
-        'Stitched like the midnight vlog, then saved to your phone.',
+      Text(
+        [
+          'Stitched like the midnight vlog, then saved to your phone.',
+          if (_left != null)
+            '$_left of ${ExportService.dailyLimit} left today. '
+                'Making the same one again is free.',
+        ].join('\n'),
         textAlign: TextAlign.center,
-        style: TextStyle(color: EfocColors.textMuted, fontSize: 11),
+        style: const TextStyle(color: EfocColors.textMuted, fontSize: 11),
       ),
     ];
   }
@@ -297,16 +422,29 @@ class _MakeVlogSheetState extends State<_MakeVlogSheet> {
                 : failed
                     ? const Icon(Icons.error_outline_rounded,
                         color: EfocColors.danger, size: 40)
-                    : SizedBox(
-                        width: 32,
-                        height: 32,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 3,
-                          color: EfocColors.accentBright,
-                        ),
-                      ),
+                    : _StepRow(step: _step, reused: _reused),
           ),
         ),
+        if (_phase == _Phase.working) ...[
+          const SizedBox(height: 10),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(3),
+            child: LinearProgressIndicator(
+              value: _progress,
+              minHeight: 6,
+              backgroundColor: EfocColors.surface,
+              color: EfocColors.accentBright,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            _reused
+                ? _elapsed()
+                : '${_elapsed()} · usually 1–2 minutes',
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: EfocColors.textMuted, fontSize: 11),
+          ),
+        ],
         const SizedBox(height: 14),
         Text(
           saved
@@ -355,8 +493,96 @@ class _MakeVlogSheetState extends State<_MakeVlogSheet> {
     );
   }
 
+  String _elapsed() {
+    final d = DateTime.now().difference(_startedAt);
+    final m = d.inMinutes;
+    final sec = (d.inSeconds % 60).toString().padLeft(2, '0');
+    return '$m:$sec';
+  }
+
   static String _hourLabel(int h) =>
       '${h % 12 == 0 ? 12 : h % 12} ${h < 12 ? 'AM' : 'PM'}';
+}
+
+/// Waiting → Stitching → Saving, with the current step lit.
+class _StepRow extends StatelessWidget {
+  final _Step step;
+  final bool reused;
+
+  const _StepRow({required this.step, required this.reused});
+
+  @override
+  Widget build(BuildContext context) {
+    final steps = reused
+        ? const [(_Step.downloading, 'Saving')]
+        : const [
+            (_Step.waiting, 'Starting'),
+            (_Step.stitching, 'Stitching'),
+            (_Step.downloading, 'Saving'),
+          ];
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        for (var i = 0; i < steps.length; i++) ...[
+          if (i > 0)
+            Container(
+              width: 18,
+              height: 1,
+              margin: const EdgeInsets.symmetric(horizontal: 6),
+              color: EfocColors.textMuted,
+            ),
+          _StepDot(
+            label: steps[i].$2,
+            done: steps[i].$1.index < step.index,
+            current: steps[i].$1 == step,
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _StepDot extends StatelessWidget {
+  final String label;
+  final bool done;
+  final bool current;
+
+  const _StepDot({
+    required this.label,
+    required this.done,
+    required this.current,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final color = done || current ? EfocColors.accentBright : EfocColors.textMuted;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (current)
+          SizedBox(
+            width: 12,
+            height: 12,
+            child: CircularProgressIndicator(strokeWidth: 2, color: color),
+          )
+        else
+          Icon(
+            done ? Icons.check_circle_rounded : Icons.circle_outlined,
+            size: 13,
+            color: color,
+          ),
+        const SizedBox(width: 5),
+        Text(
+          label,
+          style: TextStyle(
+            color: color,
+            fontSize: 12,
+            fontWeight: current ? FontWeight.w700 : FontWeight.w500,
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 /// Yesterday: the full stitched vlog of each Log, to save as-is.
