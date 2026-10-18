@@ -6,6 +6,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev", "--prefix", "games/apps/games-web", "--", "--port", "5173", "--strictPort"],
       "port": 5173
+    },
+    {
+      "name": "efoc-web",
+      "runtimeExecutable": "flutter",
+      "runtimeArgs": ["run", "-d", "web-server", "--web-port", "5005", "--web-hostname", "localhost"],
+      "port": 5005
     }
   ]
 }
