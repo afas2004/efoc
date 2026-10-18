@@ -14,6 +14,8 @@ class EfocReaction {
   });
 }
 
+enum MessageKind { text, clip, vlog }
+
 class EfocMessage {
   final String id;
   final String groupId;
@@ -24,6 +26,18 @@ class EfocMessage {
   final String? replyToId;
   final DateTime createdAt;
 
+  /// Clip and vlog cards are posted by database triggers (see
+  /// supabase/migrations/20261018_clip_chat_cards.sql).
+  final MessageKind kind;
+  final String? vlogId;
+
+  /// Copies kept on the card so it still draws after the clip is deleted.
+  /// Clip: the video's storage path. Vlog: its thumbnail path.
+  final String? cardPath;
+  final int? cardHour;
+  final String? cardCaption;
+  final DateTime? cardDate;
+
   final String senderName;
   final Color senderColor;
   final String? senderAvatarUrl;
@@ -31,6 +45,8 @@ class EfocMessage {
 
   final String? replyPreviewText;
   final String? replySenderName;
+  final MessageKind? replyKind;
+  final int? replyHour;
 
   /// At most one per person, newest first.
   final List<EfocReaction> reactions;
@@ -44,14 +60,37 @@ class EfocMessage {
     required this.clipStoragePath,
     required this.replyToId,
     required this.createdAt,
+    this.kind = MessageKind.text,
+    this.vlogId,
+    this.cardPath,
+    this.cardHour,
+    this.cardCaption,
+    this.cardDate,
     required this.senderName,
     required this.senderColor,
     required this.senderAvatarUrl,
     required this.isMe,
     required this.replyPreviewText,
     required this.replySenderName,
+    this.replyKind,
+    this.replyHour,
     required this.reactions,
   });
+
+  bool get isCard => kind != MessageKind.text;
+
+  /// What Copy puts on the clipboard: the text, or a card's caption.
+  String? get copyText {
+    final t = isCard ? cardCaption : text;
+    return (t == null || t.trim().isEmpty) ? null : t;
+  }
+
+  /// One line for reply previews.
+  String get previewText => switch (kind) {
+        MessageKind.text => text ?? '',
+        MessageKind.clip => copyText ?? 'Clip',
+        MessageKind.vlog => 'Daily vlog',
+      };
 
   /// Your current reaction, if any.
   String? get myReaction =>
@@ -93,13 +132,35 @@ class EfocMessage {
       clipStoragePath: clipStoragePath,
       replyToId: replyToId,
       createdAt: createdAt,
+      kind: kind,
+      vlogId: vlogId,
+      cardPath: cardPath,
+      cardHour: cardHour,
+      cardCaption: cardCaption,
+      cardDate: cardDate,
       senderName: senderName,
       senderColor: senderColor,
       senderAvatarUrl: senderAvatarUrl,
       isMe: isMe,
       replyPreviewText: replyPreviewText,
       replySenderName: replySenderName,
+      replyKind: replyKind,
+      replyHour: replyHour,
       reactions: next,
     );
   }
+}
+
+MessageKind messageKindOf(String? s) => switch (s) {
+      'clip' => MessageKind.clip,
+      'vlog' => MessageKind.vlog,
+      _ => MessageKind.text,
+    };
+
+/// 3 PM, 12 AM.
+String formatHour12(int hour) {
+  if (hour == 0) return '12 AM';
+  if (hour < 12) return '$hour AM';
+  if (hour == 12) return '12 PM';
+  return '${hour - 12} PM';
 }

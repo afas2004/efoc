@@ -401,6 +401,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       builder: (_) => ClipPopup(
         initialMemberIdx: memberIdx,
         initialHourIdx: hourIdx,
+        onReplied: _openChat,
       ),
     );
   }
