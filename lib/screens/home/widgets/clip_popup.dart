@@ -1,20 +1,28 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:video_player/video_player.dart';
 
+import '../../../models/message.dart';
+import '../../../services/chat_service.dart';
 import '../../../services/clip_service.dart';
 import '../../../state/app_state.dart';
 import '../../../widgets/caption.dart';
 import '../../../widgets/clip_video.dart';
+import '../../chat/widgets/clip_chat_bar.dart';
 
 class ClipPopup extends StatefulWidget {
   final int initialMemberIdx;
   final int initialHourIdx;
 
+  /// Called after a reply is sent from the popup, to open the chat.
+  final VoidCallback? onReplied;
+
   const ClipPopup({
     super.key,
     required this.initialMemberIdx,
     required this.initialHourIdx,
+    this.onReplied,
   });
 
   @override
@@ -29,6 +37,9 @@ class _ClipPopupState extends State<ClipPopup> {
   Map<String, dynamic>? _clip;
   bool _loading = true;
   String? _error;
+
+  /// The clip's chat card: its reactions and replies are the clip's.
+  EfocMessage? _card;
 
   @override
   void initState() {
@@ -52,6 +63,7 @@ class _ClipPopupState extends State<ClipPopup> {
     setState(() {
       _loading = true;
       _error = null;
+      _card = null;
     });
 
     final state = context.read<AppState>();
@@ -94,6 +106,7 @@ class _ClipPopupState extends State<ClipPopup> {
         _loading = false;
       });
       state.markClipsViewed([clip]);
+      _loadCard(clip['id'] as String);
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -101,6 +114,44 @@ class _ClipPopupState extends State<ClipPopup> {
         _error = 'Failed to load video: $e';
       });
     }
+  }
+
+  Future<void> _loadCard(String clipId) async {
+    try {
+      final card = await ChatService.instance.fetchClipCard(clipId);
+      if (mounted && _clip?['id'] == clipId) setState(() => _card = card);
+    } catch (e) {
+      debugPrint('Clip card: $e');
+    }
+  }
+
+  void _react(String emoji) {
+    final card = _card;
+    final myId = Supabase.instance.client.auth.currentUser?.id;
+    if (card == null || myId == null) return;
+    setState(() => _card = card.withMyReaction(emoji, myId));
+    ChatService.instance
+        .react(messageId: card.id, emoji: emoji)
+        .catchError((Object e) => debugPrint('React error: $e'));
+  }
+
+  Future<void> _reply(String text) async {
+    final card = _card;
+    if (card == null) return;
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await ChatService.instance.sendText(
+        groupId: card.groupId,
+        text: text,
+        replyToId: card.id,
+      );
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('Failed to send: $e')));
+      return;
+    }
+    navigator.pop();
+    widget.onReplied?.call();
   }
 
   void _navigate(int dir) {
@@ -139,6 +190,7 @@ class _ClipPopupState extends State<ClipPopup> {
 
             // Video layer — sized to its own aspect ratio
             Positioned.fill(
+              bottom: _barSpace,
               child: Center(
                 child: _buildVideoArea(
                   member: member,
@@ -149,11 +201,31 @@ class _ClipPopupState extends State<ClipPopup> {
               ),
             ),
 
+            // Reactions + reply, shared with the clip's chat card
+            Positioned(
+              left: 24,
+              right: 24,
+              bottom: MediaQuery.of(context).viewInsets.bottom +
+                  MediaQuery.of(context).padding.bottom +
+                  16,
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 420),
+                  child: ClipChatBar(
+                    key: ValueKey(_clip?['id']),
+                    card: _card,
+                    onReact: _react,
+                    onReply: _reply,
+                  ),
+                ),
+              ),
+            ),
+
             // Tap zones for prev / next
             Positioned(
               left: 0,
               top: 0,
-              bottom: 0,
+              bottom: _barSpace,
               width: 80,
               child: GestureDetector(
                 onTap: () => _navigate(-1),
@@ -164,7 +236,7 @@ class _ClipPopupState extends State<ClipPopup> {
             Positioned(
               right: 0,
               top: 0,
-              bottom: 0,
+              bottom: _barSpace,
               width: 80,
               child: GestureDetector(
                 onTap: () => _navigate(1),
@@ -199,6 +271,12 @@ class _ClipPopupState extends State<ClipPopup> {
       ),
     );
   }
+
+  /// Room kept under the video for the reaction / reply bar.
+  double get _barSpace =>
+      MediaQuery.of(context).viewInsets.bottom +
+      MediaQuery.of(context).padding.bottom +
+      130;
 
   Widget _buildVideoArea({
     required dynamic member,

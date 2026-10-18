@@ -6,6 +6,7 @@ import '../../../games/table_link.dart';
 import '../../../models/message.dart';
 import '../../../services/clip_service.dart';
 import '../../../theme/colors.dart';
+import 'clip_card.dart';
 
 class MessageBubble extends StatelessWidget {
   final EfocMessage message;
@@ -13,17 +14,43 @@ class MessageBubble extends StatelessWidget {
   final void Function(Offset globalTap) onLongPress;
   final VoidCallback onReactionsTap;
 
+  /// Tapping a clip or vlog card.
+  final VoidCallback onCardTap;
+
+  /// Tapping the reply quote: jump to the quoted message.
+  final VoidCallback onQuoteTap;
+
   const MessageBubble({
     super.key,
     required this.message,
     required this.isGrouped,
     required this.onLongPress,
     required this.onReactionsTap,
+    required this.onCardTap,
+    required this.onQuoteTap,
   });
 
   @override
   Widget build(BuildContext context) {
     final isMe = message.isMe;
+
+    // The day's vlog belongs to the whole Log: centred, no sender.
+    if (message.kind == MessageKind.vlog) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        child: Center(
+          child: GestureDetector(
+            onLongPressStart: (d) => onLongPress(d.globalPosition),
+            onSecondaryTapDown: (d) => onLongPress(d.globalPosition),
+            child: _WithReactions(
+              message: message,
+              onReactionsTap: onReactionsTap,
+              child: VlogCard(message: message, onTap: onCardTap),
+            ),
+          ),
+        ),
+      );
+    }
 
     return Padding(
       padding: EdgeInsets.only(
@@ -48,6 +75,8 @@ class MessageBubble extends StatelessWidget {
             child: GestureDetector(
               onLongPressStart: (details) =>
                   onLongPress(details.globalPosition),
+              onSecondaryTapDown: (details) =>
+                  onLongPress(details.globalPosition),
               child: Column(
                 crossAxisAlignment: isMe
                     ? CrossAxisAlignment.end
@@ -66,28 +95,12 @@ class MessageBubble extends StatelessWidget {
                         ),
                       ),
                     ),
-                  // Like WhatsApp, the reaction pill hangs off the bottom
-                  // edge of the bubble on the sender's side.
-                  Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      Padding(
-                        padding: EdgeInsets.only(
-                          bottom: message.reactions.isEmpty ? 0 : 18,
-                        ),
-                        child: _Bubble(message: message),
-                      ),
-                      if (message.reactions.isNotEmpty)
-                        Positioned(
-                          bottom: 0,
-                          left: isMe ? null : 8,
-                          right: isMe ? 8 : null,
-                          child: _ReactionPill(
-                            message: message,
-                            onTap: onReactionsTap,
-                          ),
-                        ),
-                    ],
+                  _WithReactions(
+                    message: message,
+                    onReactionsTap: onReactionsTap,
+                    child: message.kind == MessageKind.clip
+                        ? ClipCard(message: message, onTap: onCardTap)
+                        : _Bubble(message: message, onQuoteTap: onQuoteTap),
                   ),
                 ],
               ),
@@ -99,10 +112,51 @@ class MessageBubble extends StatelessWidget {
   }
 }
 
+/// Like WhatsApp, the reaction pill hangs off the bottom edge of the
+/// bubble (or card) on the sender's side.
+class _WithReactions extends StatelessWidget {
+  final EfocMessage message;
+  final VoidCallback onReactionsTap;
+  final Widget child;
+
+  const _WithReactions({
+    required this.message,
+    required this.onReactionsTap,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isMe = message.isMe;
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Padding(
+          padding: EdgeInsets.only(
+            bottom: message.reactions.isEmpty ? 0 : 18,
+          ),
+          child: child,
+        ),
+        if (message.reactions.isNotEmpty)
+          Positioned(
+            bottom: 0,
+            left: isMe ? null : 8,
+            right: isMe ? 8 : null,
+            child: _ReactionPill(
+              message: message,
+              onTap: onReactionsTap,
+            ),
+          ),
+      ],
+    );
+  }
+}
+
 class _Bubble extends StatelessWidget {
   final EfocMessage message;
+  final VoidCallback onQuoteTap;
 
-  const _Bubble({required this.message});
+  const _Bubble({required this.message, required this.onQuoteTap});
 
   @override
   Widget build(BuildContext context) {
@@ -131,7 +185,11 @@ class _Bubble extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (hasReply) _ReplyPreview(message: message),
+            if (hasReply)
+              GestureDetector(
+                onTap: onQuoteTap,
+                child: _ReplyPreview(message: message),
+              ),
 
             if (hasClip)
               Align(
@@ -209,7 +267,7 @@ class _ReplyPreview extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            message.replySenderName ?? 'User',
+            _replyAuthor(message),
             style: const TextStyle(
               color: Colors.white70,
               fontSize: 11,
@@ -219,7 +277,7 @@ class _ReplyPreview extends StatelessWidget {
           if (message.replyPreviewText != null)
             Text(
               message.replyPreviewText!,
-              maxLines: 1,
+              maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
                 color: Colors.white60,
@@ -230,6 +288,19 @@ class _ReplyPreview extends StatelessWidget {
       ),
     );
   }
+}
+
+/// `▶ Ali · 3 PM` for a clip, `Ali` for text (spec 5.3).
+String _replyAuthor(EfocMessage message) {
+  final name = message.replySenderName ?? 'User';
+  return switch (message.replyKind) {
+      MessageKind.clip => [
+          '▶ $name',
+          if (message.replyHour != null) formatHour12(message.replyHour!),
+        ].join(' · '),
+      MessageKind.vlog => '▶ Daily vlog',
+      _ => name,
+    };
 }
 
 class _ClipPreview extends StatefulWidget {

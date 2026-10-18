@@ -26,6 +26,18 @@ class VlogService {
     return rows.map(EfocVlog.fromRow).toList();
   }
 
+  /// One vlog, or null once retention has deleted it.
+  Future<EfocVlog?> fetchById(String id) async {
+    final row = await _client
+        .from('vlogs')
+        .select(
+          'id, group_id, vlog_date, storage_path, thumbnail_path, clip_count, duration_seconds',
+        )
+        .eq('id', id)
+        .maybeSingle();
+    return row == null ? null : EfocVlog.fromRow(row);
+  }
+
   /// Ids of the vlogs in [vlogIds] the current user has already watched.
   Future<Set<String>> fetchViewedIds(List<String> vlogIds) async {
     final userId = _client.auth.currentUser?.id;
