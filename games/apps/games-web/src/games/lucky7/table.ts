@@ -72,10 +72,12 @@ interface Geo {
   /** My cards. */
   cw: number;
   mine: Box;
-  /** Opponents: badge and three card boxes, by seat (mine is empty). */
-  opp: { chip: Box; cards: Box[] }[];
+  /** Opponents: badge and three card boxes, by seat (mine is empty); `big` is where they sit grown. */
+  opp: { chip: Box; cards: Box[]; big: Box[] }[];
   /** Opponents' card width; under 40 px a tap opens the focus sheet. */
   ocw: number;
+  /** 5+ players: seats rest as mini cards and one at a time grows over the felt. */
+  grow: boolean;
   piles: Box;
   pw: number;
   play: Box;
@@ -87,6 +89,8 @@ interface Geo {
 const SLOTS = lucky7.SLOTS;
 const FLY_MS = 460;
 const RATIO = 1.4;
+/** Other seats' card width at rest with 5+ players. */
+const MINI_W = 22;
 const key = (seat: SeatId, slot: number): string => `${seat}:${slot}`;
 const wait = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 const clamp = (v: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, v));
@@ -120,29 +124,40 @@ export function luckyGeo(vw: number, vh: number, players: number, inset: { top: 
   const spots = SPOTS[n] ?? [];
   const topRow = spots.filter((s) => s[0] === 'T').length;
   const gap = 4;
-  let ocw = cw * (n === 1 ? 0.85 : n === 2 ? 0.72 : n <= 4 ? 0.6 : 0.45);
+  // 5+ players: mini cards at rest; the seat whose turn it is grows to the
+  // 4-player size, drawn over the felt (decisions.md, Lucky 7).
+  const grow = n >= 4;
+  const bw = Math.round(clamp(cw * 0.6, 28, 76));
+  const bh = Math.round(bw * RATIO);
+  let ocw = cw * (n === 1 ? 0.85 : n === 2 ? 0.72 : 0.6);
   ocw = Math.min(ocw, ((innerW - (topRow - 1) * 12) / Math.max(1, topRow) - 2 * gap) / 3);
-  ocw = Math.round(clamp(ocw, 28, 76));
+  ocw = grow ? MINI_W : Math.round(clamp(ocw, 28, 76));
   const och = Math.round(ocw * RATIO);
   const chipH = 26;
-  const gw = Math.max(3 * ocw + 2 * gap, 76);
+  const bigRowW = grow ? 3 * bw + 2 * gap : 3 * ocw + 2 * gap;
+  // A mini seat's badge keeps room for the name: as wide as its share of the top row allows.
+  const gw = grow ? Math.round(clamp(innerW / Math.max(1, topRow) - 12, 76, 104)) : Math.max(3 * ocw + 2 * gap, 76);
   const gh = chipH + 3 + och;
+  // Room a seat takes when grown: the piles and the card in play keep clear of it.
+  const fw = Math.max(gw, bigRowW);
+  const fh = grow ? chipH + 3 + bh : gh;
   const centreOf = (spot: string): { x: number; y: number } => {
     const topX = (): number => {
       const tops = spots.filter((s) => s[0] === 'T');
       const i = tops.indexOf(spot);
-      // Evenly spread, so neighbours never touch.
+      // Evenly spread, so neighbours never touch; mini seats sit out to the edges to leave a grown one room.
+      if (grow && tops.length > 1) return left + gw / 2 + ((innerW - gw) / (tops.length - 1)) * i;
       return clamp(left + (innerW / tops.length) * (i + 0.5), left + gw / 2, right - gw / 2);
     };
     if (spot[0] === 'T') return { x: topX(), y: R.y + gh / 2 };
     const x = spot[0] === 'L' ? left + gw / 2 : right - gw / 2;
     const y = spot.length === 1 ? sideY(0.62) : spot[1] === 'U' ? R.y + R.h * 0.42 : sideY(0.8);
-    return { x, y: Math.min(y, R.y + R.h - gh / 2) };
+    return { x, y: Math.min(y, R.y + R.h - fh + gh / 2) };
   };
   // Piles in the middle; smaller when side seats share their height.
   const sidesBeside = n >= 6;
   let pw = Math.min(64, cw * 0.66);
-  if (sidesBeside) pw = Math.min(pw, (innerW - 2 * gw - 36) / 3);
+  if (sidesBeside) pw = Math.min(pw, (innerW - 2 * fw - 36) / 3);
   pw = Math.round(clamp(pw, 30, 64));
   const ph = Math.round(pw * RATIO);
   const pilesW = 3 * pw + 2 * 12;
@@ -153,11 +168,11 @@ export function luckyGeo(vw: number, vh: number, players: number, inset: { top: 
   // Seats level with the middle sit below the card in play when they'd reach it.
   const sideY = (frac: number): number => {
     const y = R.y + R.h * frac;
-    const reaches = gw * 2 + hw + 16 > innerW;
+    const reaches = fw * 2 + hw + 16 > innerW;
     return reaches ? Math.max(y, play.y + play.h + 22 + gh / 2) : y;
   };
 
-  const opp: Geo['opp'] = Array.from({ length: players }, () => ({ chip: { x: 0, y: 0, w: 0, h: 0 }, cards: [] }));
+  const opp: Geo['opp'] = Array.from({ length: players }, () => ({ chip: { x: 0, y: 0, w: 0, h: 0 }, cards: [], big: [] }));
   spots.forEach((spot, r) => {
     const seatRel = r + 1;
     const c = centreOf(spot);
@@ -166,9 +181,31 @@ export function luckyGeo(vw: number, vh: number, players: number, inset: { top: 
     const rowW = 3 * ocw + 2 * gap;
     const cards: Box[] = [];
     for (let i = 0; i < SLOTS; i++) cards.push({ x: Math.round(c.x - rowW / 2 + i * (ocw + gap)), y: Math.round(y0 + chipH + 3), w: ocw, h: och });
-    opp[seatRel] = { chip: { x: Math.round(x0), y: Math.round(y0), w: Math.round(gw), h: chipH }, cards };
+    opp[seatRel] = { chip: { x: Math.round(x0), y: Math.round(y0), w: Math.round(gw), h: chipH }, cards, big: cards };
   });
-  return { vw, vh, cw, mine, opp, ocw, piles, pw, play, prompt, timer, bar };
+  // Grown rows: a top-row seat fits between its neighbours' mini cards, so it covers only felt.
+  if (grow) {
+    const topRels = spots.map((s, r) => (s[0] === 'T' ? r + 1 : 0)).filter((r) => r > 0);
+    spots.forEach((spot, r) => {
+      const o = opp[r + 1]!;
+      const c = o.cards[1]!.x + ocw / 2;
+      let x0 = left;
+      let x1 = right;
+      const ti = topRels.indexOf(r + 1);
+      if (spot[0] === 'T') {
+        const prev = opp[topRels[ti - 1] ?? -1]?.cards;
+        const next = opp[topRels[ti + 1] ?? -1]?.cards;
+        if (prev) x0 = prev[SLOTS - 1]!.x + ocw + gap;
+        if (next) x1 = next[0]!.x - gap;
+      }
+      const w = Math.min(bw, Math.floor((x1 - x0 - 2 * gap) / 3));
+      const h = Math.round(w * RATIO);
+      const rowW = 3 * w + 2 * gap;
+      const bx = clamp(c - rowW / 2, x0, x1 - rowW);
+      o.big = o.cards.map((b, i) => ({ x: Math.round(bx + i * (w + gap)), y: b.y, w, h }));
+    });
+  }
+  return { vw, vh, cw, mine, opp, ocw, grow, piles, pw, play, prompt, timer, bar };
 }
 
 export class LuckySevenTable {
@@ -201,6 +238,10 @@ export class LuckySevenTable {
   private lifted = new Set<string>();
   /** Seats flipped face up in the final reveal. */
   private revealedSeats = new Set<SeatId>();
+  /** The seat flipping face up right now in the final reveal: it grows. */
+  private revealing: SeatId | null = null;
+  /** The seat last drawn grown, so its cards pop only as it starts growing. */
+  private grownSeat: SeatId | null = null;
 
   // DOM
   private table: HTMLElement;
@@ -302,6 +343,7 @@ export class LuckySevenTable {
     if (view.phase === 'play' && (this.resultsOpen || this.revealedSeats.size)) {
       this.resultsOpen = false;
       this.revealedSeats.clear();
+      this.revealing = null;
       this.overlay.className = 'overlay hidden';
       this.peekShown = null;
     }
@@ -603,6 +645,8 @@ export class LuckySevenTable {
     await wait(400);
     for (const seat of order) {
       const cards = v.revealed?.[seat] ?? [];
+      this.revealing = seat;
+      this.render();
       const flips = cards.map((c, i) => {
         const e = this.slotEl({ seat, slot: i });
         if (!e) return Promise.resolve();
@@ -618,6 +662,8 @@ export class LuckySevenTable {
       sound.thud(1);
       await wait(this.feel.reduced ? 80 : 160);
     }
+    this.revealing = null;
+    this.render();
     await wait(700);
     if (!this.resultsOpen && this.view?.phase === 'over') {
       this.resultsOpen = true;
@@ -634,11 +680,25 @@ export class LuckySevenTable {
 
   private seatCentre(seat: SeatId): { x: number; y: number } {
     if (seat === this.me) return this.mineCentre();
-    const g = this.geo.opp[this.relSeat(seat)];
-    if (!g || !g.cards.length) return this.mineCentre();
-    const a = g.cards[0]!;
-    const b = g.cards[SLOTS - 1]!;
+    const cards = this.oppCards(seat);
+    if (!cards.length) return this.mineCentre();
+    const a = cards[0]!;
+    const b = cards[SLOTS - 1]!;
     return { x: (a.x + b.x + b.w) / 2, y: a.y + a.h / 2 };
+  }
+
+  /** At 5+ players, the one seat drawn grown: whoever's turn it is, or the seat flipping in the reveal. */
+  private growing(v: View): SeatId | null {
+    if (!this.geo.grow) return null;
+    if (this.revealing !== null) return this.revealing === this.me ? null : this.revealing;
+    return v.phase === 'play' && v.turn !== this.me ? v.turn : null;
+  }
+
+  /** Where a seat's three cards sit right now: grown or at rest. */
+  private oppCards(seat: SeatId): Box[] {
+    const g = this.geo.opp[this.relSeat(seat)];
+    if (!g || !this.view) return [];
+    return this.growing(this.view) === seat ? g.big : g.cards;
   }
 
   private mineCentre(): { x: number; y: number } {
@@ -723,6 +783,9 @@ export class LuckySevenTable {
     const g = this.geo;
     const now = Date.now();
     place(this.mineEl, g.mine);
+    const grown = this.growing(v);
+    const popNow = grown !== null && grown !== this.grownSeat && this.revealing === null;
+    this.grownSeat = grown;
     for (let seat = 0; seat < v.players; seat++) {
       for (let i = 0; i < SLOTS; i++) {
         const k = key(seat, i);
@@ -736,12 +799,23 @@ export class LuckySevenTable {
           c.addEventListener('click', () => this.tapCard(t));
           this.cardEls.set(k, c);
         }
-        if (seat !== this.me) {
-          const box = g.opp[this.relSeat(seat)]?.cards[i];
-          if (box) place(c, box);
-        }
         const locked = v.locked[seat]![i]! && !this.hideLocks.has(k);
         const peeked = this.peekShown && now < this.peekShown.until ? this.peekShown.cards.get(k) ?? null : null;
+        if (seat !== this.me) {
+          const o = g.opp[this.relSeat(seat)];
+          let box = this.oppCards(seat)[i];
+          // A mini card I peeked at shows at the grown size, so its face reads.
+          if (o && box && peeked && box === o.cards[i] && g.grow) box = this.grownAround(o.cards[i]!, o.big[i]!);
+          if (box) place(c, box);
+          const isGrown = g.grow && !!o && box !== o.cards[i];
+          c.classList.toggle('mini', g.grow && !isGrown);
+          c.classList.toggle('grown', isGrown);
+          if (popNow && seat === grown) {
+            c.classList.remove('pop');
+            void c.offsetWidth;
+            c.classList.add('pop');
+          } else if (seat !== grown) c.classList.remove('pop');
+        }
         const revealed = this.revealedSeats.has(seat) ? v.revealed?.[seat]?.[i] ?? null : null;
         const face = revealed ?? peeked;
         // The peeked card counts down, only on my screen.
@@ -770,6 +844,14 @@ export class LuckySevenTable {
         c.setAttribute('aria-label', `${seat === this.me ? L().l7.yourCards : this.seatMeta[seat]?.name ?? ''} ${i + 1}${locked ? ', ' + L().l7.locked : ''}${face ? ', ' + cardLabel(face) : ''}`);
       }
     }
+  }
+
+  /** A grown-size box hanging from a mini card (clear of the seat's badge), kept on screen. */
+  private grownAround(rest: Box, big: Box): Box {
+    const g = this.geo;
+    const x = clamp(rest.x + rest.w / 2 - big.w / 2, 8, g.vw - 8 - big.w);
+    const y = clamp(rest.y, 8, g.vh - 8 - big.h);
+    return { x: Math.round(x), y: Math.round(y), w: big.w, h: big.h };
   }
 
   private renderCentre(v: View): void {

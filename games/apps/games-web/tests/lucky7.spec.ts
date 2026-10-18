@@ -66,6 +66,59 @@ for (const players of [2, 4, 8]) {
   });
 }
 
+for (const size of [{ width: 360, height: 740 }, { width: 390, height: 844 }]) {
+  test(`8 players at ${size.width}×${size.height}: mini seats grow on their turn without overlapping or leaving the screen`, async ({ page }) => {
+    await page.setViewportSize(size);
+    const errs = errorsOf(page);
+    await page.goto('/lucky7/?players=8&seed=4&mute=1&autoplay=1&speed=0.3&turn=4000&reduced=1&humour=off');
+    await expect(page.locator('.l7-card')).toHaveCount(24);
+    const grownSeen = new Set<string>();
+    const deadline = Date.now() + 60_000;
+    while (grownSeen.size < 7 && Date.now() < deadline) {
+      const r = await page.evaluate(() => {
+        const box = (e: Element) => e.getBoundingClientRect();
+        const hit = (a: DOMRect, b: DOMRect) => a.left + 1 < b.right && b.left + 1 < a.right && a.top + 1 < b.bottom && b.top + 1 < a.bottom;
+        const problems: string[] = [];
+        // Only cards at rest: no flight, pop, lift or peek in the way of measuring.
+        const cards = [...document.querySelectorAll<HTMLElement>('.l7-card')].filter(
+          (c) => !c.closest('.l7-mine') && c.style.visibility !== 'hidden' && !c.classList.contains('lifted') && !c.dataset.peekLeft && c.getAnimations({ subtree: true }).length === 0,
+        );
+        const bySeat = new Map<string, DOMRect[]>();
+        for (const c of cards) bySeat.set(c.dataset.seat!, [...(bySeat.get(c.dataset.seat!) ?? []), box(c)]);
+        const chips = new Map([...document.querySelectorAll<HTMLElement>('.l7-seat')].map((s) => [s.dataset.seat!, box(s)]));
+        const bar = box(document.querySelector('.action-bar')!);
+        const prompt = box(document.querySelector('.l7-prompt')!);
+        const grown = document.querySelector<HTMLElement>('.l7-card.grown')?.dataset.seat ?? null;
+        const seats = [...bySeat.keys()];
+        for (const s of seats) {
+          for (const b of bySeat.get(s)!) {
+            if (b.left < 0 || b.top < 0 || b.right > innerWidth || b.bottom > Math.min(bar.top, prompt.top)) problems.push(`seat ${s} card off its area`);
+            for (const [t, c] of chips) if (t !== s && hit(b, c)) problems.push(`seat ${s} card on seat ${t}'s badge`);
+            for (const t of seats) if (t > s) for (const o of bySeat.get(t)!) if (hit(b, o)) problems.push(`seats ${s} and ${t} cards overlap`);
+          }
+          const own = bySeat.get(s)!;
+          own.forEach((a, i) => own.forEach((b, j) => j > i && hit(a, b) && problems.push(`seat ${s} cards overlap each other`)));
+        }
+        for (const p of ['.l7-deck', '.l7-discard', '.l7-used']) {
+          const pb = box(document.querySelector(p)!);
+          for (const s of seats) for (const b of bySeat.get(s)!) if (hit(b, pb)) problems.push(`seat ${s} card on ${p}`);
+        }
+        const w = (s: string) => Math.round(bySeat.get(s)?.[0]?.width ?? 0);
+        return { problems, grown, grownW: grown ? w(grown) : 0, restW: seats.filter((s) => s !== grown).map(w) };
+      });
+      expect(r.problems).toEqual([]);
+      for (const w of r.restW) if (w) expect(w).toBeLessThanOrEqual(24);
+      if (r.grown !== null && r.grownW) {
+        expect(r.grownW).toBeGreaterThanOrEqual(40);
+        grownSeen.add(r.grown);
+      }
+      await page.waitForTimeout(150);
+    }
+    expect(grownSeen.size).toBe(7);
+    expect(errs).toEqual([]);
+  });
+}
+
 test('a whole game against bots ends with the reveal, then everyone ranked lowest first', async ({ page }) => {
   const errs = errorsOf(page);
   await page.setViewportSize({ width: 390, height: 844 });

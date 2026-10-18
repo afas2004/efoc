@@ -69,6 +69,7 @@ The spec's rules stand. Clarified with Fahmi:
 - A locked card stays hidden even from its owner's J peek.
 - **Playtest 18 Oct (corrected):** a J is **either/or**: see **all your own cards**, OR peek at **one card of another player**. Not both, and not just one of your own. Whatever you look at stays face up for you for `peekSeconds` (8 s). Locked cards stay hidden, yours included. Everyone else sees which cards are being looked at (they lift), never their faces.
 - Power cards are single use: a used power goes to Used for good. One thrown away unused can still be taken off Discard and used (17 Oct decision).
+- **Crowded tables (5+ players, 18 Oct):** other seats rest as mini cards (22 px) under their name badge. The seat whose turn it is grows to the 4-player size (about 45 px; a top-row seat fits between its neighbours) and is drawn over the felt; nothing else moves. In the final reveal the seat being flipped grows. A card I J-peek at shows at the grown size for its 8 s. Targeting small seats still goes through the focus sheet. My own cards are unchanged.
 - The Jester reacts to public stories: a 7 or A thrown away, a 9 thrown when the next player is locked, a power left on Discard, a good card swapped out by mistake, revenge, grudges, halfway and the last card, close wins. It never repeats a line soon after itself.
 
 ## Left for later (as the spec says)
