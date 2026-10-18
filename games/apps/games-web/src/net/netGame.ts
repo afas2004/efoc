@@ -213,6 +213,7 @@ const luckySevenGame: NetGame = {
       case 'discard':
         return { type: 'discard' };
       case 'peek': {
+        if (m.own === true) return { type: 'peek', own: true };
         // Firebase drops nulls: a missing target means "no target".
         const t = m.target === undefined ? null : targetOf(m.target);
         return t === undefined ? null : { type: 'peek', target: t };

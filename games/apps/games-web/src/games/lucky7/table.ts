@@ -181,8 +181,8 @@ export class LuckySevenTable {
   private qMine: number | null = null;
   /** A move sent and not yet confirmed by the host: no double taps. */
   private sent = false;
-  /** A card I peeked at, shown face up in its slot for a moment. */
-  private peekShown: { target: Target; card: Card; until: number } | null = null;
+  /** What my J showed me, face up for a moment: all my own cards, or one of theirs. Only on my screen. */
+  private peekShown: { cards: Map<string, Card>; until: number } | null = null;
   private turnTotal = 20000;
   private lastTickSecond = -1;
   private resultsOpen = false;
@@ -484,6 +484,8 @@ export class LuckySevenTable {
           const fromDeck = e.from === 'deck';
           const face = fromDeck ? null : (e.card as Card);
           this.chain(async () => {
+            // A new move: the last line is about the move before, so it goes.
+            if (this.jesterAt && Date.now() - this.jesterAt > 1500) this.hideJester();
             const src = this.rectOf(fromDeck ? this.deckEl : this.discardEl);
             this.render();
             const dst = this.playRect();
@@ -574,13 +576,14 @@ export class LuckySevenTable {
           break;
         }
         case 'peeked': {
-          // Everyone sees which card is being looked at, never its face.
-          const t = e.target as Target;
+          // Everyone sees which cards are being looked at, never their faces:
+          // all of the peeker's own open cards, or the one card of someone else's.
+          const keys = e.own ? [0, 1, 2].filter((i) => !v.locked[seat!]![i]).map((i) => key(seat!, i)) : [key((e.target as Target).seat, (e.target as Target).slot)];
           this.chain(async () => {
-            this.lifted.add(key(t.seat, t.slot));
+            keys.forEach((k) => this.lifted.add(k));
             this.render();
             await wait(this.feel.reduced || this.backlog > 3 ? 300 : 1300);
-            this.lifted.delete(key(t.seat, t.slot));
+            keys.forEach((k) => this.lifted.delete(k));
           });
           break;
         }
@@ -738,7 +741,7 @@ export class LuckySevenTable {
           if (box) place(c, box);
         }
         const locked = v.locked[seat]![i]! && !this.hideLocks.has(k);
-        const peeked = this.peekShown && this.peekShown.target.seat === seat && this.peekShown.target.slot === i && now < this.peekShown.until ? this.peekShown.card : null;
+        const peeked = this.peekShown && now < this.peekShown.until ? this.peekShown.cards.get(k) ?? null : null;
         const revealed = this.revealedSeats.has(seat) ? v.revealed?.[seat]?.[i] ?? null : null;
         const face = revealed ?? peeked;
         // The peeked card counts down, only on my screen.
@@ -858,8 +861,11 @@ export class LuckySevenTable {
     }
     if (!this.myTurn || v.phase !== 'play') return;
     if (v.step === 'peek') {
-      // Every card on the table locked: nothing to look at.
-      if (!v.locked.some((row) => row.some((l) => !l))) {
+      const mineOpen = v.locked[this.me]!.some((l) => !l);
+      if (mineOpen) {
+        button(bar, 'btn btn-primary btn-power', u.peekMine, u.peekMine).addEventListener('click', () => this.send({ type: 'peek', own: true }));
+      } else if (!this.anyOpponentOpen(v)) {
+        // Every card on the table locked: nothing to look at.
         button(bar, 'btn btn-primary', u.skip, u.skip).addEventListener('click', () => this.send({ type: 'peek', target: null }));
       }
       return;
@@ -906,7 +912,7 @@ export class LuckySevenTable {
     if (!v || !this.myTurn) return false;
     const locked = v.locked[t.seat]![t.slot]!;
     const mine = t.seat === this.me;
-    if (v.step === 'peek') return this.mode === 'peek' && !locked; // any one card, mine or theirs
+    if (v.step === 'peek') return this.mode === 'peek' && !locked; // mine (all of them) or one of theirs
     if (v.step !== 'act') return false;
     switch (this.mode) {
       case 'none':
@@ -962,6 +968,9 @@ export class LuckySevenTable {
         return this.render();
       case 'shuffle':
         return this.send({ type: 'use', seat: t.seat });
+      case 'peek':
+        if (t.seat === this.me) return this.send({ type: 'peek', own: true });
+        return this.pickTheirs(t);
       default:
         return this.pickTheirs(t);
     }
@@ -1042,7 +1051,11 @@ export class LuckySevenTable {
     const seat = typeof e.seat === 'number' ? e.seat : null;
     switch (e.type) {
       case 'jester':
-        this.showJester(e as JesterEvent);
+        // After this move's cards have landed, so the line matches the table.
+        this.chain(async () => {
+          this.showJester(e as JesterEvent);
+          this.jesterAt = Date.now();
+        });
         break;
       case 'turn':
         if (e.seat === this.me) {
@@ -1099,10 +1112,23 @@ export class LuckySevenTable {
         haptic(target === this.me ? 'strong' : 'light');
         break;
       }
+      case 'peek_own': {
+        // All my open cards, face up for a few seconds; locked ones stay hidden.
+        const ms = ((e.seconds as number) || v.config.peekSeconds) * 1000;
+        const cards = new Map<string, Card>();
+        (e.cards as (Card | null)[]).forEach((c, i) => c && cards.set(key(this.me, i), c));
+        this.peekShown = { cards, until: Date.now() + ms };
+        this.feel.play(2, 'peek', (ctx) => {
+          banner(this.fx, `👀 ${L().l7.peekResult}`, 'info', 'pop', ctx, this.mineCentre());
+          haptic('medium');
+        });
+        window.setTimeout(() => this.render(), ms + 50);
+        break;
+      }
       case 'peek_card': {
         const t = e.target as Target;
         const ms = ((e.seconds as number) || v.config.peekSeconds) * 1000;
-        this.peekShown = { target: t, card: e.card as Card, until: Date.now() + ms };
+        this.peekShown = { cards: new Map([[key(t.seat, t.slot), e.card as Card]]), until: Date.now() + ms };
         this.feel.play(2, 'peek', (ctx) => {
           banner(this.fx, `👀 ${L().l7.peekResult}`, 'info', 'pop', ctx, this.seatCentre(t.seat));
           haptic('medium');
@@ -1146,6 +1172,24 @@ export class LuckySevenTable {
     if (!this.geo) return;
     const at = this.seatCentre(seat);
     this.feel.play(1, 'stamp', (ctx) => banner(this.fx, text, role === 'pass' ? 'neutral' : role, 'pop', ctx, at));
+  }
+
+  private jesterAt = 0;
+
+  private hideJester(): void {
+    const j = this.jesterEl;
+    this.jesterAt = 0;
+    window.clearTimeout(this.jesterTimer);
+    if (j.classList.contains('hidden')) return;
+    j.classList.remove('show');
+    j.classList.add('leaving');
+    window.setTimeout(() => {
+      if (!j.classList.contains('show')) {
+        j.className = 'jester hidden';
+        this.stopEmoji?.();
+        this.stopEmoji = null;
+      }
+    }, 300);
   }
 
   private showJester(e: JesterEvent): void {

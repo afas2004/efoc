@@ -139,7 +139,7 @@ test('8 players: small cards are picked in the focus sheet', async ({ page }) =>
   await expect(theirCard(page, seat, 1).locator('.l7-lock')).toBeVisible();
 });
 
-test('K locks a card (a K and padlock sit on it); a J then peeks at ONE card, mine or theirs, never a locked one', async ({ page }) => {
+test('K locks a card (a K and padlock sit on it); a J then shows ALL my open cards (the locked one stays hidden)', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/lucky7/?players=2&seed=7&mute=1&turn=60000');
   await stackDeck(page, 'Kc');
@@ -152,17 +152,19 @@ test('K locks a card (a K and padlock sit on it); a J then peeks at ONE card, mi
   await stackDeck(page, 'Jc');
   await page.locator('.l7-deck').click();
   await page.getByRole('button', { name: /Use/ }).click();
-  // Any one unlocked card: my two open ones and their three; not my locked one.
-  await expect(page.locator('.l7-prompt')).toHaveText(/one of yours, or someone else/);
+  // Either all of mine (my open cards glow, and a button) or one of theirs.
+  await expect(page.locator('.l7-prompt')).toHaveText(/all your cards, or tap one card of someone else/);
   await expect(page.locator('.l7-card.pickable')).toHaveCount(5);
   await expect(page.locator('.l7-slot').nth(1)).not.toHaveClass(/pickable/);
-  // Peek at one of mine: only that card turns face up, with a countdown.
-  const mine = (await host(page, 'h.state.slots[0][2]')) as string;
+  await expect(page.getByRole('button', { name: '👀 All my cards' })).toBeVisible();
+  const mine = (await host(page, 'h.state.slots[0]')) as string[];
   await page.locator('.l7-slot').nth(2).click();
-  await expect(page.locator('.l7-slot').nth(2).locator('.card')).toHaveAttribute('data-card', mine);
-  await expect(page.locator('.l7-slot').nth(2)).toHaveAttribute('data-peek-left', /👀/);
-  await expect(page.locator('.l7-card.face')).toHaveCount(1);
-  // Nothing more to pick: the turn moved on.
+  // Both open cards face up for me, with a countdown; the locked one stays down; none of theirs.
+  await expect(page.locator('.l7-slot').nth(0).locator('.card')).toHaveAttribute('data-card', mine[0]!);
+  await expect(page.locator('.l7-slot').nth(2).locator('.card')).toHaveAttribute('data-card', mine[2]!);
+  await expect(page.locator('.l7-slot').nth(0)).toHaveAttribute('data-peek-left', /👀/);
+  await expect(page.locator('.l7-slot').nth(1)).not.toHaveClass(/face/);
+  await expect(page.locator('.l7-card.face')).toHaveCount(2);
   await expect(page.locator('.l7-card.pickable')).toHaveCount(0);
 });
 

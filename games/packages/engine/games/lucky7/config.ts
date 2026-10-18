@@ -1,7 +1,7 @@
 // Lucky 7 house rules. Defaults follow docs/spec.md and docs/decisions.md.
 
 export interface LuckySevenConfig {
-  /** Seconds a J's peeked card stays face up for you (spec `peekSeconds`). */
+  /** Seconds a J's peek stays face up for you: your own cards, or their one card (spec `peekSeconds`). */
   peekSeconds: number;
   /**
    * Safety stop: the round also ends after this many turns. A card taken
@@ -13,6 +13,6 @@ export interface LuckySevenConfig {
 }
 
 export const defaultConfig: LuckySevenConfig = {
-  peekSeconds: 5,
+  peekSeconds: 8,
   maxTurns: 0,
 };

@@ -7,8 +7,8 @@
 // The round ends when a turn finishes with the centre deck empty; lowest
 // total wins.
 //
-// Powers: J peek at ONE card, one of yours or someone else's (playtest
-// 18 Oct), Q swap one of yours with one of theirs, K lock a card (no peek,
+// Powers: J peek: EITHER see all your own (unlocked) cards, OR one card of
+// another player (playtest 18 Oct), Q swap one of yours with one of theirs, K lock a card (no peek,
 // swap or shuffle; the K sits on it), 9 unlock (the K goes to Used) or skip,
 // 10 shuffle one seat's unlocked slots. Used powers go to Used for good.
 //
@@ -56,8 +56,12 @@ export type LuckyMove =
    * 10: `seat`.
    */
   | { type: 'use'; mine?: number; target?: Target | null; seat?: SeatId }
-  /** After a J: one unlocked card, yours or another player's (null only when every card is locked). */
-  | { type: 'peek'; target: Target | null };
+  /**
+   * After a J, one of: `own: true` to see all your own unlocked cards, or
+   * `target` for one unlocked card of another player (null only when there
+   * is nothing at all to look at).
+   */
+  | { type: 'peek'; own?: boolean; target?: Target | null };
 
 export interface LuckyState {
   config: LuckySevenConfig;
@@ -146,8 +150,8 @@ function allSlots(s: LuckyState, filter: (t: Target) => boolean): Target[] {
 /** Opponent slots a Q may swap with. */
 const openOpponentSlots = (s: LuckyState, me: SeatId): Target[] => allSlots(s, (t) => t.seat !== me && unlocked(s, t));
 
-/** Any unlocked slot: what a J may peek at. */
-const openSlots = (s: LuckyState): Target[] => allSlots(s, (t) => unlocked(s, t));
+/** Do I have any unlocked card to look at? */
+const ownOpen = (s: LuckyState, me: SeatId): boolean => s.locks[me]!.some((k) => k === null);
 
 export function legalMoves(state: LuckyState, seat: SeatId): LuckyMove[] {
   if (state.phase !== 'play' || seat !== state.turn) return [];
@@ -158,8 +162,9 @@ export function legalMoves(state: LuckyState, seat: SeatId): LuckyMove[] {
     return out;
   }
   if (state.step === 'peek') {
-    const targets = openSlots(state);
-    return targets.length ? targets.map((target) => ({ type: 'peek', target })) : [{ type: 'peek', target: null }];
+    const peeks: LuckyMove[] = openOpponentSlots(state, seat).map((target) => ({ type: 'peek', target }));
+    if (ownOpen(state, seat)) peeks.unshift({ type: 'peek', own: true });
+    return peeks.length ? peeks : [{ type: 'peek', target: null }];
   }
   for (let slot = 0; slot < SLOTS; slot++) if (state.locks[seat]![slot] === null) out.push({ type: 'swap', slot });
   out.push({ type: 'discard' });
@@ -194,10 +199,11 @@ export function validate(state: LuckyState, seat: SeatId, move: unknown): Valida
     return no('Bad move');
   }
   if (state.step === 'peek') {
-    if (m.type !== 'peek') return no('Pick a card to peek at');
-    const open = openSlots(state);
-    if (m.target === null) return open.length === 0 ? { ok: true } : no('Pick a card to peek at');
-    if (!isTarget(m.target) || !unlocked(state, m.target)) return no("You can't peek at that card");
+    if (m.type !== 'peek') return no('Look at your cards, or one of theirs');
+    if (m.own === true) return ownOpen(state, seat) ? { ok: true } : no('All your cards are locked');
+    const nothing = !ownOpen(state, seat) && openOpponentSlots(state, seat).length === 0;
+    if (m.target === null || m.target === undefined) return nothing ? { ok: true } : no('Look at your cards, or one of theirs');
+    if (!isTarget(m.target) || m.target.seat === seat || !unlocked(state, m.target)) return no("You can't peek at that card");
     return { ok: true };
   }
   // step 'act'
@@ -346,7 +352,14 @@ function applyTrusted(state: LuckyState, seat: SeatId, move: LuckyMove, rng: Rng
       return { state: s, events };
     }
     case 'peek': {
-      if (move.target) {
+      if (move.own) {
+        // All my own cards; locked ones stay hidden even from me.
+        events.push({ type: 'peeked', seat, own: true });
+        if (s.slots[seat]![0] !== HIDDEN) {
+          const own = s.slots[seat]!.map((c, i) => (s.locks[seat]![i] === null ? c : null));
+          events.push({ type: 'peek_own', to: seat, cards: own, seconds: s.config.peekSeconds });
+        }
+      } else if (move.target) {
         const card = s.slots[move.target.seat]![move.target.slot]!;
         events.push({ type: 'peeked', seat, target: move.target });
         if (card !== HIDDEN) events.push({ type: 'peek_card', to: seat, target: move.target, card, seconds: s.config.peekSeconds });

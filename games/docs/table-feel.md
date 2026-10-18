@@ -64,7 +64,18 @@ Players must be able to track cards (in Lucky 7 that is the game), so:
 - Reduced motion keeps the order and the pauses but shortens flights to
   fades.
 
-## 5. Who is there (online tables)
+## 5. The Jester speaks about what the table shows
+
+- A line plays **after** the move's cards have landed, never before.
+- When the next move starts, the previous line goes, so the Jester never
+  talks over a different move.
+- Lines describe what everyone can see: a card thrown or swapped out (its
+  face is on Discard), a power and its target, who peeked at which cards.
+  Never a hidden face, and never a claim the animation contradicts.
+- No line repeats soon after itself; small moments wait 15 s between
+  lines, big ones always speak.
+
+## 6. Who is there (online tables)
 
 - **Online:** normal seat.
 - **Reconnecting:** seat greyed, blinking amber dot, "Reconnecting…".

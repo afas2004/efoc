@@ -495,22 +495,16 @@
     ],
     "l7_swap": [
       {
-        "text": "{name} swaps a card with {victim}. Nobody knows what moved. Nobody!",
+        "text": "{name} swaps a card with {victim}. Watch where they went!",
         "tone": "neutral"
       },
       {
-        "text": "A blind swap between {name} and {victim}. Did someone just win or lose big?",
-        "tone": "neutral"
-      }
-    ],
-    "l7_peek": [
-      {
-        "text": "{name} is peeking. Act natural, everyone.",
+        "text": "A blind swap: {name} and {victim} trade cards. Neither knows what they got.",
         "tone": "neutral"
       },
       {
-        "text": "{name} takes a sneaky look. Poker face on!",
-        "tone": "neutral"
+        "text": "{name} hands {victim} a mystery card and takes one back. Good deal or bad?",
+        "tone": "tease"
       }
     ],
     "l7_dump": [
@@ -694,6 +688,34 @@
         "text": "{name} wins by a single point. {second} is in pain.",
         "tone": "tease"
       }
+    ],
+    "l7_peek_own": [
+      {
+        "text": "{name} checks their own cards. Memorise fast!",
+        "tone": "neutral"
+      },
+      {
+        "text": "{name} takes a good look at their cards. Poker face on!",
+        "tone": "neutral"
+      },
+      {
+        "text": "{name} is studying their hand. Remember it before someone shuffles it!",
+        "tone": "tease"
+      }
+    ],
+    "l7_peek_other": [
+      {
+        "text": "{name} sneaks a look at one of {victim}'s cards. 👀",
+        "tone": "neutral"
+      },
+      {
+        "text": "{victim}, {name} just saw one of your cards. Hmm.",
+        "tone": "tease"
+      },
+      {
+        "text": "{name} spies on {victim}. Now they know something you don't!",
+        "tone": "tease"
+      }
     ]
   },
   "l7": {
@@ -724,7 +746,7 @@
       "T": "Shuffle"
     },
     "powerHelp": {
-      "J": "Peek at one card for {n} s: one of yours, or someone else's. Only you see it.",
+      "J": "Either see all your own cards, or peek at one card of someone else's, for {n} s. Only you see them. Locked cards stay hidden.",
       "Q": "Swap one of your cards with one of theirs. Nobody sees them.",
       "K": "Lock any card. Locked cards can't be peeked, swapped or shuffled.",
       "9": "Remove a lock, or skip.",
@@ -735,7 +757,7 @@
     "pickAny": "Pick a card to lock",
     "pickLocked": "Pick a locked card to free, or skip",
     "pickSeat": "Pick whose cards to shuffle",
-    "pickPeek": "Peek at one card: one of yours, or someone else's",
+    "pickPeek": "Look at all your cards, or tap one card of someone else's",
     "peekResult": "Only you see this",
     "locked": "Locked",
     "stamps": {
@@ -755,6 +777,7 @@
     "winner": "Lowest wins",
     "tie": "Shared win!",
     "setupHint": "Lowest total wins. 7 = 0, A = 1, J Q K = 10.",
-    "me": "Me"
+    "me": "Me",
+    "peekMine": "👀 All my cards"
   }
 }

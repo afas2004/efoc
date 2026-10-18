@@ -1,7 +1,7 @@
 // Lucky 7's Jester: the host picks at most one line per log entry, so every
 // phone shows the same line. Only public facts feed it: thrown and
 // swapped-out cards (face up on Discard), powers used, locks, whose turn is
-// next, the deck count. Hidden cards, drawn cards and peeks never do.
+// next, the deck count, and which cards a J looked at. Hidden faces never do.
 //
 // Beyond the big moments it watches for the table's stories: a good card
 // thrown away, a 9 thrown right when the next player is locked, a power
@@ -39,7 +39,8 @@ const PRIORITY = [
   'l7_swap_out_high',
   'l7_halfway',
   'l7_dump_low',
-  'l7_peek',
+  'l7_peek_other',
+  'l7_peek_own',
 ];
 
 const short = (c: string): string => (c[0] === 'T' ? '10' : c[0]!) + ({ d: '♦', c: '♣', h: '♥', s: '♠' } as Record<string, string>)[c[1]!]!;
@@ -102,7 +103,12 @@ export class LuckySevenCommentator {
             this.lastVictim = victim;
           }
           if (e.power === 'Q' && t) candidates.push(['l7_swap', t.seat, { name: name(seat!), victim: name(t.seat) }]);
-          if (e.power === 'J') candidates.push(['l7_peek', seat, { name: name(seat!) }]);
+          break;
+        }
+        case 'peeked': {
+          // Said once the J's choice is made: their own cards, or one of someone else's.
+          if (e.own) candidates.push(['l7_peek_own', seat, { name: name(seat!) }]);
+          else if (e.target) candidates.push(['l7_peek_other', (e.target as Target).seat, { name: name(seat!), victim: name((e.target as Target).seat) }]);
           break;
         }
         case 'card_locked': {

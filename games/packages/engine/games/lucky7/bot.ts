@@ -30,10 +30,11 @@ export function bot(v: LuckyView, level: BotLevel, rng: Rng): LuckyMove {
   }
 
   if (v.step === 'peek') {
+    // Look at my own cards, or one of someone else's.
     const targets: Target[] = [];
     for (const seat of opponents(v, me)) for (const slot of openSlots(v, seat)) targets.push({ seat, slot });
-    // Every opponent card locked: a look at one of mine instead.
-    if (!targets.length) for (const slot of openSlots(v, me)) targets.push({ seat: me, slot });
+    const mineOpen = openSlots(v, me).length > 0;
+    if (mineOpen && (!targets.length || rng.next() < 0.5)) return { type: 'peek', own: true };
     return { type: 'peek', target: targets.length ? pick(targets, rng) : null };
   }
 
