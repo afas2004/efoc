@@ -271,3 +271,40 @@ describe('Firestore: stats, achievements, reports', () => {
     await assertFails(getDoc(doc(fs('a'), 'reports/x')));
   });
 });
+
+describe('one-time guests (guest-token: claims guest_room, guest_until)', () => {
+  const guest = (room: string, untilMs: number) =>
+    env.authenticatedContext('guest-1', { guest_room: room, guest_until: untilMs });
+  const soon = () => Date.now() + 60 * 60 * 1000;
+
+  it('a guest reads and joins only their own room, as themself', async () => {
+    await seedRoom();
+    const g = guest('r1', soon()).database();
+    await assertSucceeds(get(ref(g, `${R}/meta`)));
+    await assertSucceeds(set(ref(g, `${R}/members/guest-1`), { name: 'Visitor', avatar: '🎲', ready: false, joinedAt: 4 }));
+    await assertSucceeds(set(ref(g, 'presence/r1/guest-1'), { online: true, lastSeen: serverTimestamp() }));
+    await assertFails(set(ref(g, `${R}/members/a`), { name: 'Not Ann', avatar: '🎲' }));
+    await assertFails(get(ref(guest('r2', soon()).database(), `${R}/meta`)));
+  });
+  it('an expired guest gets nothing', async () => {
+    await seedRoom();
+    await assertFails(get(ref(guest('r1', Date.now() - 1000).database(), `${R}/meta`)));
+  });
+  it("a guest can't see the group's tables, take over as host, or take a listing down", async () => {
+    await seedRoom({ members: { h: { name: 'Host', avatar: '😎' }, 'guest-1': { name: 'Visitor', avatar: '🎲' } } });
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await set(ref(ctx.database(), 'presence/r1'), { h: { online: false, lastSeen: Date.now() - 120_000 } });
+      await set(ref(ctx.database(), 'tables/g1/r1'), { gameId: 'bigtwo', hostUid: 'h', hostName: 'Host', createdAt: 1 });
+    });
+    const g = guest('r1', soon()).database();
+    await assertFails(get(ref(g, 'tables/g1')));
+    await assertFails(set(ref(g, `${R}/meta/hostUid`), 'guest-1'));
+    await assertFails(set(ref(g, 'tables/g1/r1'), null));
+  });
+  it("guests don't touch Firestore stats or reports", async () => {
+    const g = guest('r1', soon()).firestore();
+    await assertFails(getDoc(doc(g, 'users/a/stats/bigtwo')));
+    await assertFails(setDoc(doc(g, 'users/guest-1/stats/bigtwo'), { played: 1 }));
+    await assertFails(addDoc(collection(g, 'reports'), { reporterUid: 'guest-1', text: 'x' }));
+  });
+});

@@ -11,6 +11,7 @@ import 'active_table.dart';
 import 'game_session.dart';
 import 'games_config.dart';
 import 'games_database.dart';
+import 'guest_pass.dart';
 import 'open_tables.dart';
 import 'table_link.dart';
 import 'table_view.dart';
@@ -30,6 +31,9 @@ class TableScreen extends StatefulWidget {
   /// the host and copies them into rooms/{id}/allowed). Null to join.
   final List<String>? createWithMembers;
 
+  /// A one-time guest from /play: no group, no listing, no invites.
+  final bool guest;
+
   const TableScreen({
     super.key,
     required this.gameId,
@@ -38,6 +42,7 @@ class TableScreen extends StatefulWidget {
     required this.myUid,
     required this.myName,
     this.createWithMembers,
+    this.guest = false,
   });
 
   @override
@@ -88,8 +93,9 @@ class _TableScreenState extends State<TableScreen> with WidgetsBindingObserver {
       onUpdated: (values) => _onPageUpdate(db, roomId, values),
     );
     _clock = db.clockOffset.listen((o) => _clockOffset = o, onError: (_) {});
-    // Come back here if the app or tab dies mid-game.
-    ActiveTable.save(_link!);
+    // Come back here if the app or tab dies mid-game. (A guest's /play
+    // link does that for them.)
+    if (!widget.guest) ActiveTable.save(_link!);
     // A joiner's room already exists; the host's is watched once created.
     if (widget.createWithMembers == null) _watchResults(db, roomId);
     setState(() => _view = _buildView());
@@ -99,7 +105,7 @@ class _TableScreenState extends State<TableScreen> with WidgetsBindingObserver {
   /// coming back to it after a reload.
   void _watchResults(GameDb db, String roomId) {
     _resultsWatch ??= db.watch('rooms/$roomId/results', (r) {
-      if (r == null) return;
+      if (r == null || widget.guest) return;
       ActiveTable.clear();
       OpenTables.instance
           .unlist(widget.groupId, roomId)
@@ -129,7 +135,7 @@ class _TableScreenState extends State<TableScreen> with WidgetsBindingObserver {
   /// rules, which is why this waits for the page's own write.
   void _onPageUpdate(GameDb db, String roomId, Map<String, Object?> values) {
     // The host closed the table from the waiting room.
-    if (values['rooms/$roomId/meta/status'] == 'closed') {
+    if (values['rooms/$roomId/meta/status'] == 'closed' && !widget.guest) {
       ActiveTable.clear();
       OpenTables.instance
           .unlist(widget.groupId, roomId)
@@ -159,24 +165,87 @@ class _TableScreenState extends State<TableScreen> with WidgetsBindingObserver {
     _watchResults(db, roomId);
   }
 
-  /// The waiting room's Invite button: share (Android) or copy (web) a
-  /// link that opens this table.
+  /// The waiting room's Invite button: a link for the group, or a
+  /// one-time guest link for someone outside it.
   Future<void> _invite() async {
     final link = _link;
     if (link == null) return;
-    final text = 'Join my ${link.gameName()} table on EFOC: ${link.toUri()}';
+    if (widget.guest) {
+      _toast('Only Log members can invite people');
+      return;
+    }
+    final choice = await _controller.whileCovered(() => showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: EfocColors.sheetBg,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.group_rounded, color: Colors.white70),
+              title: const Text('Invite from the Log',
+                  style: TextStyle(color: Colors.white)),
+              subtitle: const Text('A link for members',
+                  style: TextStyle(color: EfocColors.textMuted)),
+              onTap: () => Navigator.of(ctx).pop('group'),
+            ),
+            ListTile(
+              leading:
+                  const Icon(Icons.person_add_alt_1, color: Colors.white70),
+              title: const Text('Invite a guest',
+                  style: TextStyle(color: Colors.white)),
+              subtitle: const Text(
+                  'One person, this table only, no account. Link works for 2 hours.',
+                  style: TextStyle(color: EfocColors.textMuted)),
+              onTap: () => Navigator.of(ctx).pop('guest'),
+            ),
+          ],
+        ),
+      ),
+    ));
+    if (choice == 'group') {
+      await _shareText(
+        'Join my ${link.gameName()} table on EFOC: ${link.toUri()}',
+        copied: 'Invite link copied — paste it anywhere',
+      );
+    } else if (choice == 'guest') {
+      final Uri guestLink;
+      try {
+        guestLink = await GuestPass.create(
+          roomId: link.roomId,
+          groupId: link.groupId,
+          gameId: link.gameId,
+        );
+      } catch (e) {
+        debugPrint('games guest pass: $e');
+        _toast("Couldn't make a guest link");
+        return;
+      }
+      await _shareText(
+        'Come play ${link.gameName()} with us — just tap and pick a name '
+        '(one person, works for 2 hours): $guestLink',
+        copied: 'Guest link copied — it works once',
+      );
+    }
+  }
+
+  Future<void> _shareText(String text, {required String copied}) async {
     if (kIsWeb) {
       await Clipboard.setData(ClipboardData(text: text));
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Invite link copied — paste it anywhere'),
-          duration: Duration(milliseconds: 1600),
-        ),
-      );
+      _toast(copied);
       return;
     }
     await Share.share(text, subject: 'Join my table');
+  }
+
+  void _toast(String text) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(text),
+        duration: const Duration(milliseconds: 1600),
+      ),
+    );
   }
 
   void _sendInit() {
@@ -249,7 +318,7 @@ class _TableScreenState extends State<TableScreen> with WidgetsBindingObserver {
   }
 
   Future<bool> _confirmLeave() async {
-    final ok = await showDialog<bool>(
+    final ok = await _controller.whileCovered(() => showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: EfocColors.surface,
@@ -272,7 +341,7 @@ class _TableScreenState extends State<TableScreen> with WidgetsBindingObserver {
           ),
         ],
       ),
-    );
+    ));
     return ok == true;
   }
 

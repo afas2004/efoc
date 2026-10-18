@@ -55,6 +55,8 @@ Widget buildTableView({
       'load',
       ((web.Event _) => onLoaded()).toJS,
     );
+    controller.touchableSetter =
+        (on) => frame.style.pointerEvents = on ? 'auto' : 'none';
     controller.sender = (msg) {
       frame.contentWindow?.postMessage(_jsonParse(jsonEncode(msg).toJS), origin.toJS);
     };

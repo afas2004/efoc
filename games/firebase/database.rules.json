@@ -12,16 +12,16 @@
           }
         },
         "meta": {
-          ".read": "root.child('rooms').child($room).child('allowed').child(auth.uid).exists()",
+          ".read": "(root.child('rooms').child($room).child('allowed').child(auth.uid).exists() || (auth.token.guest_room === $room && auth.token.guest_until > now))",
           ".write": "auth != null && ((!data.exists() && newData.child('hostUid').val() === auth.uid) || data.child('hostUid').val() === auth.uid)",
           "hostUid": {
-            ".write": "auth != null && newData.val() === auth.uid && root.child('rooms').child($room).child('members').child(auth.uid).exists() && root.child('presence').child($room).child(data.val()).child('online').val() === false && root.child('presence').child($room).child(data.val()).child('lastSeen').val() < now - 60000"
+            ".write": "auth != null && auth.token.guest_room == null && newData.val() === auth.uid && root.child('rooms').child($room).child('members').child(auth.uid).exists() && root.child('presence').child($room).child(data.val()).child('online').val() === false && root.child('presence').child($room).child(data.val()).child('lastSeen').val() < now - 60000"
           }
         },
         "members": {
-          ".read": "root.child('rooms').child($room).child('allowed').child(auth.uid).exists()",
+          ".read": "(root.child('rooms').child($room).child('allowed').child(auth.uid).exists() || (auth.token.guest_room === $room && auth.token.guest_until > now))",
           "$uid": {
-            ".write": "(auth.uid === $uid && root.child('rooms').child($room).child('allowed').child(auth.uid).exists()) || root.child('rooms').child($room).child('meta/hostUid').val() === auth.uid",
+            ".write": "(auth.uid === $uid && (root.child('rooms').child($room).child('allowed').child(auth.uid).exists() || (auth.token.guest_room === $room && auth.token.guest_until > now))) || root.child('rooms').child($room).child('meta/hostUid').val() === auth.uid",
             ".validate": "!newData.exists() || (newData.child('name').isString() && newData.child('name').val().length <= 40 && newData.child('avatar').isString() && newData.child('avatar').val().length <= 16)",
             "ready": {
               ".validate": "newData.isBoolean()"
@@ -29,16 +29,16 @@
           }
         },
         "spectators": {
-          ".read": "root.child('rooms').child($room).child('allowed').child(auth.uid).exists()",
+          ".read": "(root.child('rooms').child($room).child('allowed').child(auth.uid).exists() || (auth.token.guest_room === $room && auth.token.guest_until > now))",
           "$uid": {
-            ".write": "auth.uid === $uid && root.child('rooms').child($room).child('allowed').child(auth.uid).exists()",
+            ".write": "auth.uid === $uid && (root.child('rooms').child($room).child('allowed').child(auth.uid).exists() || (auth.token.guest_room === $room && auth.token.guest_until > now))",
             ".validate": "!newData.exists() || (newData.child('name').isString() && newData.child('name').val().length <= 40 && newData.parent().parent().child('spectatorSlots').child(newData.child('slot').val() + '').val() === $uid)"
           }
         },
         "spectatorSlots": {
-          ".read": "root.child('rooms').child($room).child('allowed').child(auth.uid).exists()",
+          ".read": "(root.child('rooms').child($room).child('allowed').child(auth.uid).exists() || (auth.token.guest_room === $room && auth.token.guest_until > now))",
           "$slot": {
-            ".write": "$slot.matches(/^[0-7]$/) && root.child('rooms').child($room).child('allowed').child(auth.uid).exists() && ((!data.exists() && newData.val() === auth.uid) || (data.val() === auth.uid && !newData.exists()))"
+            ".write": "$slot.matches(/^[0-7]$/) && (root.child('rooms').child($room).child('allowed').child(auth.uid).exists() || (auth.token.guest_room === $room && auth.token.guest_until > now)) && ((!data.exists() && newData.val() === auth.uid) || (data.val() === auth.uid && !newData.exists()))"
           }
         },
         "intents": {
@@ -48,13 +48,13 @@
           }
         },
         "log": {
-          ".read": "root.child('rooms').child($room).child('allowed').child(auth.uid).exists()",
+          ".read": "(root.child('rooms').child($room).child('allowed').child(auth.uid).exists() || (auth.token.guest_room === $room && auth.token.guest_until > now))",
           "$n": {
             ".write": "!data.exists() && root.child('rooms').child($room).child('meta/hostUid').val() === auth.uid"
           }
         },
         "snapshot": {
-          ".read": "root.child('rooms').child($room).child('allowed').child(auth.uid).exists()",
+          ".read": "(root.child('rooms').child($room).child('allowed').child(auth.uid).exists() || (auth.token.guest_room === $room && auth.token.guest_until > now))",
           ".write": "root.child('rooms').child($room).child('meta/hostUid').val() === auth.uid"
         },
         "hands": {
@@ -74,14 +74,14 @@
           }
         },
         "results": {
-          ".read": "root.child('rooms').child($room).child('allowed').child(auth.uid).exists()",
+          ".read": "(root.child('rooms').child($room).child('allowed').child(auth.uid).exists() || (auth.token.guest_room === $room && auth.token.guest_until > now))",
           ".write": "root.child('rooms').child($room).child('meta/hostUid').val() === auth.uid"
         }
       }
     },
     "tables": {
       "$group": {
-        ".read": "auth != null",
+        ".read": "auth != null && auth.token.guest_room == null",
         "$room": {
           ".write": "auth != null && ((!data.exists() && newData.child('hostUid').val() === auth.uid && root.child('rooms').child($room).child('meta/hostUid').val() === auth.uid && root.child('rooms').child($room).child('meta/groupId').val() === $group) || (data.exists() && !newData.exists() && root.child('rooms').child($room).child('allowed').child(auth.uid).exists()))",
           ".validate": "!newData.exists() || (newData.hasChildren(['gameId', 'hostUid', 'hostName', 'createdAt']) && newData.child('gameId').isString() && newData.child('gameId').val().length <= 16 && newData.child('hostName').isString() && newData.child('hostName').val().length <= 40 && newData.child('createdAt').val() === now)"
@@ -90,9 +90,9 @@
     },
     "presence": {
       "$room": {
-        ".read": "root.child('rooms').child($room).child('allowed').child(auth.uid).exists()",
+        ".read": "(root.child('rooms').child($room).child('allowed').child(auth.uid).exists() || (auth.token.guest_room === $room && auth.token.guest_until > now))",
         "$uid": {
-          ".write": "auth.uid === $uid && root.child('rooms').child($room).child('allowed').child(auth.uid).exists()"
+          ".write": "auth.uid === $uid && (root.child('rooms').child($room).child('allowed').child(auth.uid).exists() || (auth.token.guest_room === $room && auth.token.guest_until > now))"
         }
       }
     },

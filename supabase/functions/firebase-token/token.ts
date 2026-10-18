@@ -28,11 +28,22 @@ async function importKey(pem: string): Promise<CryptoKey> {
   return crypto.subtle.importKey('pkcs8', der, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['sign']);
 }
 
-/** A custom token for `uid`, valid for one hour (Firebase's maximum). */
-export async function mintCustomToken(sa: ServiceAccount, uid: string, nowSec = Math.floor(Date.now() / 1000)): Promise<string> {
+/**
+ * A custom token for `uid`, valid for one hour (Firebase's maximum).
+ * `claims` show up in the rules as auth.token.<name> (guest passes use them).
+ */
+export async function mintCustomToken(
+  sa: ServiceAccount,
+  uid: string,
+  nowSec = Math.floor(Date.now() / 1000),
+  claims?: Record<string, unknown>,
+): Promise<string> {
   if (!uid || uid.length > 128) throw new Error('bad uid');
   const header = { alg: 'RS256', typ: 'JWT' };
-  const payload = { iss: sa.client_email, sub: sa.client_email, aud: AUD, iat: nowSec, exp: nowSec + 3600, uid };
+  const payload = {
+    iss: sa.client_email, sub: sa.client_email, aud: AUD, iat: nowSec, exp: nowSec + 3600, uid,
+    ...(claims ? { claims } : {}),
+  };
   const input = `${b64urlJson(header)}.${b64urlJson(payload)}`;
   const key = await importKey(sa.private_key);
   const sig = new Uint8Array(await crypto.subtle.sign('RSASSA-PKCS1-v1_5', key, new TextEncoder().encode(input)));
