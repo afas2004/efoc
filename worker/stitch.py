@@ -122,6 +122,14 @@ VIDEO_EXT = re.compile(r"\.(mp4|webm|mov)$")
 # Supabase REST helpers
 # ============================================================
 
+def _check(r: requests.Response) -> None:
+    """raise_for_status, but with Supabase's error body in the message."""
+    if r.status_code >= 400:
+        raise RuntimeError(
+            f"{r.request.method} {r.url.split('?')[0]} -> {r.status_code}: {r.text[:500]}"
+        )
+
+
 def _headers(extra: dict | None = None) -> dict:
     h = {"apikey": SERVICE_KEY, "Authorization": f"Bearer {SERVICE_KEY}"}
     if extra:
@@ -133,7 +141,7 @@ def rest_get(table: str, params: dict) -> list[dict]:
     r = requests.get(
         f"{SUPABASE_URL}/rest/v1/{table}", headers=_headers(), params=params, timeout=30
     )
-    r.raise_for_status()
+    _check(r)
     return r.json()
 
 
@@ -148,7 +156,7 @@ def rest_upsert(table: str, row: dict, on_conflict: str) -> None:
         data=json.dumps(row),
         timeout=30,
     )
-    r.raise_for_status()
+    _check(r)
 
 
 def rest_delete_ids(table: str, ids: list[str]) -> None:
@@ -159,7 +167,27 @@ def rest_delete_ids(table: str, ids: list[str]) -> None:
             params={"id": f"in.({','.join(ids[i:i + 100])})"},
             timeout=30,
         )
-        r.raise_for_status()
+        _check(r)
+
+
+def detach_clip_cards(clip_ids: list[str]) -> None:
+    """Nulls messages.clip_id so deleting the clip rows isn't blocked.
+
+    Chat cards keep their own copy of path, hour and caption
+    (supabase/migrations/20261018_clip_chat_cards.sql), so they still draw.
+    """
+    for i in range(0, len(clip_ids), 100):
+        r = requests.patch(
+            f"{SUPABASE_URL}/rest/v1/messages",
+            headers=_headers({
+                "Content-Type": "application/json",
+                "Prefer": "return=minimal",
+            }),
+            params={"clip_id": f"in.({','.join(clip_ids[i:i + 100])})"},
+            data=json.dumps({"clip_id": None}),
+            timeout=30,
+        )
+        _check(r)
 
 
 def storage_delete(bucket: str, paths: list[str]) -> None:
@@ -171,7 +199,7 @@ def storage_delete(bucket: str, paths: list[str]) -> None:
             data=json.dumps({"prefixes": paths[i:i + 100]}),
             timeout=60,
         )
-        r.raise_for_status()
+        _check(r)
 
 
 def thumb_path_for(storage_path: str) -> str:
@@ -188,7 +216,7 @@ def storage_download(bucket: str, path: str, dest: Path) -> None:
         stream=True,
         timeout=60,
     ) as r:
-        r.raise_for_status()
+        _check(r)
         with open(dest, "wb") as f:
             shutil.copyfileobj(r.raw, f)
 
@@ -201,7 +229,7 @@ def storage_upload(bucket: str, path: str, src: Path, content_type: str) -> None
             data=f,
             timeout=300,
         )
-    r.raise_for_status()
+    _check(r)
 
 
 # ============================================================
@@ -440,7 +468,9 @@ def cleanup(today: dt.date, dry_run: bool) -> None:
     if doomed and not dry_run:
         # Rows first: if that fails the files are still there; a leftover
         # file with no row is only wasted space.
-        rest_delete_ids("clips", [c["id"] for c in doomed])
+        doomed_ids = [c["id"] for c in doomed]
+        detach_clip_cards(doomed_ids)
+        rest_delete_ids("clips", doomed_ids)
         paths = [c["storage_path"] for c in doomed]
         storage_delete("clips", paths)
         storage_delete("thumbnails", [thumb_path_for(p) for p in paths])
