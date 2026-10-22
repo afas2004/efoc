@@ -98,6 +98,10 @@ DEFAULT_CAPTION_ALIGN = (0.0, -0.3)
 # Landscape: clips are recorded with the phone sideways and come out 3:2.
 # Older upright clips are fitted over a blurred copy of themselves.
 WIDTH, HEIGHT, FPS = 1080, 720, 30
+
+# The stitched vlog is portrait, for phones. Each (landscape) clip is first
+# normalized at WIDTHxHEIGHT, then fitted into its cell of the hour grid.
+GRID_W, GRID_H = 720, 1280
 MAX_CLIP_SECONDS = 4  # clips are 3s; cap guards against odd uploads
 
 HEX_COLOR = re.compile(r"^#?([0-9a-fA-F]{6})$")
@@ -272,7 +276,7 @@ def _hour_label(hour: int) -> str:
     return f"{h12} {'AM' if hour < 12 else 'PM'}"
 
 
-def normalize_clip(src: Path, dest: Path, label: str, caption: str | None,
+def normalize_clip(src: Path, dest: Path, label: str | None, caption: str | None,
                    caption_color: str, work: Path, caption_font: str = "classic",
                    caption_align: tuple[float, float] = DEFAULT_CAPTION_ALIGN,
                    rotation: int = 0, caption_bg: str = "dark") -> None:
@@ -283,22 +287,25 @@ def normalize_clip(src: Path, dest: Path, label: str, caption: str | None,
     fitted onto the WIDTHxHEIGHT canvas over a blurred copy of itself so
     the stitched vlog never shows black bars.
     """
-    label_file = work / f"{dest.stem}.label.txt"
-    label_file.write_text(label, encoding="utf-8")
-
+    cw, ch = WIDTH, HEIGHT
     font = _filter_path(Path(FONT_FILE))
     # 90: back camera, turn counter-clockwise; 270: front camera, clockwise.
     upright = {90: "transpose=2,", 270: "transpose=1,"}.get(rotation, "")
     vf = (
         f"[0:v]{upright}split=2[a][b];"
-        f"[a]scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase,"
-        f"crop={WIDTH}:{HEIGHT},boxblur=20:2[bg];"
-        f"[b]scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=decrease[fg];"
-        f"[bg][fg]overlay=(W-w)/2:(H-h)/2,fps={FPS},format=yuv420p,setsar=1,"
-        f"drawtext=fontfile='{font}':textfile='{_filter_path(label_file)}':"
-        f"fontsize=30:fontcolor=white:x=36:y=64:"
-        f"box=1:boxcolor=black@0.35:boxborderw=12"
+        f"[a]scale={cw}:{ch}:force_original_aspect_ratio=increase,"
+        f"crop={cw}:{ch},boxblur=20:2[bg];"
+        f"[b]scale={cw}:{ch}:force_original_aspect_ratio=decrease[fg];"
+        f"[bg][fg]overlay=(W-w)/2:(H-h)/2,fps={FPS},format=yuv420p,setsar=1"
     )
+    if label:
+        label_file = work / f"{dest.stem}.label.txt"
+        label_file.write_text(label, encoding="utf-8")
+        vf += (
+            f",drawtext=fontfile='{font}':textfile='{_filter_path(label_file)}':"
+            f"fontsize=30:fontcolor=white:x=36:y=64:"
+            f"box=1:boxcolor=black@0.35:boxborderw=12"
+        )
     if caption:
         caption_file = work / f"{dest.stem}.caption.txt"
         caption_file.write_text(caption, encoding="utf-8")
@@ -337,6 +344,191 @@ def normalize_clip(src: Path, dest: Path, label: str, caption: str | None,
     run(cmd)
 
 
+# ------------------------------------------------------------
+# Hour grids
+# ------------------------------------------------------------
+# Everyone who posted in an hour plays at once, in one frame. At most
+# MAX_PER_FRAME people share a frame; a busier hour is split evenly over
+# several frames (10 -> 5 + 5, not 8 + 2).
+
+MAX_PER_FRAME = 8
+
+# people in the frame -> (columns, rows) on the GRID_W x GRID_H canvas.
+# Clips are landscape, so up to 4 people stack in one column (each clip as
+# wide as the screen); 5+ go to two columns.
+GRID_TEMPLATES = {
+    1: (1, 1),
+    2: (1, 2),
+    3: (1, 3),
+    4: (1, 4),
+    5: (2, 3), 6: (2, 3),
+    7: (2, 4), 8: (2, 4),
+}
+
+
+def split_evenly(items: list, max_per: int = MAX_PER_FRAME) -> list[list]:
+    if not items:
+        return []
+    frames = -(-len(items) // max_per)  # ceil
+    base, extra = divmod(len(items), frames)
+    out, i = [], 0
+    for f in range(frames):
+        n = base + (1 if f < extra else 0)
+        out.append(items[i:i + n])
+        i += n
+    return out
+
+
+def compose_frame(segments: list[Path], names: list[str], hour_label: str,
+                  dest: Path, work: Path) -> None:
+    """Tiles already-normalized segments into one grid frame.
+
+    Each segment is fitted into its cell over a blurred copy of itself and
+    gets the person's name; unused cells are a dark "z z z" tile. Audio from
+    everyone is mixed. Output matches normalize_clip's encoding so the
+    copy-concat still works.
+    """
+    n = len(segments)
+    cols, rows = GRID_TEMPLATES[n]
+    # Even sizes for yuv420p; a leftover pixel row is filled by xstack.
+    cw, ch = (GRID_W // cols) // 2 * 2, (GRID_H // rows) // 2 * 2
+    font = _filter_path(Path(FONT_FILE))
+    name_size = min(32, max(18, ch // 16))
+    dur = max((duration_of(s) or MAX_CLIP_SECONDS) for s in segments)
+    dur = min(dur, MAX_CLIP_SECONDS)
+
+    cmd = ["ffmpeg", "-y", "-v", "error"]
+    for seg in segments:
+        cmd += ["-i", str(seg)]
+
+    parts: list[str] = []
+    cells: list[str] = []
+    for i, name in enumerate(names):
+        name_file = work / f"{dest.stem}.name{i}.txt"
+        name_file.write_text(name, encoding="utf-8")
+        parts.append(
+            f"[{i}:v]split=2[a{i}][b{i}];"
+            f"[a{i}]scale={cw}:{ch}:force_original_aspect_ratio=increase,"
+            f"crop={cw}:{ch},boxblur=10:1[bg{i}];"
+            f"[b{i}]scale={cw}:{ch}:force_original_aspect_ratio=decrease[fg{i}];"
+            f"[bg{i}][fg{i}]overlay=(W-w)/2:(H-h)/2,setsar=1,"
+            f"drawtext=fontfile='{font}':textfile='{_filter_path(name_file)}':"
+            f"fontsize={name_size}:fontcolor=white:x=12:y=h-text_h-12:"
+            f"box=1:boxcolor=black@0.45:boxborderw=6[c{i}]"
+        )
+        cells.append(f"[c{i}]")
+
+    for j in range(n, cols * rows):
+        parts.append(
+            f"color=c=0x141414:s={cw}x{ch}:r={FPS}:d={dur:.2f},format=yuv420p,"
+            f"setsar=1,drawtext=fontfile='{font}':text='z z z':"
+            f"fontsize={max(24, ch // 6)}:fontcolor=white@0.3:"
+            f"x=(w-text_w)/2:y=(h-text_h)/2[c{j}]"
+        )
+        cells.append(f"[c{j}]")
+
+    if len(cells) == 1:
+        parts.append(f"{cells[0]}pad={GRID_W}:{GRID_H}:(ow-iw)/2:(oh-ih)/2[grid]")
+    else:
+        layout = "|".join(
+            f"{(k % cols) * cw}_{(k // cols) * ch}" for k in range(len(cells))
+        )
+        parts.append(
+            f"{''.join(cells)}xstack=inputs={len(cells)}:layout={layout}"
+            f":fill=black,scale={GRID_W}:{GRID_H}:force_original_aspect_ratio=decrease,"
+            f"pad={GRID_W}:{GRID_H}:(ow-iw)/2:(oh-ih)/2[grid]"
+        )
+
+    hour_file = work / f"{dest.stem}.hour.txt"
+    hour_file.write_text(hour_label, encoding="utf-8")
+    parts.append(
+        f"[grid]fps={FPS},format=yuv420p,"
+        f"drawtext=fontfile='{font}':textfile='{_filter_path(hour_file)}':"
+        f"fontsize=30:fontcolor=white:x=(w-text_w)/2:y=20:"
+        f"box=1:boxcolor=black@0.5:boxborderw=10[v]"
+    )
+
+    if n == 1:
+        parts.append("[0:a]anull[aout]")
+    else:
+        parts.append(
+            "".join(f"[{i}:a]" for i in range(n))
+            + f"amix=inputs={n}:duration=longest:dropout_transition=0:normalize=0,"
+            "alimiter=limit=0.9[aout]"
+        )
+
+    cmd += [
+        "-filter_complex", ";".join(parts),
+        "-map", "[v]", "-map", "[aout]",
+        "-t", f"{dur:.2f}",
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-r", str(FPS),
+        "-c:a", "aac", "-ar", "48000", "-ac", "2", "-b:a", "128k",
+        str(dest),
+    ]
+    run(cmd)
+
+
+def _normalize_row(clip: dict, src: Path, dest: Path, work: Path) -> None:
+    m = HEX_COLOR.match(clip.get("text_color") or "")
+    normalize_clip(
+        src, dest,
+        label=None,  # names are drawn per cell by compose_frame
+        caption=(clip.get("text_overlay") or "").strip() or None,
+        caption_color=f"0x{m.group(1)}" if m else "0xFFFFFF",
+        work=work,
+        caption_font=clip.get("text_font") or "classic",
+        caption_align=(
+            (float(clip["text_x"]), float(clip["text_y"]))
+            if clip.get("text_x") is not None and clip.get("text_y") is not None
+            else DEFAULT_CAPTION_ALIGN
+        ),
+        rotation=int(clip.get("rotation") or 0),
+        caption_bg=clip.get("text_bg") or "dark",
+    )
+
+
+def build_hour_frames(clips: list[dict], names: dict[str, str],
+                      work: Path, fetch) -> tuple[list[Path], int]:
+    """Clips (ordered by hour, then post time) -> one grid segment per frame.
+
+    fetch(storage_path, dest) downloads a raw clip. Returns the frame
+    segments in order and how many clips made it in. A clip that can't be
+    downloaded or decoded is skipped, not fatal.
+    """
+    by_hour: dict[int, list[dict]] = defaultdict(list)
+    for c in clips:
+        by_hour[c["hour_of_day"]].append(c)
+
+    frames: list[Path] = []
+    used = 0
+    for hour in sorted(by_hour):
+        ready: list[tuple[Path, str]] = []
+        for k, clip in enumerate(by_hour[hour]):
+            path = clip["storage_path"]
+            src = work / f"h{hour:02d}_{k}_src{Path(path).suffix or '.mp4'}"
+            seg = work / f"h{hour:02d}_{k}_seg.mp4"
+            try:
+                fetch(path, src)
+                _normalize_row(clip, src, seg, work)
+                ready.append((seg, names.get(clip["user_id"], "Someone")))
+            except Exception as e:  # one bad clip shouldn't sink the vlog
+                print(f"  skip {path}: {e}", file=sys.stderr)
+
+        for f, group in enumerate(split_evenly(ready)):
+            frame = work / f"frame{hour:02d}_{f}.mp4"
+            try:
+                compose_frame(
+                    [g[0] for g in group], [g[1] for g in group],
+                    _hour_label(hour), frame, work,
+                )
+                frames.append(frame)
+                used += len(group)
+            except Exception as e:
+                print(f"  skip {_hour_label(hour)} frame {f + 1}: {e}",
+                      file=sys.stderr)
+    return frames, used
+
+
 def concat(segments: list[Path], dest: Path, work: Path) -> None:
     listing = work / "concat.txt"
     listing.write_text(
@@ -367,34 +559,10 @@ def stitch_group(group_id: str, date: str, clips: list[dict],
 
     with tempfile.TemporaryDirectory(prefix="efoc-") as tmp:
         work = Path(tmp)
-        segments: list[Path] = []
-
-        for i, clip in enumerate(clips):
-            path = clip["storage_path"]
-            src = work / f"src{i}{Path(path).suffix or '.mp4'}"
-            seg = work / f"seg{i:03d}.mp4"
-            try:
-                storage_download("clips", path, src)
-                m = HEX_COLOR.match(clip.get("text_color") or "")
-                normalize_clip(
-                    src, seg,
-                    label=f"{names.get(clip['user_id'], 'Someone')} · "
-                          f"{_hour_label(clip['hour_of_day'])}",
-                    caption=(clip.get("text_overlay") or "").strip() or None,
-                    caption_color=f"0x{m.group(1)}" if m else "0xFFFFFF",
-                    work=work,
-                    caption_font=clip.get("text_font") or "classic",
-                    caption_align=(
-                        (float(clip["text_x"]), float(clip["text_y"]))
-                        if clip.get("text_x") is not None and clip.get("text_y") is not None
-                        else DEFAULT_CAPTION_ALIGN
-                    ),
-                    rotation=int(clip.get("rotation") or 0),
-                    caption_bg=clip.get("text_bg") or "dark",
-                )
-                segments.append(seg)
-            except Exception as e:  # one bad clip shouldn't sink the vlog
-                print(f"  skip {path}: {e}", file=sys.stderr)
+        segments, used = build_hour_frames(
+            clips, names, work,
+            fetch=lambda path, dest: storage_download("clips", path, dest),
+        )
 
         if not segments:
             raise RuntimeError("no clip could be processed")
@@ -414,12 +582,12 @@ def stitch_group(group_id: str, date: str, clips: list[dict],
             "vlog_date": date,
             "storage_path": video_path,
             "thumbnail_path": thumb_path,
-            "clip_count": len(segments),
+            "clip_count": used,
             "duration_seconds": duration_of(out),
             "stitched_at": dt.datetime.now(dt.timezone.utc).isoformat(),
         }, on_conflict="group_id,vlog_date")
 
-        print(f"  -> {video_path} ({len(segments)} clips)")
+        print(f"  -> {video_path} ({used} clips in {len(segments)} frames)")
 
 
 # ============================================================
