@@ -21,6 +21,25 @@ enum ReminderResult {
   failed,
 }
 
+/// Whether hourly reminders can actually reach this device right now.
+enum DeviceReach {
+  /// Reminders are off for this account.
+  off,
+
+  /// On, permitted, and this device is registered.
+  ok,
+
+  /// On, but notifications are blocked here (revoked, or never allowed in
+  /// this browser or home-screen app).
+  blocked,
+
+  /// On and permitted, but registering this device failed.
+  notRegistered,
+
+  /// No push support here.
+  unsupported,
+}
+
 /// Hourly reminder opt-in. The reminders themselves are sent by
 /// worker/remind.py; this registers the device and stores the preference.
 class ReminderService {
@@ -140,22 +159,33 @@ class ReminderService {
   /// On app start: tokens rotate, so re-register quietly if reminders are
   /// on and permission is still granted. Never prompts.
   Future<void> syncOnLaunch() async {
+    await checkThisDevice();
+  }
+
+  /// Works out whether reminders reach this device, and re-registers it
+  /// when they're on and permitted, which repairs a lost registration.
+  /// Never prompts for permission.
+  Future<DeviceReach> checkThisDevice() async {
     final userId = _client.auth.currentUser?.id;
-    if (userId == null) return;
-    if (kIsWeb && kWebPushVapidKey.isEmpty) return;
+    if (userId == null) return DeviceReach.off;
     try {
-      if (!await _messaging.isSupported()) return;
-      if (!await fetchEnabled()) return;
+      if (!await fetchEnabled()) return DeviceReach.off;
+      if (kIsWeb && kWebPushVapidKey.isEmpty) return DeviceReach.unsupported;
+      if (!await _messaging.isSupported()) return DeviceReach.unsupported;
       final settings = await _messaging.getNotificationSettings();
       if (settings.authorizationStatus != AuthorizationStatus.authorized &&
           settings.authorizationStatus != AuthorizationStatus.provisional) {
-        return;
+        return DeviceReach.blocked;
       }
-      final token = await _getToken();
-      if (token != null) await _saveToken(userId, token);
+      // Same retries as enable(): the push worker may still be starting.
+      final token = await _getTokenWithRetry();
+      if (token == null) return DeviceReach.notRegistered;
+      await _saveToken(userId, token);
       _listenForRefresh(userId);
+      return DeviceReach.ok;
     } catch (e) {
-      debugPrint('Reminder sync error: $e');
+      debugPrint('Reminder device check error: $e');
+      return DeviceReach.notRegistered;
     }
   }
 

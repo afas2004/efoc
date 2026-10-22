@@ -33,6 +33,7 @@ class _ProfileSheetState extends State<ProfileSheet> {
   // ---------- preferences ----------
   bool _reminders = false;
   bool _remindersBusy = false;
+  DeviceReach? _reach;
 
   String _theme = ThemeController.instance.name;
   bool _autoStitch = true;
@@ -55,9 +56,23 @@ class _ProfileSheetState extends State<ProfileSheet> {
     try {
       final on = await ReminderService.instance.fetchEnabled();
       if (mounted) setState(() => _reminders = on);
+      // Also repairs this device's registration when it can.
+      final reach = await ReminderService.instance.checkThisDevice();
+      if (mounted) setState(() => _reach = reach);
     } catch (_) {
       // Leave it off; flipping it will retry.
     }
+  }
+
+  /// On, but not reaching this phone: the row says so and a tap fixes it.
+  bool get _notReaching =>
+      _reminders &&
+      (_reach == DeviceReach.blocked || _reach == DeviceReach.notRegistered);
+
+  Future<void> _fixReminders() async {
+    await _toggleReminders(true);
+    if (!mounted || !_reminders) return;
+    setState(() => _reach = DeviceReach.ok);
   }
 
   Future<void> _toggleReminders(bool on) async {
@@ -346,6 +361,12 @@ class _ProfileSheetState extends State<ProfileSheet> {
                   _SettingRow(
                     icon: Icons.notifications_outlined,
                     label: 'Hourly reminders',
+                    sublabel: _notReaching
+                        ? (_reach == DeviceReach.blocked
+                            ? 'Not reaching this phone · notifications blocked'
+                            : 'Not reaching this phone · Tap to fix')
+                        : null,
+                    onTap: _notReaching && !_remindersBusy ? _fixReminders : null,
                     trailing: _remindersBusy
                         ? const SizedBox(
                             width: 44,
@@ -684,6 +705,9 @@ class _SettingsCard extends StatelessWidget {
 class _SettingRow extends StatelessWidget {
   final IconData icon;
   final String label;
+
+  /// Warning line under the label.
+  final String? sublabel;
   final Widget trailing;
   final VoidCallback? onTap;
   final Color? color;
@@ -693,6 +717,7 @@ class _SettingRow extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.trailing,
+    this.sublabel,
     this.onTap,
     this.color,
     this.isLast = false,
@@ -725,15 +750,31 @@ class _SettingRow extends StatelessWidget {
             Icon(icon, size: 18, color: fg),
             const SizedBox(width: 14),
             Expanded(
-              child: Text(
-                label,
-                style: TextStyle(
-                  color: fg,
-                  fontSize: 14,
-                  fontWeight: color != null
-                      ? FontWeight.w700
-                      : FontWeight.w600,
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: TextStyle(
+                      color: fg,
+                      fontSize: 14,
+                      fontWeight: color != null
+                          ? FontWeight.w700
+                          : FontWeight.w600,
+                    ),
+                  ),
+                  if (sublabel != null) ...[
+                    const SizedBox(height: 3),
+                    Text(
+                      sublabel!,
+                      style: const TextStyle(
+                        color: EfocColors.warning,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
             trailing,

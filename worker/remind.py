@@ -41,8 +41,19 @@ LAST_HOUR = int(os.environ.get("REMIND_LAST_HOUR", "22"))
 APP_URL = os.environ.get("APP_URL", "https://efoc.party/")
 FCM_SCOPE = "https://www.googleapis.com/auth/firebase.messaging"
 
-# FCM says the token is dead: remove it.
-DEAD_TOKEN_ERRORS = {"UNREGISTERED", "INVALID_ARGUMENT", "NOT_FOUND"}
+FCM_ERROR_TYPE = "type.googleapis.com/google.firebase.fcm.v1.FcmError"
+
+
+def is_dead_token(status: str, code: str | None, message: str) -> bool:
+    """True only when FCM says the device itself is gone.
+
+    INVALID_ARGUMENT also covers a malformed message, which must not cost
+    a working phone its registration, so it only counts when FCM blames
+    the token.
+    """
+    if code == "UNREGISTERED" or status == "NOT_FOUND":
+        return True
+    return status == "INVALID_ARGUMENT" and "registration token" in message.lower()
 
 
 def _headers() -> dict:
@@ -119,8 +130,9 @@ def fcm_session() -> tuple[requests.Session, str]:
     return s, info["project_id"]
 
 
-def send(session: requests.Session, project: str, token: str, hour: int) -> str | None:
-    """Returns None on success, or FCM's error status."""
+def send(session: requests.Session, project: str, token: str,
+         hour: int) -> tuple[str, str | None, str] | None:
+    """Returns None on success, or FCM's (status, error code, message)."""
     title = f"It's {label_for(hour)} 🎬"
     body = "Record your 3 seconds for this hour."
     msg = {
@@ -153,9 +165,15 @@ def send(session: requests.Session, project: str, token: str, hour: int) -> str 
     if r.ok:
         return None
     try:
-        return r.json()["error"]["status"]
+        err = r.json()["error"]
+        code = next(
+            (d.get("errorCode") for d in err.get("details", [])
+             if d.get("@type") == FCM_ERROR_TYPE),
+            None,
+        )
+        return err.get("status", f"HTTP {r.status_code}"), code, err.get("message", "")
     except Exception:
-        return f"HTTP {r.status_code}"
+        return f"HTTP {r.status_code}", None, r.text[:200]
 
 
 def main() -> int:
@@ -229,12 +247,17 @@ def main() -> int:
         err = send(session, project, t["token"], hour)
         if err is None:
             sent += 1
-        elif err in DEAD_TOKEN_ERRORS:
+            continue
+        status, code, message = err
+        reason = f"{status}{f'/{code}' if code else ''}: {message}"
+        if is_dead_token(status, code, message):
             rest_delete("push_tokens", {"token": f"eq.{t['token']}"})
             removed += 1
+            print(f"  removed dead device for {t['user_id']} ({reason})",
+                  file=sys.stderr)
         else:
             failed += 1
-            print(f"  send failed for {t['user_id']}: {err}", file=sys.stderr)
+            print(f"  send failed for {t['user_id']} ({reason})", file=sys.stderr)
 
     print(f"Sent {sent}, removed {removed} dead token(s), {failed} failed.")
     return 1 if failed and not sent else 0
