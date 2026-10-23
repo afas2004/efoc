@@ -10,12 +10,16 @@ class ChatComposer extends StatefulWidget {
   final VoidCallback onCancelReply;
   final Future<void> Function(String text) onSend;
 
+  /// Opens the sticker tray. Null hides the sticker button.
+  final VoidCallback? onStickerTap;
+
   const ChatComposer({
     super.key,
     required this.replySenderName,
     required this.replyPreviewText,
     required this.onCancelReply,
     required this.onSend,
+    this.onStickerTap,
   });
 
   @override
@@ -152,6 +156,21 @@ class _ChatComposerState extends State<ChatComposer> {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
+                  if (widget.onStickerTap != null) ...[
+                    GestureDetector(
+                      onTap: widget.onStickerTap,
+                      behavior: HitTestBehavior.opaque,
+                      child: const Padding(
+                        padding: EdgeInsets.only(bottom: 10),
+                        child: Icon(
+                          Icons.interests_outlined,
+                          color: Colors.white54,
+                          size: 23,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
                   GestureDetector(
                     onTap: _toggleEmoji,
                     behavior: HitTestBehavior.opaque,

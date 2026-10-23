@@ -28,7 +28,8 @@ class ChatService {
 
   static const _select =
       'id, group_id, user_id, text, clip_id, reply_to_id, created_at, '
-      'kind, vlog_id, card_path, card_hour, card_caption, card_date, '
+      'kind, vlog_id, sticker_id, sticker_url, card_path, card_hour, '
+      'card_caption, card_date, '
       'author:profiles!messages_user_id_fkey(display_name, username, avatar_url), '
       'reply:reply_to_id(id, text, user_id, kind, card_hour, card_caption, '
       '  author:profiles!messages_user_id_fkey(display_name, username)), '
@@ -115,6 +116,7 @@ class ChatService {
         MessageKind.clip =>
           replyCaption?.isNotEmpty == true ? replyCaption : 'Clip',
         MessageKind.vlog => 'Daily vlog',
+        MessageKind.sticker => 'Sticker',
       };
 
       final cardDate = row['card_date'] as String?;
@@ -130,6 +132,8 @@ class ChatService {
         createdAt: DateTime.parse(row['created_at'] as String).toLocal(),
         kind: messageKindOf(row['kind'] as String?),
         vlogId: row['vlog_id'] as String?,
+        stickerId: row['sticker_id'] as String?,
+        stickerUrl: row['sticker_url'] as String?,
         cardPath: row['card_path'] as String?,
         cardHour: row['card_hour'] as int?,
         cardCaption: row['card_caption'] as String?,
@@ -180,8 +184,28 @@ class ChatService {
     });
   }
 
-  Future<void> deleteMessage(String id) async {
-    await _client.from('messages').delete().eq('id', id);
+  /// Posts a sticker message. The URL is copied onto the message so the bubble
+  /// still draws after the pack is deleted (same idea as a clip card's path).
+  Future<void> sendSticker({
+    required String groupId,
+    required String stickerId,
+    required String stickerUrl,
+    String? replyToId,
+  }) async {
+    final userId = _client.auth.currentUser?.id;
+    if (userId == null) throw Exception('Not signed in');
+
+    await _client.from('messages').insert({
+      'group_id': groupId,
+      'user_id': userId,
+      'kind': 'sticker',
+      'sticker_id': stickerId,
+      'sticker_url': stickerUrl,
+      'reply_to_id': replyToId,
+    });
+  }
+
+  Future<void> deleteMessage(String id) async {    await _client.from('messages').delete().eq('id', id);
   }
 
   /// WhatsApp rules: one reaction per person. The same emoji again (or

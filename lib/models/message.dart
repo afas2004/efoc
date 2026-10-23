@@ -14,7 +14,7 @@ class EfocReaction {
   });
 }
 
-enum MessageKind { text, clip, vlog }
+enum MessageKind { text, clip, vlog, sticker }
 
 class EfocMessage {
   final String id;
@@ -30,6 +30,11 @@ class EfocMessage {
   /// supabase/migrations/20261018_clip_chat_cards.sql).
   final MessageKind kind;
   final String? vlogId;
+
+  /// A sticker message's pack entry (null once the pack is deleted) and the
+  /// copy of its public URL, which is what the bubble actually draws.
+  final String? stickerId;
+  final String? stickerUrl;
 
   /// Copies kept on the card so it still draws after the clip is deleted.
   /// Clip: the video's storage path. Vlog: its thumbnail path.
@@ -62,6 +67,8 @@ class EfocMessage {
     required this.createdAt,
     this.kind = MessageKind.text,
     this.vlogId,
+    this.stickerId,
+    this.stickerUrl,
     this.cardPath,
     this.cardHour,
     this.cardCaption,
@@ -77,7 +84,9 @@ class EfocMessage {
     required this.reactions,
   });
 
-  bool get isCard => kind != MessageKind.text;
+  bool get isCard => kind == MessageKind.clip || kind == MessageKind.vlog;
+
+  bool get isSticker => kind == MessageKind.sticker;
 
   /// What Copy puts on the clipboard: the text, or a card's caption.
   String? get copyText {
@@ -90,6 +99,7 @@ class EfocMessage {
         MessageKind.text => text ?? '',
         MessageKind.clip => copyText ?? 'Clip',
         MessageKind.vlog => 'Daily vlog',
+        MessageKind.sticker => 'Sticker',
       };
 
   /// Your current reaction, if any.
@@ -134,6 +144,8 @@ class EfocMessage {
       createdAt: createdAt,
       kind: kind,
       vlogId: vlogId,
+      stickerId: stickerId,
+      stickerUrl: stickerUrl,
       cardPath: cardPath,
       cardHour: cardHour,
       cardCaption: cardCaption,
@@ -154,6 +166,7 @@ class EfocMessage {
 MessageKind messageKindOf(String? s) => switch (s) {
       'clip' => MessageKind.clip,
       'vlog' => MessageKind.vlog,
+      'sticker' => MessageKind.sticker,
       _ => MessageKind.text,
     };
 

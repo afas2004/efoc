@@ -19,6 +19,7 @@ import 'widgets/clip_card.dart';
 import 'widgets/emoji_picker_sheet.dart';
 import 'widgets/message_bubble.dart';
 import 'widgets/reactions_sheet.dart';
+import 'widgets/sticker_picker_sheet.dart';
 
 class ChatScreen extends StatefulWidget {
   final String groupId;
@@ -123,6 +124,32 @@ class _ChatScreenState extends State<ChatScreen> {
         SnackBar(content: Text('Failed to send: $e')),
       );
       rethrow;
+    }
+  }
+
+  /// Sticker tray. Sending is one insert: the message carries its own copy of
+  /// the sticker's URL, so the bubble never has to look the pack up.
+  Future<void> _sendSticker() async {
+    final sticker = await showStickerPickerSheet(
+      context,
+      groupId: widget.groupId,
+    );
+    if (sticker == null || !mounted) return;
+    try {
+      await ChatService.instance.sendSticker(
+        groupId: widget.groupId,
+        stickerId: sticker.id,
+        stickerUrl: sticker.url,
+        replyToId: _replyTo?.id,
+      );
+      if (!mounted) return;
+      setState(() => _replyTo = null);
+      _load();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to send: $e')),
+      );
     }
   }
 
@@ -259,6 +286,7 @@ class _ChatScreenState extends State<ChatScreen> {
               : 'the vlog · ${vlogDayLabel(m.cardDate!)}',
           '▶ Daily vlog',
         ),
+      MessageKind.sticker => (m.senderName, 'Sticker'),
     };
   }
 
@@ -398,6 +426,7 @@ class _ChatScreenState extends State<ChatScreen> {
             replyPreviewText: replyText,
             onCancelReply: () => setState(() => _replyTo = null),
             onSend: _sendText,
+            onStickerTap: _sendSticker,
           ),
         ],
       ),

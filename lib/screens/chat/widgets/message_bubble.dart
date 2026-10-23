@@ -98,9 +98,13 @@ class MessageBubble extends StatelessWidget {
                   _WithReactions(
                     message: message,
                     onReactionsTap: onReactionsTap,
-                    child: message.kind == MessageKind.clip
-                        ? ClipCard(message: message, onTap: onCardTap)
-                        : _Bubble(message: message, onQuoteTap: onQuoteTap),
+                    child: switch (message.kind) {
+                      MessageKind.clip =>
+                        ClipCard(message: message, onTap: onCardTap),
+                      MessageKind.sticker =>
+                        _StickerView(url: message.stickerUrl),
+                      _ => _Bubble(message: message, onQuoteTap: onQuoteTap),
+                    },
                   ),
                 ],
               ),
@@ -416,6 +420,40 @@ class _ClipPreviewState extends State<_ClipPreview> {
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A sticker draws as the image alone — no bubble behind it — the way it does
+/// in WhatsApp. The URL is the copy stored on the message, so it keeps working
+/// if the pack is deleted.
+class _StickerView extends StatelessWidget {
+  static const double _size = 132;
+
+  final String? url;
+
+  const _StickerView({required this.url});
+
+  @override
+  Widget build(BuildContext context) {
+    final u = url;
+    if (u == null || u.isEmpty) return const SizedBox.shrink();
+
+    return Image.network(
+      u,
+      width: _size,
+      height: _size,
+      fit: BoxFit.contain,
+      gaplessPlayback: true,
+      errorBuilder: (_, __, ___) => SizedBox(
+        width: _size,
+        height: _size,
+        child: const Icon(
+          Icons.broken_image_outlined,
+          color: Colors.white24,
+          size: 28,
         ),
       ),
     );
