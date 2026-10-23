@@ -33,16 +33,7 @@ alter table public.messages drop constraint if exists messages_sticker_id_fkey;
 alter table public.messages drop column if exists sticker_id;
 alter table public.messages add column if not exists sticker_pack_id uuid;
 
-do $$
-begin
-  if not exists (
-    select 1 from pg_constraint where conname = 'messages_sticker_pack_id_fkey'
-  ) then
-    alter table public.messages
-      add constraint messages_sticker_pack_id_fkey foreign key (sticker_pack_id)
-      references public.sticker_packs (id) on delete set null;
-  end if;
-end $$;
+-- The foreign key is added after sticker_packs exists — see section 2.
 
 -- ------------------------------------------------------------
 -- 2. Tables
@@ -59,6 +50,18 @@ create table public.sticker_packs (
 );
 
 create index sticker_packs_owner_idx on public.sticker_packs (owner_id);
+
+-- Now the pack table exists, point message rows at it.
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'messages_sticker_pack_id_fkey'
+  ) then
+    alter table public.messages
+      add constraint messages_sticker_pack_id_fkey foreign key (sticker_pack_id)
+      references public.sticker_packs (id) on delete set null;
+  end if;
+end $$;
 
 create table public.stickers (
   id uuid primary key default gen_random_uuid(),
@@ -128,7 +131,8 @@ begin
         where user_id = uid
           and archived = false
           and pack_id <> p_pack
-        order by last_used_at asc
+        -- Keep the [keep - 1] most recently used others; archive the rest.
+        order by last_used_at desc
         offset greatest(keep - 1, 0)
      );
 end;
@@ -254,9 +258,11 @@ on conflict (id) do update
       file_size_limit = excluded.file_size_limit,
       allowed_mime_types = excluded.allowed_mime_types;
 
+drop policy if exists sticker_files_read on storage.objects;
 create policy sticker_files_read on storage.objects
   for select to authenticated using (bucket_id = 'stickers');
 
+drop policy if exists sticker_files_insert_own on storage.objects;
 create policy sticker_files_insert_own on storage.objects
   for insert to authenticated
   with check (
@@ -264,6 +270,7 @@ create policy sticker_files_insert_own on storage.objects
     and (storage.foldername(name))[1] = auth.uid()::text
   );
 
+drop policy if exists sticker_files_update_own on storage.objects;
 create policy sticker_files_update_own on storage.objects
   for update to authenticated
   using (
@@ -275,6 +282,7 @@ create policy sticker_files_update_own on storage.objects
     and (storage.foldername(name))[1] = auth.uid()::text
   );
 
+drop policy if exists sticker_files_delete_own on storage.objects;
 create policy sticker_files_delete_own on storage.objects
   for delete to authenticated
   using (
