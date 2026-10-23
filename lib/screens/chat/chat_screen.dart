@@ -8,6 +8,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../models/member.dart';
 import '../../models/message.dart';
 import '../../services/chat_service.dart';
+import '../../services/sticker_service.dart';
 import '../../services/vlog_service.dart';
 import '../../state/app_state.dart';
 import '../../theme/colors.dart';
@@ -52,14 +53,50 @@ class _ChatScreenState extends State<ChatScreen> {
   Timer? _debounce;
   RealtimeChannel? _channel;
 
+  /// Packs this viewer already has, so a received sticker can offer
+  /// "Add pack" only when it is actually missing.
+  Set<String> _installedPackIds = {};
+
   @override
   void initState() {
     super.initState();
     _load();
+    _loadInstalledPacks();
     _channel = ChatService.instance.subscribe(
       groupId: widget.groupId,
       onChange: _onRealtime,
     );
+  }
+
+  Future<void> _loadInstalledPacks() async {
+    try {
+      final ids = await StickerService.instance.installedIds();
+      if (!mounted) return;
+      setState(() => _installedPackIds = ids);
+    } catch (_) {
+      // A missing tray is not worth a broken chat.
+    }
+  }
+
+  Future<void> _addPack(EfocMessage msg) async {
+    final packId = msg.stickerPackId;
+    if (packId == null) return;
+    try {
+      await StickerService.instance.install(packId);
+      await _loadInstalledPacks();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Pack added to your stickers'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not add that pack: $e')),
+      );
+    }
   }
 
   @override
@@ -128,20 +165,20 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   /// Sticker tray. Sending is one insert: the message carries its own copy of
-  /// the sticker's URL, so the bubble never has to look the pack up.
+  /// the sticker's URL, so the bubble never has to look the pack up — and a
+  /// recipient who never installed the pack still sees it.
   Future<void> _sendSticker() async {
-    final sticker = await showStickerPickerSheet(
-      context,
-      groupId: widget.groupId,
-    );
+    final sticker = await showStickerPickerSheet(context);
     if (sticker == null || !mounted) return;
     try {
       await ChatService.instance.sendSticker(
         groupId: widget.groupId,
-        stickerId: sticker.id,
+        stickerPackId: sticker.packId,
         stickerUrl: sticker.url,
         replyToId: _replyTo?.id,
       );
+      // Using a pack pulls it to the front of the tray.
+      StickerService.instance.touch(sticker.packId);
       if (!mounted) return;
       setState(() => _replyTo = null);
       _load();
@@ -388,6 +425,12 @@ class _ChatScreenState extends State<ChatScreen> {
                                 isGrouped: isGrouped,
                                 onCardTap: () => _openCard(msg),
                                 onQuoteTap: () => _jumpTo(msg.replyToId),
+                                onAddPack: msg.kind == MessageKind.sticker &&
+                                        msg.stickerPackId != null &&
+                                        !_installedPackIds
+                                            .contains(msg.stickerPackId)
+                                    ? () => _addPack(msg)
+                                    : null,
                                 onReactionsTap: () => showReactionsSheet(
                                   context: context,
                                   message: msg,

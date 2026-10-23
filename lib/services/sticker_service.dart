@@ -20,8 +20,6 @@ class StickerDraft {
   });
 
   /// Reads the format from the file name, falling back to the magic bytes.
-  /// Everything WhatsApp produces is webp; photos from the gallery are usually
-  /// jpg/png.
   factory StickerDraft.fromBytes(Uint8List bytes, {String? fileName}) {
     return StickerDraft(
       bytes: bytes,
@@ -43,6 +41,12 @@ class ImportedPack {
   });
 }
 
+/// Packs belong to people, the tray belongs to the viewer.
+///
+/// The split that matters: `sticker_packs` + `stickers` are the pack (owned by
+/// one user, readable by anyone signed in), `sticker_pack_installs` is what
+/// lands in *your* tray. Sending never depends on either — a message carries
+/// its own sticker URL.
 class StickerService {
   StickerService._();
   static final StickerService instance = StickerService._();
@@ -51,59 +55,133 @@ class StickerService {
 
   static const _bucket = 'stickers';
 
-  /// How many stickers upload at once. 30 stickers × 100 KB is small, but a
-  /// phone on 4G chokes on 30 parallel requests.
+  /// How many stickers upload at once.
   static const _parallelism = 5;
 
   static const _select =
-      'id, group_id, owner_id, name, tray_url, created_at, '
+      'id, owner_id, slug, name, tray_url, created_at, '
       'stickers(id, pack_id, url, emojis, position)';
 
-  // ------------------------------------------------------------
-  // Read
-  // ------------------------------------------------------------
-
-  Future<List<EfocStickerPack>> fetchPacks(String groupId) async {
-    final myId = _client.auth.currentUser?.id;
-    final rows = await _client
-        .from('sticker_packs')
-        .select(_select)
-        .eq('group_id', groupId)
-        .order('created_at', ascending: true);
-
-    return rows
-        .map((r) => EfocStickerPack.fromRow(r, myId: myId))
-        .where((p) => p.stickers.isNotEmpty)
-        .toList();
+  String get _uid {
+    final id = _client.auth.currentUser?.id;
+    if (id == null) throw Exception('Not signed in');
+    return id;
   }
 
   // ------------------------------------------------------------
-  // Write
+  // The tray
   // ------------------------------------------------------------
 
-  /// Uploads [drafts] as a new pack. Each sticker is its own object under
-  /// `{group}/{pack}/`, so one bad file doesn't take the pack down.
+  /// Installed packs, most recently used first. Archived ones included; the
+  /// caller splits them so it can show the archive separately.
+  Future<List<EfocStickerPack>> fetchTray() async {
+    final rows = await _client
+        .from('sticker_pack_installs')
+        .select('archived, last_used_at, pack:sticker_packs($_select)')
+        .eq('user_id', _uid)
+        .order('last_used_at', ascending: false);
+
+    return rows
+        .where((r) => r['pack'] != null)
+        .map(
+          (r) => EfocStickerPack.fromRow(
+            r['pack'] as Map<String, dynamic>,
+            myId: _uid,
+            installed: true,
+            archived: (r['archived'] as bool?) ?? false,
+          ),
+        )
+        .toList();
+  }
+
+  /// Ids the viewer already has, so a received sticker can offer "Add pack"
+  /// only when it is actually missing.
+  Future<Set<String>> installedIds() async {
+    final rows = await _client
+        .from('sticker_pack_installs')
+        .select('pack_id')
+        .eq('user_id', _uid);
+    return rows.map((r) => r['pack_id'] as String).toSet();
+  }
+
+  /// A pack anyone can open from a share link, installed or not.
+  Future<EfocStickerPack?> fetchBySlug(String slug) async {
+    final row = await _client
+        .from('sticker_packs')
+        .select(_select)
+        .eq('slug', slug)
+        .maybeSingle();
+    if (row == null) return null;
+
+    final install = await _client
+        .from('sticker_pack_installs')
+        .select('archived')
+        .eq('user_id', _uid)
+        .eq('pack_id', row['id'])
+        .maybeSingle();
+
+    return EfocStickerPack.fromRow(
+      row,
+      myId: _uid,
+      installed: install != null,
+      archived: (install?['archived'] as bool?) ?? false,
+    );
+  }
+
+  // ------------------------------------------------------------
+  // Install / remove
+  // ------------------------------------------------------------
+
+  /// Adds the pack to the tray. The database archives the least recently used
+  /// pack once the tray is full, so this never fails for being full.
+  Future<void> install(String packId) async {
+    await _client.rpc(
+      'install_sticker_pack',
+      params: {'p_pack': packId},
+    );
+  }
+
+  Future<void> uninstall(String packId) async {
+    await _client
+        .from('sticker_pack_installs')
+        .delete()
+        .eq('user_id', _uid)
+        .eq('pack_id', packId);
+  }
+
+  /// Sending a sticker moves its pack to the front of the tray.
+  Future<void> touch(String packId) async {
+    try {
+      await _client.rpc('touch_sticker_pack', params: {'p_pack': packId});
+    } catch (_) {
+      // Ordering is a nicety; never fail a send over it.
+    }
+  }
+
+  // ------------------------------------------------------------
+  // Creating and filling packs
+  // ------------------------------------------------------------
+
   Future<EfocStickerPack> createPack({
-    required String groupId,
     required String name,
     required List<StickerDraft> drafts,
     StickerDraft? tray,
     void Function(int done, int total)? onProgress,
   }) async {
-    final userId = _client.auth.currentUser?.id;
-    if (userId == null) throw Exception('Not signed in');
     if (drafts.isEmpty) throw Exception('No stickers to upload');
+    final uid = _uid;
+    final slug = await _uniqueSlug(name);
 
-    final pack = await _client
+    final inserted = await _client
         .from('sticker_packs')
         .insert({
-          'group_id': groupId,
-          'owner_id': userId,
+          'owner_id': uid,
+          'slug': slug,
           'name': name.trim().isEmpty ? 'Stickers' : name.trim(),
         })
         .select('id')
         .single();
-    final packId = pack['id'] as String;
+    final packId = inserted['id'] as String;
 
     try {
       String? trayUrl;
@@ -111,51 +189,27 @@ class StickerService {
         trayUrl = await _upload(
           tray.bytes,
           tray.extension,
-          '$groupId/$packId/tray.${tray.extension}',
+          '$uid/$packId/tray.${tray.extension}',
         );
         await _client
             .from('sticker_packs')
             .update({'tray_url': trayUrl}).eq('id', packId);
       }
 
-      // Upload in small waves, then one insert for the rows.
-      final urls = List<String?>.filled(drafts.length, null);
-      var done = 0;
-      for (var start = 0; start < drafts.length; start += _parallelism) {
-        final end = (start + _parallelism).clamp(0, drafts.length);
-        await Future.wait([
-          for (var i = start; i < end; i++)
-            _upload(
-              drafts[i].bytes,
-              drafts[i].extension,
-              '$groupId/$packId/$i.${drafts[i].extension}',
-            ).then((url) {
-              urls[i] = url;
-              done++;
-              onProgress?.call(done, drafts.length);
-            }),
-        ]);
-      }
-
-      await _client.from('stickers').insert([
-        for (var i = 0; i < drafts.length; i++)
-          if (urls[i] != null)
-            {
-              'pack_id': packId,
-              'url': urls[i],
-              'emojis': drafts[i].emojis,
-              'position': i,
-            },
-      ]);
+      await _uploadAll(
+        packId: packId,
+        ownerId: uid,
+        drafts: drafts,
+        onProgress: onProgress,
+      );
 
       final row = await _client
           .from('sticker_packs')
           .select(_select)
           .eq('id', packId)
           .single();
-      return EfocStickerPack.fromRow(row, myId: userId);
+      return EfocStickerPack.fromRow(row, myId: uid, installed: true);
     } catch (e) {
-      // Don't leave half a pack behind in the group's picker.
       try {
         await _client.from('sticker_packs').delete().eq('id', packId);
       } catch (_) {}
@@ -163,20 +217,41 @@ class StickerService {
     }
   }
 
-  /// Adds more stickers to a pack that already exists. Positions continue from
-  /// the current end, and the file names carry a timestamp so they never
-  /// overwrite a sticker that is already in the pack.
+  /// Tops up a pack the viewer owns.
   Future<EfocStickerPack> addStickers({
     required EfocStickerPack pack,
     required List<StickerDraft> drafts,
     void Function(int done, int total)? onProgress,
   }) async {
-    final userId = _client.auth.currentUser?.id;
-    if (userId == null) throw Exception('Not signed in');
     if (drafts.isEmpty) throw Exception('No stickers to upload');
+    if (!pack.isMine) throw Exception('Only the owner can add stickers');
+    final uid = _uid;
 
-    final stamp = DateTime.now().millisecondsSinceEpoch;
-    final firstPosition = pack.stickers.length;
+    await _uploadAll(
+      packId: pack.id,
+      ownerId: uid,
+      drafts: drafts,
+      startPosition: pack.count,
+      namePrefix: '${DateTime.now().millisecondsSinceEpoch}_',
+      onProgress: onProgress,
+    );
+
+    final row = await _client
+        .from('sticker_packs')
+        .select(_select)
+        .eq('id', pack.id)
+        .single();
+    return EfocStickerPack.fromRow(row, myId: uid, installed: true);
+  }
+
+  Future<void> _uploadAll({
+    required String packId,
+    required String ownerId,
+    required List<StickerDraft> drafts,
+    int startPosition = 0,
+    String namePrefix = '',
+    void Function(int done, int total)? onProgress,
+  }) async {
     final urls = List<String?>.filled(drafts.length, null);
     var done = 0;
 
@@ -187,7 +262,7 @@ class StickerService {
           _upload(
             drafts[i].bytes,
             drafts[i].extension,
-            '${pack.groupId}/${pack.id}/${stamp}_$i.${drafts[i].extension}',
+            '$ownerId/$packId/$namePrefix$i.${drafts[i].extension}',
           ).then((url) {
             urls[i] = url;
             done++;
@@ -200,30 +275,95 @@ class StickerService {
       for (var i = 0; i < drafts.length; i++)
         if (urls[i] != null)
           {
-            'pack_id': pack.id,
+            'pack_id': packId,
             'url': urls[i],
             'emojis': drafts[i].emojis,
-            'position': firstPosition + i,
+            'position': startPosition + i,
           },
     ]);
+  }
 
-    final row = await _client
-        .from('sticker_packs')
-        .select(_select)
-        .eq('id', pack.id)
-        .single();
-    return EfocStickerPack.fromRow(row, myId: userId);
+  Future<void> deletePack(EfocStickerPack pack) async {
+    final paths = <String>[];
+    for (final sticker in pack.stickers) {
+      final path = _pathOf(sticker.url);
+      if (path != null) paths.add(path);
+    }
+    final trayPath = _pathOf(pack.trayUrl);
+    if (trayPath != null) paths.add(trayPath);
+
+    await _client.from('sticker_packs').delete().eq('id', pack.id);
+
+    if (paths.isNotEmpty) {
+      try {
+        await _client.storage.from(_bucket).remove(paths);
+      } catch (_) {
+        // Orphaned objects are cheap; a failed delete is not.
+      }
+    }
+  }
+
+  Future<String> _upload(
+    Uint8List bytes,
+    String extension,
+    String path,
+  ) async {
+    await _client.storage.from(_bucket).uploadBinary(
+          path,
+          bytes,
+          fileOptions: FileOptions(
+            contentType: contentTypeFor(extension),
+            upsert: true,
+            // Stickers never change at a given path, so let the CDN keep them.
+            cacheControl: '31536000',
+          ),
+        );
+    return _client.storage.from(_bucket).getPublicUrl(path);
+  }
+
+  /// Turns a public sticker URL back into its object path.
+  static String? _pathOf(String? url) {
+    if (url == null) return null;
+    final marker = '/$_bucket/';
+    final i = url.indexOf(marker);
+    if (i < 0) return null;
+    return Uri.decodeComponent(url.substring(i + marker.length));
+  }
+
+  // ------------------------------------------------------------
+  // Slugs
+  // ------------------------------------------------------------
+
+  /// `Kopi Gang` → `kopi-gang`, then `kopi-gang-2` if that is taken.
+  Future<String> _uniqueSlug(String name) async {
+    final base = slugify(name);
+    for (var attempt = 1; attempt <= 20; attempt++) {
+      final candidate = attempt == 1 ? base : '$base-$attempt';
+      final hit = await _client
+          .from('sticker_packs')
+          .select('id')
+          .eq('slug', candidate)
+          .maybeSingle();
+      if (hit == null) return candidate;
+    }
+    return '$base-${DateTime.now().millisecondsSinceEpoch % 100000}';
+  }
+
+  static String slugify(String name) {
+    final s = name
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9]+'), '-')
+        .replaceAll(RegExp(r'^-+|-+$'), '');
+    if (s.isEmpty) return 'stickers';
+    return s.length > 40 ? s.substring(0, 40).replaceAll(RegExp(r'-+$'), '') : s;
   }
 
   // ------------------------------------------------------------
   // Export
   // ------------------------------------------------------------
 
-  /// Writes the pack back out as a `.wastickers` file: the same shape it came
-  /// in as, so a friend can import it, or it can be installed into WhatsApp.
-  ///
-  /// The images are re-downloaded from their public URLs, so this needs the
-  /// network but no extra storage.
+  /// Writes the pack back out as a `.wastickers` file, for leaving efoc —
+  /// into WhatsApp, or to someone who isn't in the app.
   Future<Uint8List> exportWastickers(EfocStickerPack pack) async {
     final archive = Archive();
     final entries = <Map<String, dynamic>>[];
@@ -252,7 +392,7 @@ class StickerService {
     }
 
     final contents = <String, dynamic>{
-      'identifier': pack.id,
+      'identifier': pack.slug,
       'name': pack.name,
       'publisher': 'efoc',
       'tray_image_file': trayName ?? entries.first['image_file'],
@@ -279,77 +419,9 @@ class StickerService {
     return response.bodyBytes;
   }
 
-  /// Deletes a pack and the files behind it. Stickers already sent in a chat
-  /// keep drawing, because each message carries its own copy of the URL.
-  Future<void> deletePack(String packId) async {
-    final paths = <String>[];
-
-    final stickers =
-        await _client.from('stickers').select('url').eq('pack_id', packId);
-    for (final row in stickers) {
-      final path = _pathOf(row['url'] as String?);
-      if (path != null) paths.add(path);
-    }
-
-    final pack = await _client
-        .from('sticker_packs')
-        .select('tray_url')
-        .eq('id', packId)
-        .maybeSingle();
-    final trayPath = _pathOf(pack?['tray_url'] as String?);
-    if (trayPath != null) paths.add(trayPath);
-
-    // Rows first: a failed delete should not leave stickers pointing at
-    // missing files.
-    await _client.from('sticker_packs').delete().eq('id', packId);
-
-    if (paths.isNotEmpty) {
-      try {
-        await _client.storage.from(_bucket).remove(paths);
-      } catch (_) {
-        // Orphaned objects are cheap; a failed pack delete is not.
-      }
-    }
-  }
-
-  /// Turns a public sticker URL back into its object path.
-  static String? _pathOf(String? url) {
-    if (url == null) return null;
-    final marker = '/$_bucket/';
-    final i = url.indexOf(marker);
-    if (i < 0) return null;
-    return Uri.decodeComponent(url.substring(i + marker.length));
-  }
-
-  Future<String> _upload(
-    Uint8List bytes,
-    String extension,
-    String path,
-  ) async {
-    await _client.storage.from(_bucket).uploadBinary(
-          path,
-          bytes,
-          fileOptions: FileOptions(
-            contentType: contentTypeFor(extension),
-            upsert: true,
-            // Stickers never change at a given path, so let the CDN keep them.
-            cacheControl: '31536000',
-          ),
-        );
-    return _client.storage.from(_bucket).getPublicUrl(path);
-  }
-
   // ------------------------------------------------------------
   // .wastickers
   // ------------------------------------------------------------
-  //
-  // A .wastickers is a ZIP holding `contents.json`, `title.txt` and the
-  // sticker images. contents.json is either one pack object or
-  // `{"sticker_packs": [ ... ]}`; each sticker is
-  // `{"image_file": "01.webp", "emojis": ["😀"]}`.
-  //
-  // There is no export in WhatsApp itself. Packs are produced by sticker
-  // makers (Sticker Maker, Sticker.ly) and traded as this file.
 
   /// Throws [FormatException] when [bytes] isn't a usable pack.
   static ImportedPack parseWastickers(Uint8List bytes) {
@@ -405,10 +477,11 @@ class StickerService {
       final found = _find(files, base, imageFile);
       if (found == null) continue;
 
+      final stickerBytes = _bytesOf(found);
       drafts.add(
         StickerDraft(
-          bytes: _bytesOf(found),
-          extension: imageExtension(_bytesOf(found), fileName: imageFile),
+          bytes: stickerBytes,
+          extension: imageExtension(stickerBytes, fileName: imageFile),
           emojis: (entry['emojis'] as List?)?.cast<String>() ?? const [],
         ),
       );
@@ -454,7 +527,6 @@ class StickerService {
       final hit = files[c];
       if (hit != null) return hit;
     }
-    // Last resort: same base name anywhere in the zip.
     final baseName = key.substring(key.lastIndexOf('/') + 1);
     for (final entry in files.entries) {
       if (entry.key.endsWith('/$baseName') || entry.key == baseName) {

@@ -1,9 +1,9 @@
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../models/sticker.dart';
-import '../../../services/save_file.dart';
+import '../../../services/file_pick.dart';
 import '../../../services/sticker_service.dart';
 import '../../../theme/colors.dart';
 
@@ -11,27 +11,28 @@ import '../../../theme/colors.dart';
 /// sticker to send, or null if the sheet was dismissed.
 Future<EfocSticker?> showStickerPickerSheet(
   BuildContext context, {
-  required String groupId,
+  String? focusPackId,
 }) {
   return showModalBottomSheet<EfocSticker>(
     context: context,
     backgroundColor: Colors.transparent,
     isScrollControlled: true,
-    builder: (_) => _StickerPickerSheet(groupId: groupId),
+    builder: (_) => _StickerPickerSheet(focusPackId: focusPackId),
   );
 }
 
 class _StickerPickerSheet extends StatefulWidget {
-  final String groupId;
+  /// Open on this pack, when arriving from a share link.
+  final String? focusPackId;
 
-  const _StickerPickerSheet({required this.groupId});
+  const _StickerPickerSheet({this.focusPackId});
 
   @override
   State<_StickerPickerSheet> createState() => _StickerPickerSheetState();
 }
 
 class _StickerPickerSheetState extends State<_StickerPickerSheet> {
-  List<EfocStickerPack> _packs = [];
+  List<EfocStickerPack> _all = [];
   int _tab = 0;
   bool _loading = true;
   String? _error;
@@ -39,9 +40,13 @@ class _StickerPickerSheetState extends State<_StickerPickerSheet> {
   /// Non-null while an import or export is running: "3 of 12".
   String? _busy;
 
+  List<EfocStickerPack> get _tray => _all.where((p) => !p.archived).toList();
+  List<EfocStickerPack> get _archived => _all.where((p) => p.archived).toList();
+
   EfocStickerPack? get _selected {
-    if (_packs.isEmpty) return null;
-    return _packs[_tab.clamp(0, _packs.length - 1)];
+    final tray = _tray;
+    if (tray.isEmpty) return null;
+    return tray[_tab.clamp(0, tray.length - 1)];
   }
 
   @override
@@ -52,16 +57,18 @@ class _StickerPickerSheetState extends State<_StickerPickerSheet> {
 
   Future<void> _load({String? selectPackId}) async {
     try {
-      final packs = await StickerService.instance.fetchPacks(widget.groupId);
+      final packs = await StickerService.instance.fetchTray();
       if (!mounted) return;
       setState(() {
-        _packs = packs;
+        _all = packs;
         _loading = false;
         _error = null;
-        if (selectPackId != null) {
-          final i = packs.indexWhere((p) => p.id == selectPackId);
+        final want = selectPackId ?? widget.focusPackId;
+        if (want != null) {
+          final tray = packs.where((p) => !p.archived).toList();
+          final i = tray.indexWhere((p) => p.id == want);
           if (i >= 0) _tab = i;
-        } else if (_tab >= packs.length) {
+        } else if (_tab >= _tray.length) {
           _tab = 0;
         }
       });
@@ -78,20 +85,13 @@ class _StickerPickerSheetState extends State<_StickerPickerSheet> {
   // Getting stickers in
   // ------------------------------------------------------------
 
-  /// A `.wastickers` is a zip, so the file dialog opens on *everything* and we
-  /// sniff it. Filtering on the extension hides the file on web — browsers
-  /// don't know `.wastickers` and grey it out.
   Future<void> _importWastickers() async {
-    final result = await FilePicker.pickFiles(withData: true);
-    final picked = result?.files;
-    if (picked == null || picked.isEmpty) return;
-    final bytes = picked.first.bytes;
-    if (bytes == null) return;
-    if (!mounted) return;
+    final picked = await _pick();
+    if (picked.isEmpty || !mounted) return;
 
     final ImportedPack pack;
     try {
-      pack = StickerService.parseWastickers(bytes);
+      pack = StickerService.parseWastickers(picked.first.bytes);
     } on FormatException catch (e) {
       _toast(e.message);
       return;
@@ -102,25 +102,15 @@ class _StickerPickerSheetState extends State<_StickerPickerSheet> {
     await _createPack(name: name, drafts: pack.stickers, tray: pack.tray);
   }
 
-  /// Loose image files — the `.webp` files copied out of WhatsApp's sticker
-  /// folder, or anything else on disk.
   Future<void> _importFiles() async {
-    final result = await FilePicker.pickFiles(
-      allowMultiple: true,
-      withData: true,
-    );
-    final picked = result?.files;
-    if (picked == null || picked.isEmpty) return;
-    if (!mounted) return;
+    final picked = await _pick(multiple: true);
+    if (picked.isEmpty || !mounted) return;
 
-    // A pack file picked here: treat it as one.
     final first = picked.first;
     if (picked.length == 1 && _looksLikePack(first.name)) {
-      final bytes = first.bytes;
-      if (bytes == null) return;
       final ImportedPack pack;
       try {
-        pack = StickerService.parseWastickers(bytes);
+        pack = StickerService.parseWastickers(first.bytes);
       } on FormatException catch (e) {
         _toast(e.message);
         return;
@@ -131,16 +121,9 @@ class _StickerPickerSheetState extends State<_StickerPickerSheet> {
       return;
     }
 
-    final drafts = <StickerDraft>[];
-    for (final f in picked) {
-      if (f.bytes == null) continue;
-      drafts.add(StickerDraft.fromBytes(f.bytes!, fileName: f.name));
-    }
-    if (drafts.isEmpty) {
-      _toast("Couldn't read those files.");
-      return;
-    }
-
+    final drafts = [
+      for (final f in picked) StickerDraft.fromBytes(f.bytes, fileName: f.name),
+    ];
     final name = await _askName(
       drafts.length == 1 ? 'My sticker' : 'My stickers',
     );
@@ -157,8 +140,6 @@ class _StickerPickerSheetState extends State<_StickerPickerSheet> {
 
   Future<void> _importPhotos() async {
     final files = await ImagePicker().pickMultiImage(
-      // Stickers read best square and fast; this is the same 512 px cap
-      // WhatsApp puts on a pack, so nothing huge reaches storage.
       maxWidth: 512,
       maxHeight: 512,
       imageQuality: 88,
@@ -202,6 +183,20 @@ class _StickerPickerSheetState extends State<_StickerPickerSheet> {
     return n.endsWith('.wastickers') || n.endsWith('.zip');
   }
 
+  /// One place to open a chooser, so a platform failure comes back as a
+  /// message instead of a tap that appears to do nothing.
+  Future<List<PickedBytes>> _pick({
+    bool multiple = false,
+    String? accept,
+  }) async {
+    try {
+      return await pickFiles(multiple: multiple, accept: accept);
+    } catch (e) {
+      _toast("Couldn't open the file picker: $e");
+      return const [];
+    }
+  }
+
   Future<void> _createPack({
     required String name,
     required List<StickerDraft> drafts,
@@ -210,7 +205,6 @@ class _StickerPickerSheetState extends State<_StickerPickerSheet> {
     setState(() => _busy = 'Uploading 0 of ${drafts.length}');
     try {
       final pack = await StickerService.instance.createPack(
-        groupId: widget.groupId,
         name: name,
         drafts: drafts,
         tray: tray,
@@ -228,7 +222,6 @@ class _StickerPickerSheetState extends State<_StickerPickerSheet> {
     }
   }
 
-  /// Tops up a pack that already exists, from photos or from files.
   Future<void> _addToPack(EfocStickerPack pack, String source) async {
     final drafts = <StickerDraft>[];
     if (source == 'photos') {
@@ -240,15 +233,10 @@ class _StickerPickerSheetState extends State<_StickerPickerSheet> {
       if (files.isEmpty) return;
       drafts.addAll(await _draftsFrom(files));
     } else {
-      final result = await FilePicker.pickFiles(
-        allowMultiple: true,
-        withData: true,
-      );
-      final picked = result?.files;
-      if (picked == null) return;
+      final picked = await _pick(multiple: true);
       for (final f in picked) {
-        if (f.bytes == null || _looksLikePack(f.name)) continue;
-        drafts.add(StickerDraft.fromBytes(f.bytes!, fileName: f.name));
+        if (_looksLikePack(f.name)) continue;
+        drafts.add(StickerDraft.fromBytes(f.bytes, fileName: f.name));
       }
     }
     if (!mounted) return;
@@ -277,76 +265,94 @@ class _StickerPickerSheetState extends State<_StickerPickerSheet> {
   }
 
   // ------------------------------------------------------------
-  // Sharing a pack
+  // Sharing, removing
   // ------------------------------------------------------------
 
-  /// Repacks the pack as a `.wastickers` file. Web: lands in Downloads.
-  /// Android/iOS: the share sheet, so it can go straight into a chat or a
-  /// sticker maker.
-  Future<void> _exportPack(EfocStickerPack pack) async {
-    setState(() => _busy = 'Packing ${pack.name}…');
+  /// Packs travel by link now. The owner copies it; anyone signed in can open
+  /// it and add the pack to their own tray.
+  Future<void> _share(EfocStickerPack pack) async {
+    await Clipboard.setData(ClipboardData(text: pack.shareUrl));
+    if (!mounted) return;
+    _toast('Link copied — send it to whoever wants the pack');
+  }
+
+  Future<void> _uninstall(EfocStickerPack pack) async {
+    final ok = await _confirm(
+      title: 'Remove "${pack.name}"?',
+      body: 'It leaves your sticker tray. The pack itself is untouched, and '
+          'stickers already sent in chats stay where they are.',
+      action: 'Remove',
+    );
+    if (ok != true) return;
     try {
-      final bytes = await StickerService.instance.exportWastickers(pack);
-      if (!mounted) return;
-      setState(() => _busy = null);
-      await saveFile(
-        bytes,
-        '${_slug(pack.name)}.wastickers',
-        mimeType: 'application/zip',
-      );
-      _toast('Pack saved — send the file to whoever wants it');
+      await StickerService.instance.uninstall(pack.id);
+      if (mounted) await _load();
     } catch (e) {
-      if (!mounted) return;
-      setState(() => _busy = null);
-      _toast("Couldn't build that pack: $e");
+      _toast('Could not remove: $e');
     }
   }
 
-  static String _slug(String name) {
-    final s = name.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '-');
-    final trimmed = s.replaceAll(RegExp(r'^-+|-+$'), '');
-    return trimmed.isEmpty ? 'stickers' : trimmed;
+  Future<void> _deletePack(EfocStickerPack pack) async {
+    final ok = await _confirm(
+      title: 'Delete "${pack.name}" forever?',
+      body: 'The pack and its stickers are deleted for everyone who installed '
+          'it. Stickers already sent in chats stay where they are.',
+      action: 'Delete',
+      danger: true,
+    );
+    if (ok != true) return;
+    try {
+      await StickerService.instance.deletePack(pack);
+      if (mounted) await _load();
+    } catch (e) {
+      _toast('Could not delete: $e');
+    }
   }
 
-  // ------------------------------------------------------------
-  // Small dialogs
-  // ------------------------------------------------------------
+  Future<void> _restore(EfocStickerPack pack) async {
+    try {
+      await StickerService.instance.install(pack.id);
+      if (mounted) await _load(selectPackId: pack.id);
+    } catch (e) {
+      _toast('Could not restore: $e');
+    }
+  }
 
-  Future<void> _deletePack(EfocStickerPack pack) async {
-    final ok = await showDialog<bool>(
+  Future<bool?> _confirm({
+    required String title,
+    required String body,
+    required String action,
+    bool danger = false,
+  }) {
+    return showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: EfocColors.sheetBg,
         title: Text(
-          'Delete "${pack.name}"?',
+          title,
           style: const TextStyle(color: Colors.white, fontSize: 16),
         ),
-        content: const Text(
-          'The stickers already sent in the chat stay where they are.',
-          style: TextStyle(color: Colors.white60, fontSize: 13),
+        content: Text(
+          body,
+          style: const TextStyle(color: Colors.white60, fontSize: 13),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Keep'),
+            child: const Text('Cancel'),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text(
-              'Delete',
-              style: TextStyle(color: Color(0xFFFF6B6B)),
+            child: Text(
+              action,
+              style: TextStyle(
+                color: danger ? const Color(0xFFFF6B6B) : null,
+              ),
             ),
           ),
         ],
       ),
     );
-    if (ok != true) return;
-    try {
-      await StickerService.instance.deletePack(pack.id);
-      if (mounted) await _load();
-    } catch (e) {
-      _toast('Could not delete: $e');
-    }
   }
 
   Future<String?> _askName(String suggestion) {
@@ -385,9 +391,7 @@ class _StickerPickerSheetState extends State<_StickerPickerSheet> {
     );
   }
 
-  /// Where stickers come from, in plain words. This is the bit people get
-  /// stuck on: WhatsApp has no export button, so you need the zip file a
-  /// sticker maker produces.
+  /// Where stickers come from, in plain words.
   void _showHelp() {
     showModalBottomSheet<void>(
       context: context,
@@ -405,7 +409,7 @@ class _StickerPickerSheetState extends State<_StickerPickerSheet> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: const [
               Text(
-                'Where stickers come from',
+                'How stickers work here',
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: 16,
@@ -414,13 +418,27 @@ class _StickerPickerSheetState extends State<_StickerPickerSheet> {
               ),
               SizedBox(height: 12),
               _HelpLine(
+                icon: Icons.person_outline,
+                title: 'Packs are yours',
+                body:
+                    'A pack belongs to the person who made it, not to a group. '
+                    'It follows you into every chat, and only you can change '
+                    'or delete it.',
+              ),
+              _HelpLine(
+                icon: Icons.download_outlined,
+                title: 'Sharing is a link',
+                body:
+                    'Copy a pack\'s link and send it to anyone. They open it '
+                    'and tap "Add to my stickers" — no files, no importing.',
+              ),
+              _HelpLine(
                 icon: Icons.file_download_outlined,
                 title: 'A .wastickers file',
                 body:
                     'WhatsApp has no export button, but sticker makers do. '
-                    'Sticker Maker and Sticker.ly save your pack as a '
-                    '.wastickers file — that is the one to import. A friend '
-                    'can send you theirs too.',
+                    'Sticker Maker and Sticker.ly save a pack as a '
+                    '.wastickers file — that is the one to import.',
               ),
               _HelpLine(
                 icon: Icons.image_outlined,
@@ -431,19 +449,12 @@ class _StickerPickerSheetState extends State<_StickerPickerSheet> {
                     '.webp files out and pick them here.',
               ),
               _HelpLine(
-                icon: Icons.add_photo_alternate_outlined,
-                title: 'Photos from your gallery',
+                icon: Icons.inventory_2_outlined,
+                title: 'Eight in the tray',
                 body:
-                    'Make a pack out of anything in your camera roll. It gets '
-                    'squared to 512 px on the way in.',
-              ),
-              _HelpLine(
-                icon: Icons.lock_outline_rounded,
-                title: 'Only this Log sees them',
-                body:
-                    'A pack belongs to the group you added it to. Anyone in '
-                    'the Log can send it; only the person who added it can '
-                    'delete it.',
+                    'Your tray shows eight packs. Add a ninth and the one you '
+                    'used longest ago is archived — still installed, just out '
+                    'of the way. Restore it any time.',
               ),
             ],
           ),
@@ -532,21 +543,21 @@ class _StickerPickerSheetState extends State<_StickerPickerSheet> {
     );
   }
 
-  /// Always visible, even with no packs, so "add" is never hidden behind a
-  /// state you can't get out of.
+  /// Always visible, even with an empty tray.
   Widget _tabs() {
+    final tray = _tray;
     return SizedBox(
       height: 54,
       child: ListView(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 12),
         children: [
-          for (var i = 0; i < _packs.length; i++) _tray(_packs[i], i),
+          for (var i = 0; i < tray.length; i++) _trayTab(tray[i], i),
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
             child: InkWell(
               borderRadius: BorderRadius.circular(14),
-              onTap: _showImportMenu,
+              onTap: _showAddMenu,
               child: Container(
                 width: 38,
                 decoration: BoxDecoration(
@@ -557,11 +568,24 @@ class _StickerPickerSheetState extends State<_StickerPickerSheet> {
               ),
             ),
           ),
+          if (_archived.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 2),
+              child: IconButton(
+                onPressed: _showArchived,
+                tooltip: 'Archived packs',
+                icon: const Icon(
+                  Icons.inventory_2_outlined,
+                  size: 18,
+                  color: Colors.white38,
+                ),
+              ),
+            ),
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 2),
             child: IconButton(
               onPressed: _showHelp,
-              tooltip: 'Where do stickers come from?',
+              tooltip: 'How stickers work here',
               icon: const Icon(
                 Icons.help_outline_rounded,
                 size: 18,
@@ -574,7 +598,7 @@ class _StickerPickerSheetState extends State<_StickerPickerSheet> {
     );
   }
 
-  Widget _tray(EfocStickerPack pack, int index) {
+  Widget _trayTab(EfocStickerPack pack, int index) {
     final selected = index == _tab;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
@@ -611,55 +635,63 @@ class _StickerPickerSheetState extends State<_StickerPickerSheet> {
     );
   }
 
-  /// The pack's name, its size, and what you can do to it.
   Widget _packHeader(EfocStickerPack pack) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 2, 6, 0),
       child: Row(
         children: [
           Expanded(
-            child: Text(
-              pack.name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 14,
-                fontWeight: FontWeight.w700,
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  pack.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                Text(
+                  pack.isMine
+                      ? 'Yours · ${pack.count} stickers'
+                      : 'By someone else · ${pack.count} stickers',
+                  style: const TextStyle(color: Colors.white38, fontSize: 11),
+                ),
+              ],
             ),
-          ),
-          Text(
-            '${pack.stickers.length} stickers',
-            style: const TextStyle(color: Colors.white38, fontSize: 11),
-          ),
-          IconButton(
-            onPressed: () => _showAddMenu(pack),
-            tooltip: 'Add stickers to this pack',
-            visualDensity: VisualDensity.compact,
-            icon: const Icon(
-              Icons.add_photo_alternate_outlined,
-              size: 18,
-              color: Colors.white54,
-            ),
-          ),
-          IconButton(
-            onPressed: () => _exportPack(pack),
-            tooltip: 'Save as a .wastickers file',
-            visualDensity: VisualDensity.compact,
-            icon: const Icon(Icons.ios_share, size: 17, color: Colors.white54),
           ),
           if (pack.isMine)
             IconButton(
-              onPressed: () => _deletePack(pack),
-              tooltip: 'Delete pack',
+              onPressed: () => _showPackMenu(pack),
+              tooltip: 'Pack options',
               visualDensity: VisualDensity.compact,
               icon: const Icon(
-                Icons.delete_outline_rounded,
+                Icons.more_horiz,
+                size: 20,
+                color: Colors.white54,
+              ),
+            )
+          else
+            IconButton(
+              onPressed: () => _uninstall(pack),
+              tooltip: 'Remove from my tray',
+              visualDensity: VisualDensity.compact,
+              icon: const Icon(
+                Icons.remove_circle_outline,
                 size: 18,
                 color: Colors.white38,
               ),
             ),
+          IconButton(
+            onPressed: () => _share(pack),
+            tooltip: 'Copy share link',
+            visualDensity: VisualDensity.compact,
+            icon: const Icon(Icons.link, size: 19, color: Colors.white54),
+          ),
         ],
       ),
     );
@@ -673,13 +705,12 @@ class _StickerPickerSheetState extends State<_StickerPickerSheet> {
         mainAxisSpacing: 8,
         crossAxisSpacing: 8,
       ),
-      itemCount: pack.stickers.length + 1,
+      itemCount: pack.stickers.length + (pack.isMine ? 1 : 0),
       itemBuilder: (context, i) {
-        // Last cell: keep adding to this pack.
-        if (i == pack.stickers.length) {
+        if (pack.isMine && i == pack.stickers.length) {
           return InkWell(
             borderRadius: BorderRadius.circular(12),
-            onTap: () => _showAddMenu(pack),
+            onTap: () => _showAddMenu(forPack: pack),
             child: DecoratedBox(
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(12),
@@ -734,8 +765,8 @@ class _StickerPickerSheetState extends State<_StickerPickerSheet> {
           ),
           const SizedBox(height: 4),
           const Text(
-            'WhatsApp has no export button, so you need the pack file a '
-            'sticker maker saves — or just make one from photos.',
+            'Make one from photos, import a .wastickers file, or open a link '
+            'a friend sends you.',
             textAlign: TextAlign.center,
             style: TextStyle(color: Colors.white38, fontSize: 12, height: 1.4),
           ),
@@ -746,6 +777,11 @@ class _StickerPickerSheetState extends State<_StickerPickerSheet> {
             alignment: WrapAlignment.center,
             children: [
               _actionButton(
+                icon: Icons.add_photo_alternate_outlined,
+                label: 'Use photos',
+                onTap: _importPhotos,
+              ),
+              _actionButton(
                 icon: Icons.file_download_outlined,
                 label: 'Import .wastickers',
                 onTap: _importWastickers,
@@ -755,18 +791,13 @@ class _StickerPickerSheetState extends State<_StickerPickerSheet> {
                 label: 'Pick files',
                 onTap: _importFiles,
               ),
-              _actionButton(
-                icon: Icons.add_photo_alternate_outlined,
-                label: 'Use photos',
-                onTap: _importPhotos,
-              ),
             ],
           ),
           const SizedBox(height: 6),
           TextButton(
             onPressed: _showHelp,
             child: const Text(
-              'Where do stickers come from?',
+              'How do stickers work here?',
               style: TextStyle(color: Colors.white38, fontSize: 12),
             ),
           ),
@@ -818,56 +849,145 @@ class _StickerPickerSheetState extends State<_StickerPickerSheet> {
     );
   }
 
-  Future<void> _showImportMenu() async {
+  /// The "+" in the tray: a new pack, from a file or from photos.
+  Future<void> _showAddMenu({EfocStickerPack? forPack}) async {
     final choice = await _sheetMenu(
-      title: 'Add a sticker pack',
-      options: const [
-        (
-          value: 'pack',
-          icon: Icons.file_download_outlined,
-          title: 'Import a .wastickers file',
-          subtitle: 'The pack file a sticker maker or a friend sends',
-        ),
-        (
-          value: 'files',
-          icon: Icons.image_outlined,
-          title: 'Pick sticker files',
-          subtitle: 'The .webp files copied out of WhatsApp',
-        ),
-        (
-          value: 'photos',
-          icon: Icons.add_photo_alternate_outlined,
-          title: 'Make one from photos',
-          subtitle: 'Pick as many as you like',
-        ),
-      ],
+      title: forPack == null ? 'New sticker pack' : 'Add to "${forPack.name}"',
+      options: forPack == null
+          ? const [
+              (
+                value: 'photos',
+                icon: Icons.add_photo_alternate_outlined,
+                title: 'From photos',
+                subtitle: 'Camera roll, squared to 512 px',
+              ),
+              (
+                value: 'pack',
+                icon: Icons.file_download_outlined,
+                title: 'Import a .wastickers file',
+                subtitle: 'The pack file a sticker maker produces',
+              ),
+              (
+                value: 'files',
+                icon: Icons.image_outlined,
+                title: 'Pick sticker files',
+                subtitle: 'The .webp files copied out of WhatsApp',
+              ),
+            ]
+          : const [
+              (
+                value: 'photos',
+                icon: Icons.add_photo_alternate_outlined,
+                title: 'From photos',
+                subtitle: 'Camera roll, squared to 512 px',
+              ),
+              (
+                value: 'files',
+                icon: Icons.image_outlined,
+                title: 'From files',
+                subtitle: 'Sticker files already on the phone',
+              ),
+            ],
     );
-    if (!mounted) return;
+    if (!mounted || choice == null) return;
+
+    if (forPack != null) {
+      await _addToPack(forPack, choice);
+      return;
+    }
     if (choice == 'pack') await _importWastickers();
     if (choice == 'files') await _importFiles();
     if (choice == 'photos') await _importPhotos();
   }
 
-  Future<void> _showAddMenu(EfocStickerPack pack) async {
+  Future<void> _showPackMenu(EfocStickerPack pack) async {
     final choice = await _sheetMenu(
-      title: 'Add to "${pack.name}"',
+      title: pack.name,
       options: const [
         (
-          value: 'photos',
+          value: 'add',
           icon: Icons.add_photo_alternate_outlined,
-          title: 'From photos',
-          subtitle: 'Camera roll, squared to 512 px',
+          title: 'Add stickers',
+          subtitle: 'From photos or files',
         ),
         (
-          value: 'files',
-          icon: Icons.image_outlined,
-          title: 'From files',
-          subtitle: 'Sticker files already on the phone',
+          value: 'delete',
+          icon: Icons.delete_outline_rounded,
+          title: 'Delete pack',
+          subtitle: 'For everyone who has it',
         ),
       ],
     );
-    if (choice == null || !mounted) return;
-    await _addToPack(pack, choice);
+    if (!mounted || choice == null) return;
+    if (choice == 'add') await _showAddMenu(forPack: pack);
+    if (choice == 'delete') await _deletePack(pack);
+  }
+
+  void _showArchived() {
+    final archived = _archived;
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: EfocColors.sheetBg,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 14),
+            const Text(
+              'Archived packs',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Out of the tray, still yours.',
+              style: TextStyle(color: Colors.white38, fontSize: 12),
+            ),
+            const SizedBox(height: 6),
+            for (final pack in archived)
+              ListTile(
+                leading: SizedBox(
+                  width: 32,
+                  height: 32,
+                  child: pack.iconUrl == null
+                      ? const Icon(Icons.auto_awesome, color: Colors.white38)
+                      : Image.network(
+                          pack.iconUrl!,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => const Icon(
+                            Icons.auto_awesome,
+                            color: Colors.white38,
+                          ),
+                        ),
+                ),
+                title: Text(
+                  pack.name,
+                  style: const TextStyle(color: Colors.white, fontSize: 14),
+                ),
+                subtitle: Text(
+                  '${pack.count} stickers',
+                  style: const TextStyle(color: Colors.white38, fontSize: 12),
+                ),
+                trailing: TextButton(
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    _restore(pack);
+                  },
+                  child: const Text('Restore'),
+                ),
+              ),
+            const SizedBox(height: 6),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<String?> _sheetMenu({

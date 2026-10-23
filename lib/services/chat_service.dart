@@ -28,7 +28,7 @@ class ChatService {
 
   static const _select =
       'id, group_id, user_id, text, clip_id, reply_to_id, created_at, '
-      'kind, vlog_id, sticker_id, sticker_url, card_path, card_hour, '
+      'kind, vlog_id, sticker_pack_id, sticker_url, card_path, card_hour, '
       'card_caption, card_date, '
       'author:profiles!messages_user_id_fkey(display_name, username, avatar_url), '
       'reply:reply_to_id(id, text, user_id, kind, card_hour, card_caption, '
@@ -134,7 +134,7 @@ class ChatService {
         createdAt: DateTime.parse(row['created_at'] as String).toLocal(),
         kind: messageKindOf(row['kind'] as String?),
         vlogId: row['vlog_id'] as String?,
-        stickerId: row['sticker_id'] as String?,
+        stickerPackId: row['sticker_pack_id'] as String?,
         stickerUrl: row['sticker_url'] as String?,
         cardPath: row['card_path'] as String?,
         cardHour: row['card_hour'] as int?,
@@ -191,7 +191,7 @@ class ChatService {
   /// still draws after the pack is deleted (same idea as a clip card's path).
   Future<void> sendSticker({
     required String groupId,
-    required String stickerId,
+    required String stickerPackId,
     required String stickerUrl,
     String? replyToId,
   }) async {
@@ -202,7 +202,7 @@ class ChatService {
       'group_id': groupId,
       'user_id': userId,
       'kind': 'sticker',
-      'sticker_id': stickerId,
+      'sticker_pack_id': stickerPackId,
       'sticker_url': stickerUrl,
       'reply_to_id': replyToId,
     });

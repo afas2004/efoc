@@ -20,6 +20,9 @@ class MessageBubble extends StatelessWidget {
   /// Tapping the reply quote: jump to the quoted message.
   final VoidCallback onQuoteTap;
 
+  /// Set when this is a sticker whose pack the viewer doesn't have yet.
+  final VoidCallback? onAddPack;
+
   const MessageBubble({
     super.key,
     required this.message,
@@ -28,6 +31,7 @@ class MessageBubble extends StatelessWidget {
     required this.onReactionsTap,
     required this.onCardTap,
     required this.onQuoteTap,
+    this.onAddPack,
   });
 
   @override
@@ -104,6 +108,7 @@ class MessageBubble extends StatelessWidget {
                       MessageKind.sticker => _StickerMessage(
                         message: message,
                         onQuoteTap: onQuoteTap,
+                        onAddPack: onAddPack,
                       ),
                       _ => _Bubble(message: message, onQuoteTap: onQuoteTap),
                     },
@@ -465,8 +470,13 @@ class _StickerMessage extends StatelessWidget {
 
   final EfocMessage message;
   final VoidCallback onQuoteTap;
+  final VoidCallback? onAddPack;
 
-  const _StickerMessage({required this.message, required this.onQuoteTap});
+  const _StickerMessage({
+    required this.message,
+    required this.onQuoteTap,
+    this.onAddPack,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -485,13 +495,49 @@ class _StickerMessage extends StatelessWidget {
           ),
         _image(url),
         const SizedBox(height: 2),
-        Text(
-          _clock(message.createdAt),
-          style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.42),
-            fontSize: 10,
-            fontWeight: FontWeight.w500,
-          ),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              _clock(message.createdAt),
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.42),
+                fontSize: 10,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            // Like Telegram: a sticker from a pack you don't have offers the
+            // pack, without getting in the way.
+            if (onAddPack != null) ...[
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: onAddPack,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF262629),
+                    borderRadius: BorderRadius.circular(9),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: const [
+                      Icon(Icons.add, size: 11, color: Colors.white70),
+                      SizedBox(width: 2),
+                      Text(
+                        'Pack',
+                        style: TextStyle(
+                          color: Colors.white70,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ],
         ),
       ],
     );

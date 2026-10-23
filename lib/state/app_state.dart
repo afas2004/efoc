@@ -112,6 +112,22 @@ class AppState extends ChangeNotifier {
     _pendingTable = null;
   }
 
+  // ---------- pending sticker pack (from a share link) ----------
+  /// `efoc.party/?pack=<slug>`
+  String? _pendingStickerPackSlug;
+  String? get pendingStickerPackSlug => _pendingStickerPackSlug;
+
+  void setPendingStickerPackSlug(String slug) {
+    final trimmed = slug.trim();
+    if (trimmed.isEmpty) return;
+    _pendingStickerPackSlug = trimmed;
+    notifyListeners();
+  }
+
+  void clearPendingStickerPackSlug() {
+    _pendingStickerPackSlug = null;
+  }
+
   // ---------- groups ----------
   List<EfocLogGroup> groups = [];
   bool isLoadingGroups = true;

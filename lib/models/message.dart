@@ -33,7 +33,7 @@ class EfocMessage {
 
   /// A sticker message's pack entry (null once the pack is deleted) and the
   /// copy of its public URL, which is what the bubble actually draws.
-  final String? stickerId;
+  final String? stickerPackId;
   final String? stickerUrl;
 
   /// Copies kept on the card so it still draws after the clip is deleted.
@@ -71,7 +71,7 @@ class EfocMessage {
     required this.createdAt,
     this.kind = MessageKind.text,
     this.vlogId,
-    this.stickerId,
+    this.stickerPackId,
     this.stickerUrl,
     this.cardPath,
     this.cardHour,
@@ -149,7 +149,7 @@ class EfocMessage {
       createdAt: createdAt,
       kind: kind,
       vlogId: vlogId,
-      stickerId: stickerId,
+      stickerPackId: stickerPackId,
       stickerUrl: stickerUrl,
       cardPath: cardPath,
       cardHour: cardHour,

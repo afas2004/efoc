@@ -19,6 +19,7 @@ import '../../widgets/reminder_banner.dart';
 import '../../widgets/update_banner.dart';
 import '../chat/chat_screen.dart';
 import '../vlog/vlog_viewer_screen.dart';
+import '../sticker/sticker_pack_screen.dart';
 import 'widgets/clip_popup.dart';
 import 'widgets/create_join_sheet.dart';
 import 'widgets/download_popover.dart';
@@ -221,6 +222,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final i = state.groups.indexWhere((g) => g.id == link.groupId);
     if (i >= 0) state.setGroup(i);
     openTableLink(context, link);
+  }
+
+  /// A pack someone shared: efoc.party/?pack=<slug>
+  void _openPendingStickerPack() {
+    if (!mounted) return;
+    final state = context.read<AppState>();
+    final slug = state.pendingStickerPackSlug;
+    if (slug == null) return;
+    state.clearPendingStickerPackSlug();
+    _stripInviteParamFromUrl();
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => StickerPackScreen(slug: slug),
+      ),
+    );
   }
 
   /// Removes ?code=... from the browser URL so a refresh doesn't re-trigger
@@ -454,6 +470,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     // A card-game table link: open it once the groups have loaded.
     if (state.pendingTable != null && !state.isLoadingGroups) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _openPendingTable());
+    }
+    // A sticker pack share link.
+    if (state.pendingStickerPackSlug != null && !state.isLoadingGroups) {
+      WidgetsBinding.instance
+          .addPostFrameCallback((_) => _openPendingStickerPack());
     }
 
     final needsInitialLoad = state.isLoadingGroups ||

@@ -45,6 +45,12 @@ Future<void> main() async {
   if (initialCode != null && initialCode.isNotEmpty) {
     appState.setPendingInviteCode(initialCode);
   }
+  // A sticker pack share link (efoc.party/?pack=...).
+  final packSlug = initialUri?.queryParameters['pack'];
+  if (packSlug != null && packSlug.isNotEmpty) {
+    appState.setPendingStickerPackSlug(packSlug);
+  }
+
   // A card-game table link (efoc.party/join?table=...).
   final initialTable = initialUri == null ? null : TableLink.fromUri(initialUri);
   if (initialTable != null) {

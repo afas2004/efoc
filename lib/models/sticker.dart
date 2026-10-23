@@ -1,8 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 /// One sticker in a pack. [url] is a public, immutable CDN URL: a sticker's
-/// bytes never change once uploaded, so the URL is cached forever by the
-/// browser and by Flutter's image cache.
+/// bytes never change once uploaded, so the URL is cached forever.
 @immutable
 class EfocSticker {
   final String id;
@@ -30,33 +29,49 @@ class EfocSticker {
   }
 }
 
-/// A set of stickers shared by one Log. Members can send any sticker in it.
+/// A set of stickers owned by one person.
+///
+/// Packs are personal, not per-Log: the owner's tray carries them into every
+/// chat. [installed] is whether THIS user has them in their tray, which is a
+/// separate thing from owning them.
 @immutable
 class EfocStickerPack {
   final String id;
-  final String groupId;
+  final String ownerId;
+  final String slug;
   final String name;
   final String? trayUrl;
   final bool isMine;
+  final bool installed;
+  final bool archived;
   final List<EfocSticker> stickers;
 
   const EfocStickerPack({
     required this.id,
-    required this.groupId,
+    required this.ownerId,
+    required this.slug,
     required this.name,
     required this.trayUrl,
     required this.isMine,
+    required this.installed,
+    required this.archived,
     required this.stickers,
   });
 
-  /// The tab icon: the pack's tray, or its first sticker when a pack was
-  /// imported without one.
+  int get count => stickers.length;
+
+  /// The tab icon: the pack's tray, or its first sticker.
   String? get iconUrl =>
       trayUrl ?? (stickers.isEmpty ? null : stickers.first.url);
+
+  /// What the share link carries.
+  String get shareUrl => 'https://efoc.party/?pack=$slug';
 
   factory EfocStickerPack.fromRow(
     Map<String, dynamic> row, {
     String? myId,
+    bool installed = false,
+    bool archived = false,
   }) {
     final rows = (row['stickers'] as List?) ?? const [];
     final stickers = rows
@@ -67,10 +82,13 @@ class EfocStickerPack {
 
     return EfocStickerPack(
       id: row['id'] as String,
-      groupId: row['group_id'] as String,
+      ownerId: row['owner_id'] as String,
+      slug: row['slug'] as String,
       name: (row['name'] as String?) ?? 'Stickers',
       trayUrl: row['tray_url'] as String?,
       isMine: myId != null && row['owner_id'] == myId,
+      installed: installed,
+      archived: archived,
       stickers: stickers,
     );
   }
