@@ -34,16 +34,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Skipping the man-db index rebuild is what stops apt hanging at the
-      # end of a big install like ffmpeg (it also covers rclone below).
+      # Static ffmpeg from GitHub instead of apt: apt kept stalling for 15+
+      # minutes on the Ubuntu mirrors. Cached between runs.
+      - name: Cache ffmpeg
+        id: ffmpeg-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/ffmpeg
+          key: ffmpeg-n8.1-linux64-gpl
+
       - name: Install ffmpeg
-        timeout-minutes: 8
-        env:
-          DEBIAN_FRONTEND: noninteractive
+        timeout-minutes: 5
         run: |
-          sudo rm -f /var/lib/man-db/auto-update
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq --no-install-recommends ffmpeg fonts-dejavu-core fonts-dejavu-extra
+          if [ "${{ steps.ffmpeg-cache.outputs.cache-hit }}" != "true" ]; then
+            mkdir -p ~/ffmpeg
+            url=https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n8.1-latest-linux64-gpl-8.1.tar.xz
+            curl -fsSL --retry 3 -o /tmp/ffmpeg.tar.xz "$url"
+            tar -xJf /tmp/ffmpeg.tar.xz -C ~/ffmpeg --strip-components=2 --wildcards '*/bin/ffmpeg' '*/bin/ffprobe'
+          fi
+          echo "$HOME/ffmpeg" >> "$GITHUB_PATH"
+          ~/ffmpeg/ffmpeg -hide_banner -version | head -1
 
       - uses: actions/setup-python@v5
         with:
@@ -63,6 +73,9 @@ jobs:
           get JetBrainsMono.ttf "jetbrainsmono/JetBrainsMono%5Bwght%5D.ttf"
           get Caveat.ttf "caveat/Caveat%5Bwght%5D.ttf"
           get Pacifico-Regular.ttf pacifico/Pacifico-Regular.ttf
+          # Labels use DejaVu (preinstalled on the runner); if it's ever
+          # missing, use Poppins so drawtext still has a font.
+          [ -f /usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf ] || echo "FONT_FILE=/tmp/efoc-fonts/Poppins-Bold.ttf" >> "$GITHUB_ENV"
           ls -la
 
       - name: Stitch
