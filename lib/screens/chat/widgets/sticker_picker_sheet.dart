@@ -4,6 +4,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../../models/sticker.dart';
 import '../../../services/file_pick.dart';
+import '../../../services/save_file.dart';
 import '../../../services/sticker_service.dart';
 import '../../../theme/colors.dart';
 
@@ -911,6 +912,12 @@ class _StickerPickerSheetState extends State<_StickerPickerSheet> {
           subtitle: 'From photos or files',
         ),
         (
+          value: 'export',
+          icon: Icons.ios_share,
+          title: 'Save as .wastickers',
+          subtitle: 'To use it in WhatsApp or another app',
+        ),
+        (
           value: 'delete',
           icon: Icons.delete_outline_rounded,
           title: 'Delete pack',
@@ -920,7 +927,29 @@ class _StickerPickerSheetState extends State<_StickerPickerSheet> {
     );
     if (!mounted || choice == null) return;
     if (choice == 'add') await _showAddMenu(forPack: pack);
+    if (choice == 'export') await _exportPack(pack);
     if (choice == 'delete') await _deletePack(pack);
+  }
+
+  /// Repacks the pack as a `.wastickers` file, for leaving efoc. Sharing with
+  /// someone in the app is the link, not this.
+  Future<void> _exportPack(EfocStickerPack pack) async {
+    setState(() => _busy = 'Packing ${pack.name}…');
+    try {
+      final bytes = await StickerService.instance.exportWastickers(pack);
+      if (!mounted) return;
+      setState(() => _busy = null);
+      await saveFile(
+        bytes,
+        '${pack.slug}.wastickers',
+        mimeType: 'application/zip',
+      );
+      _toast('Saved — send the file to whoever wants it');
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _busy = null);
+      _toast("Couldn't build that pack: $e");
+    }
   }
 
   void _showArchived() {
