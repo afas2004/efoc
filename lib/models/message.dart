@@ -53,6 +53,10 @@ class EfocMessage {
   final MessageKind? replyKind;
   final int? replyHour;
 
+  /// Set when the quoted message is a sticker, so the quote can draw the
+  /// sticker itself instead of the word "Sticker".
+  final String? replyStickerUrl;
+
   /// At most one per person, newest first.
   final List<EfocReaction> reactions;
 
@@ -81,6 +85,7 @@ class EfocMessage {
     required this.replySenderName,
     this.replyKind,
     this.replyHour,
+    this.replyStickerUrl,
     required this.reactions,
   });
 
@@ -158,6 +163,7 @@ class EfocMessage {
       replySenderName: replySenderName,
       replyKind: replyKind,
       replyHour: replyHour,
+      replyStickerUrl: replyStickerUrl,
       reactions: next,
     );
   }

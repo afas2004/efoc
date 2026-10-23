@@ -268,25 +268,28 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  /// Reply banner over the composer, with a ▶ for clips (spec 6.4).
-  (String?, String?) _replyLabels(EfocMessage? m) {
-    if (m == null) return (null, null);
+  /// Reply banner over the composer, with a ▶ for clips (spec 6.4). A quoted
+  /// sticker sends its URL too, so the banner can show the sticker.
+  (String?, String?, String?) _replyLabels(EfocMessage? m) {
+    if (m == null) return (null, null, null);
     return switch (m.kind) {
-      MessageKind.text => (m.senderName, m.text),
+      MessageKind.text => (m.senderName, m.text, null),
       MessageKind.clip => (
           [
             m.senderName,
             if (m.cardHour != null) formatHour12(m.cardHour!),
           ].join(' · '),
           '▶ ${m.previewText}',
+          null,
         ),
       MessageKind.vlog => (
           m.cardDate == null
               ? 'the daily vlog'
               : 'the vlog · ${vlogDayLabel(m.cardDate!)}',
           '▶ Daily vlog',
+          null,
         ),
-      MessageKind.sticker => (m.senderName, 'Sticker'),
+      MessageKind.sticker => (m.senderName, null, m.stickerUrl),
     };
   }
 
@@ -302,7 +305,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final (replyName, replyText) = _replyLabels(_replyTo);
+    final (replyName, replyText, replySticker) = _replyLabels(_replyTo);
     return Scaffold(
       backgroundColor: EfocColors.bg,
       appBar: AppBar(
@@ -424,6 +427,7 @@ class _ChatScreenState extends State<ChatScreen> {
           ChatComposer(
             replySenderName: replyName,
             replyPreviewText: replyText,
+            replyStickerUrl: replySticker,
             onCancelReply: () => setState(() => _replyTo = null),
             onSend: _sendText,
             onStickerTap: _sendSticker,

@@ -2,9 +2,13 @@ import 'dart:typed_data';
 
 import 'package:share_plus/share_plus.dart';
 
-Future<void> saveVideo(Uint8List bytes, String fileName) async {
+Future<void> saveFile(
+  Uint8List bytes,
+  String fileName,
+  String mimeType,
+) async {
   await Share.shareXFiles(
-    [XFile.fromData(bytes, mimeType: 'video/mp4', name: fileName)],
+    [XFile.fromData(bytes, mimeType: mimeType, name: fileName)],
     fileNameOverrides: [fileName],
   );
 }

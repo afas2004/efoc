@@ -7,6 +7,11 @@ import '../../../theme/colors.dart';
 class ChatComposer extends StatefulWidget {
   final String? replySenderName;
   final String? replyPreviewText;
+
+  /// When the quoted message is a sticker, its image replaces the preview
+  /// text in the banner.
+  final String? replyStickerUrl;
+
   final VoidCallback onCancelReply;
   final Future<void> Function(String text) onSend;
 
@@ -19,6 +24,7 @@ class ChatComposer extends StatefulWidget {
     required this.replyPreviewText,
     required this.onCancelReply,
     required this.onSend,
+    this.replyStickerUrl,
     this.onStickerTap,
   });
 
@@ -110,6 +116,21 @@ class _ChatComposerState extends State<ChatComposer> {
                       ),
                     ),
                     const SizedBox(width: 10),
+                    if (widget.replyStickerUrl != null)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 10),
+                        child: Image.network(
+                          widget.replyStickerUrl!,
+                          width: 30,
+                          height: 30,
+                          fit: BoxFit.contain,
+                          gaplessPlayback: true,
+                          errorBuilder: (_, __, ___) => const SizedBox(
+                            width: 30,
+                            height: 30,
+                          ),
+                        ),
+                      ),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,

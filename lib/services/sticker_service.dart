@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
+import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/sticker.dart';
@@ -160,6 +161,122 @@ class StickerService {
       } catch (_) {}
       rethrow;
     }
+  }
+
+  /// Adds more stickers to a pack that already exists. Positions continue from
+  /// the current end, and the file names carry a timestamp so they never
+  /// overwrite a sticker that is already in the pack.
+  Future<EfocStickerPack> addStickers({
+    required EfocStickerPack pack,
+    required List<StickerDraft> drafts,
+    void Function(int done, int total)? onProgress,
+  }) async {
+    final userId = _client.auth.currentUser?.id;
+    if (userId == null) throw Exception('Not signed in');
+    if (drafts.isEmpty) throw Exception('No stickers to upload');
+
+    final stamp = DateTime.now().millisecondsSinceEpoch;
+    final firstPosition = pack.stickers.length;
+    final urls = List<String?>.filled(drafts.length, null);
+    var done = 0;
+
+    for (var start = 0; start < drafts.length; start += _parallelism) {
+      final end = (start + _parallelism).clamp(0, drafts.length);
+      await Future.wait([
+        for (var i = start; i < end; i++)
+          _upload(
+            drafts[i].bytes,
+            drafts[i].extension,
+            '${pack.groupId}/${pack.id}/${stamp}_$i.${drafts[i].extension}',
+          ).then((url) {
+            urls[i] = url;
+            done++;
+            onProgress?.call(done, drafts.length);
+          }),
+      ]);
+    }
+
+    await _client.from('stickers').insert([
+      for (var i = 0; i < drafts.length; i++)
+        if (urls[i] != null)
+          {
+            'pack_id': pack.id,
+            'url': urls[i],
+            'emojis': drafts[i].emojis,
+            'position': firstPosition + i,
+          },
+    ]);
+
+    final row = await _client
+        .from('sticker_packs')
+        .select(_select)
+        .eq('id', pack.id)
+        .single();
+    return EfocStickerPack.fromRow(row, myId: userId);
+  }
+
+  // ------------------------------------------------------------
+  // Export
+  // ------------------------------------------------------------
+
+  /// Writes the pack back out as a `.wastickers` file: the same shape it came
+  /// in as, so a friend can import it, or it can be installed into WhatsApp.
+  ///
+  /// The images are re-downloaded from their public URLs, so this needs the
+  /// network but no extra storage.
+  Future<Uint8List> exportWastickers(EfocStickerPack pack) async {
+    final archive = Archive();
+    final entries = <Map<String, dynamic>>[];
+
+    for (var i = 0; i < pack.stickers.length; i++) {
+      final sticker = pack.stickers[i];
+      final bytes = await _download(sticker.url);
+      final ext = imageExtension(bytes, fileName: sticker.url);
+      final name = '${i.toString().padLeft(2, '0')}.$ext';
+      archive.addFile(ArchiveFile(name, bytes.length, bytes));
+      entries.add({'image_file': name, 'emojis': sticker.emojis});
+    }
+    if (entries.isEmpty) throw Exception('This pack has no stickers');
+
+    String? trayName;
+    final trayUrl = pack.trayUrl;
+    if (trayUrl != null) {
+      try {
+        final bytes = await _download(trayUrl);
+        final ext = imageExtension(bytes, fileName: trayUrl);
+        trayName = 'tray.$ext';
+        archive.addFile(ArchiveFile(trayName, bytes.length, bytes));
+      } catch (_) {
+        // A missing tray is not worth failing the export over.
+      }
+    }
+
+    final contents = <String, dynamic>{
+      'identifier': pack.id,
+      'name': pack.name,
+      'publisher': 'efoc',
+      'tray_image_file': trayName ?? entries.first['image_file'],
+      'image_data_version': '1',
+      'avoid_cache': false,
+      'animated_sticker_pack': false,
+      'stickers': entries,
+    };
+    final contentsBytes = utf8.encode(jsonEncode(contents));
+    archive.addFile(
+      ArchiveFile('contents.json', contentsBytes.length, contentsBytes),
+    );
+    final titleBytes = utf8.encode(pack.name);
+    archive.addFile(ArchiveFile('title.txt', titleBytes.length, titleBytes));
+
+    return Uint8List.fromList(ZipEncoder().encode(archive));
+  }
+
+  Future<Uint8List> _download(String url) async {
+    final response = await http.get(Uri.parse(url));
+    if (response.statusCode != 200) {
+      throw Exception('Could not fetch a sticker (${response.statusCode})');
+    }
+    return response.bodyBytes;
   }
 
   /// Deletes a pack and the files behind it. Stickers already sent in a chat

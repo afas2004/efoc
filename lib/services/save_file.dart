@@ -3,8 +3,18 @@ import 'dart:typed_data';
 import 'save_file_native.dart'
     if (dart.library.js_interop) 'save_file_web.dart' as impl;
 
+/// Saves [bytes] as a file. Web: a normal browser download (goes to Downloads,
+/// no share sheet). Android app: the system share sheet, which has
+/// "Save to Files" and every chat app.
+Future<void> saveFile(
+  Uint8List bytes,
+  String fileName, {
+  String mimeType = 'application/octet-stream',
+}) =>
+    impl.saveFile(bytes, fileName, mimeType);
+
 /// Saves a video to the phone. Web: a normal browser download (goes to
 /// Downloads, no share sheet). Android app: the system share sheet, which
 /// has "Save to Files/Photos".
 Future<void> saveVideo(Uint8List bytes, String fileName) =>
-    impl.saveVideo(bytes, fileName);
+    impl.saveFile(bytes, fileName, 'video/mp4');

@@ -101,8 +101,10 @@ class MessageBubble extends StatelessWidget {
                     child: switch (message.kind) {
                       MessageKind.clip =>
                         ClipCard(message: message, onTap: onCardTap),
-                      MessageKind.sticker =>
-                        _StickerView(url: message.stickerUrl),
+                      MessageKind.sticker => _StickerMessage(
+                        message: message,
+                        onQuoteTap: onQuoteTap,
+                      ),
                       _ => _Bubble(message: message, onQuoteTap: onQuoteTap),
                     },
                   ),
@@ -278,7 +280,12 @@ class _ReplyPreview extends StatelessWidget {
               fontWeight: FontWeight.w700,
             ),
           ),
-          if (message.replyPreviewText != null)
+          if (message.replyStickerUrl != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 3),
+              child: _QuotedSticker(url: message.replyStickerUrl!, size: 38),
+            )
+          else if (message.replyPreviewText != null)
             Text(
               message.replyPreviewText!,
               maxLines: 2,
@@ -426,23 +433,74 @@ class _ClipPreviewState extends State<_ClipPreview> {
   }
 }
 
-/// A sticker draws as the image alone — no bubble behind it — the way it does
-/// in WhatsApp. The URL is the copy stored on the message, so it keeps working
-/// if the pack is deleted.
-class _StickerView extends StatelessWidget {
-  static const double _size = 132;
+/// The sticker a message is quoting, drawn small inside the quote instead of
+/// the word "Sticker".
+class _QuotedSticker extends StatelessWidget {
+  final String url;
+  final double size;
 
-  final String? url;
-
-  const _StickerView({required this.url});
+  const _QuotedSticker({required this.url, required this.size});
 
   @override
   Widget build(BuildContext context) {
-    final u = url;
-    if (u == null || u.isEmpty) return const SizedBox.shrink();
-
     return Image.network(
-      u,
+      url,
+      width: size,
+      height: size,
+      fit: BoxFit.contain,
+      gaplessPlayback: true,
+      errorBuilder: (_, __, ___) => SizedBox(width: size, height: size),
+    );
+  }
+}
+
+/// A sticker draws as the image alone — no bubble behind it — the way it does
+/// in WhatsApp. The URL is the copy stored on the message, so it keeps working
+/// if the pack is deleted.
+///
+/// What the bubble used to give it (who sent it, when, and what it's replying
+/// to) is laid out around the image instead, so a sticker is never anonymous.
+class _StickerMessage extends StatelessWidget {
+  static const double _size = 132;
+
+  final EfocMessage message;
+  final VoidCallback onQuoteTap;
+
+  const _StickerMessage({required this.message, required this.onQuoteTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final isMe = message.isMe;
+    final url = message.stickerUrl;
+
+    return Column(
+      crossAxisAlignment:
+          isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (message.replySenderName != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: _StickerQuote(message: message, onTap: onQuoteTap),
+          ),
+        _image(url),
+        const SizedBox(height: 2),
+        Text(
+          _clock(message.createdAt),
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.42),
+            fontSize: 10,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _image(String? url) {
+    if (url == null || url.isEmpty) return const SizedBox.shrink();
+    return Image.network(
+      url,
       width: _size,
       height: _size,
       fit: BoxFit.contain,
@@ -458,6 +516,72 @@ class _StickerView extends StatelessWidget {
       ),
     );
   }
+}
+
+/// The quoted message above a sticker. Same information as the bubble's quote,
+/// standing on the page instead of inside a bubble.
+class _StickerQuote extends StatelessWidget {
+  final EfocMessage message;
+  final VoidCallback onTap;
+
+  const _StickerQuote({required this.message, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 190),
+        decoration: BoxDecoration(
+          color: const Color(0xFF262629),
+          borderRadius: BorderRadius.circular(8),
+          border: Border(
+            left: BorderSide(
+              color: EfocColors.accent.withValues(alpha: 0.8),
+              width: 3,
+            ),
+          ),
+        ),
+        padding: const EdgeInsets.fromLTRB(8, 4, 8, 4),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              _replyAuthor(message),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.white70,
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            if (message.replyStickerUrl != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: _QuotedSticker(url: message.replyStickerUrl!, size: 32),
+              )
+            else if (message.replyPreviewText != null)
+              Text(
+                message.replyPreviewText!,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: Colors.white60, fontSize: 11),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// `3:04 PM`, matching the timestamp inside a text bubble.
+String _clock(DateTime d) {
+  final h = d.hour == 0 ? 12 : (d.hour > 12 ? d.hour - 12 : d.hour);
+  final m = d.minute.toString().padLeft(2, '0');
+  final ap = d.hour < 12 ? 'AM' : 'PM';
+  return '$h:$m $ap';
 }
 
 class _Avatar extends StatelessWidget {

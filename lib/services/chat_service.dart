@@ -32,6 +32,7 @@ class ChatService {
       'card_caption, card_date, '
       'author:profiles!messages_user_id_fkey(display_name, username, avatar_url), '
       'reply:reply_to_id(id, text, user_id, kind, card_hour, card_caption, '
+      '  sticker_url, '
       '  author:profiles!messages_user_id_fkey(display_name, username)), '
       'clip:clip_id(id, storage_path)';
 
@@ -116,7 +117,8 @@ class ChatService {
         MessageKind.clip =>
           replyCaption?.isNotEmpty == true ? replyCaption : 'Clip',
         MessageKind.vlog => 'Daily vlog',
-        MessageKind.sticker => 'Sticker',
+        // The quote draws the sticker itself; this is only the fallback.
+        MessageKind.sticker => null,
       };
 
       final cardDate = row['card_date'] as String?;
@@ -149,6 +151,7 @@ class ChatService {
         replySenderName: replySenderName,
         replyKind: replyKind,
         replyHour: reply?['card_hour'] as int?,
+        replyStickerUrl: reply?['sticker_url'] as String?,
         reactions: reactionsByMessage[row['id']] ?? const [],
       );
     }).toList();

@@ -3,10 +3,14 @@ import 'dart:typed_data';
 
 import 'package:web/web.dart' as web;
 
-Future<void> saveVideo(Uint8List bytes, String fileName) async {
+Future<void> saveFile(
+  Uint8List bytes,
+  String fileName,
+  String mimeType,
+) async {
   final blob = web.Blob(
     [bytes.toJS].toJS,
-    web.BlobPropertyBag(type: 'video/mp4'),
+    web.BlobPropertyBag(type: mimeType),
   );
   final url = web.URL.createObjectURL(blob);
   final a = web.HTMLAnchorElement()
