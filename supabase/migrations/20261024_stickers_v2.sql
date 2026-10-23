@@ -290,7 +290,10 @@ create policy sticker_files_delete_own on storage.objects
     and (storage.foldername(name))[1] = auth.uid()::text
   );
 
--- v1 files lived under {group_id}/…; nothing references them now.
-delete from storage.objects where bucket_id = 'stickers';
+-- v1 files lived under {group_id}/… and are unreferenced now. They are NOT
+-- deleted here: storage.objects is protected against direct deletes
+-- (storage.protect_delete). Empty the `stickers` bucket from the dashboard if
+-- you want the space back; leaving them costs a few hundred KB and breaks
+-- nothing.
 
 commit;
