@@ -1,5 +1,5 @@
 {
-    "latest_version":  "1.8.3",
-    "latest_build":  28,
-    "release_notes":  "Hourly reminders now tell you when they can\u0027t reach your phone, and fix themselves."
+    "latest_version":  "1.8.4",
+    "latest_build":  29,
+    "release_notes":  "Stickers in chat: import a .wastickers pack or make one from photos, reply to them, and share a pack back out."
 }
