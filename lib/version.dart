@@ -7,7 +7,7 @@
 /// release.ps1 bumps all three together on every release. There is no
 /// build-time substitution here on purpose: a hardcoded const keeps the
 /// update check dependency-free and trivially debuggable.
-const int kAppBuild = 31;
+const int kAppBuild = 32;
 
 /// Human-readable version, used only for display.
-const String kAppVersion = '1.8.6';
+const String kAppVersion = '1.8.7';
