@@ -29,12 +29,13 @@ class ChatService {
   static const _select =
       'id, group_id, user_id, text, clip_id, reply_to_id, created_at, '
       'kind, vlog_id, sticker_pack_id, sticker_url, card_path, card_hour, '
+      'card_rotation, '
       'card_caption, card_date, '
       'author:profiles!messages_user_id_fkey(display_name, username, avatar_url), '
       'reply:reply_to_id(id, text, user_id, kind, card_hour, card_caption, '
       '  sticker_url, '
       '  author:profiles!messages_user_id_fkey(display_name, username)), '
-      'clip:clip_id(id, storage_path)';
+      'clip:clip_id(id, storage_path, rotation)';
 
   Future<List<EfocMessage>> fetchMessages({
     required String groupId,
@@ -130,6 +131,10 @@ class ChatService {
         text: row['text'] as String?,
         clipId: row['clip_id'] as String?,
         clipStoragePath: clip?['storage_path'] as String?,
+        // The card's copy survives retention; the clip's row does not.
+        clipRotation: (row['card_rotation'] as num?)?.toInt() ??
+            (clip?['rotation'] as num?)?.toInt() ??
+            0,
         replyToId: row['reply_to_id'] as String?,
         createdAt: DateTime.parse(row['created_at'] as String).toLocal(),
         kind: messageKindOf(row['kind'] as String?),

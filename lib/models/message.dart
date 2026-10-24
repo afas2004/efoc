@@ -23,6 +23,11 @@ class EfocMessage {
   final String? text;
   final String? clipId;
   final String? clipStoragePath;
+
+  /// How far the clip's file must turn to stand upright: 0, 90 or 270.
+  /// Clips are recorded with the phone sideways, so a landscape clip is
+  /// stored as a portrait frame with the scene on its side.
+  final int clipRotation;
   final String? replyToId;
   final DateTime createdAt;
 
@@ -67,6 +72,7 @@ class EfocMessage {
     required this.text,
     required this.clipId,
     required this.clipStoragePath,
+    this.clipRotation = 0,
     required this.replyToId,
     required this.createdAt,
     this.kind = MessageKind.text,
@@ -145,6 +151,7 @@ class EfocMessage {
       text: text,
       clipId: clipId,
       clipStoragePath: clipStoragePath,
+      clipRotation: clipRotation,
       replyToId: replyToId,
       createdAt: createdAt,
       kind: kind,

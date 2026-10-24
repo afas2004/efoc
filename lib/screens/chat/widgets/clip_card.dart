@@ -6,11 +6,17 @@ import '../../../models/message.dart';
 import '../../../services/clip_service.dart';
 import '../../../services/vlog_service.dart';
 import '../../../theme/colors.dart';
+import '../../../widgets/clip_video.dart';
 
-/// A clip someone posted to the grid, shown in chat (spec 5.2): 200px wide,
-/// 9:13, hour badge, play icon, one-line caption. Once the stitcher has
-/// deleted the raw clip it keeps its spot, drawn from the thumbnail if
-/// that's still there or a placeholder if not.
+/// A clip someone posted to the grid, shown in chat (spec 5.2): hour badge,
+/// play icon, one-line caption. Once the stitcher has deleted the raw clip it
+/// keeps its spot, drawn from the thumbnail if that's still there or a
+/// placeholder if not.
+///
+/// The card follows the clip's orientation. Clips are recorded with the phone
+/// sideways, so a landscape clip arrives as a portrait frame with the scene
+/// on its side: the thumbnail gets the same quarter turn the player applies,
+/// and the card goes wide instead of tall.
 class ClipCard extends StatelessWidget {
   final EfocMessage message;
   final VoidCallback onTap;
@@ -26,16 +32,25 @@ class ClipCard extends StatelessWidget {
     final hour = message.cardHour;
     final caption = message.cardCaption?.trim() ?? '';
     final expired = message.clipId == null;
+    final rotation = message.clipRotation;
+    final landscape = rotation == 90 || rotation == 270;
 
     return _CardFrame(
       isMe: message.isMe,
       onTap: onTap,
+      // 3:2 for a sideways clip (the camera's portrait frame held a landscape
+      // scene), 9:13 for the older upright ones.
+      width: landscape ? 236 : 200,
+      aspect: landscape ? 3 / 2 : 9 / 13,
       background: thumb == null
           ? _Placeholder(expired: expired)
-          : Image.network(
-              thumb,
-              fit: BoxFit.cover,
-              errorBuilder: (_, _, _) => _Placeholder(expired: expired),
+          : UprightClip(
+              rotation: rotation,
+              child: Image.network(
+                thumb,
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) => _Placeholder(expired: expired),
+              ),
             ),
       badge: hour == null
           ? null
@@ -147,6 +162,10 @@ class _CardFrame extends StatelessWidget {
   final String? caption;
   final bool showPlay;
 
+  /// Card size. Portrait by default; a landscape clip passes a wide box.
+  final double width;
+  final double aspect;
+
   const _CardFrame({
     required this.isMe,
     required this.onTap,
@@ -154,6 +173,8 @@ class _CardFrame extends StatelessWidget {
     required this.badge,
     required this.caption,
     required this.showPlay,
+    this.width = 200,
+    this.aspect = 9 / 13,
   });
 
   @override
@@ -161,7 +182,7 @@ class _CardFrame extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 200,
+        width: width,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(18),
           border: Border.all(
@@ -173,7 +194,7 @@ class _CardFrame extends StatelessWidget {
         child: ClipRRect(
           borderRadius: BorderRadius.circular(17),
           child: AspectRatio(
-            aspectRatio: 9 / 13,
+            aspectRatio: aspect,
             child: Stack(
               fit: StackFit.expand,
               children: [

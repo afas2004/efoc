@@ -104,9 +104,10 @@ class _ChatClipPopupState extends State<_ChatClipPopup> {
     final media = MediaQuery.of(context);
     final width = media.size.width * 0.8;
     final rotation = clipRotationOf(_clip);
+    final sideways = rotation == 90 || rotation == 270;
     final ar = (_video?.value.isInitialized ?? false)
         ? uprightAspect(_video!, rotation)
-        : 9 / 15;
+        : (sideways ? 3 / 2 : 9 / 15);
     final caption =
         (_clip?['text_overlay'] as String?)?.trim() ??
         widget.message.cardCaption?.trim() ??
@@ -158,11 +159,14 @@ class _ChatClipPopupState extends State<_ChatClipPopup> {
                                       rotation: rotation,
                                     )
                                   else if (thumb != null)
-                                    Image.network(
-                                      thumb,
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (_, _, _) =>
-                                          const SizedBox.shrink(),
+                                    UprightClip(
+                                      rotation: rotation,
+                                      child: Image.network(
+                                        thumb,
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (_, _, _) =>
+                                            const SizedBox.shrink(),
+                                      ),
                                     ),
                                   if (_loading)
                                     const Center(
