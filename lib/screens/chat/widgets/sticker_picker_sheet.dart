@@ -942,7 +942,10 @@ class _StickerPickerSheetState extends State<_StickerPickerSheet> {
       await saveFile(
         bytes,
         '${pack.slug}.wastickers',
-        mimeType: 'application/zip',
+        // octet-stream, not application/zip: Chrome on Android otherwise
+        // saves it as <name>.wastickers.zip, and Sticker Maker only takes
+        // a file ending in .wastickers.
+        mimeType: 'application/octet-stream',
       );
       _toast('Saved — send the file to whoever wants it');
     } catch (e) {

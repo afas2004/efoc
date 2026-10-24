@@ -456,94 +456,264 @@ class StickerService {
   // .wastickers
   // ------------------------------------------------------------
 
-  /// Throws [FormatException] when [bytes] isn't a usable pack.
-  static ImportedPack parseWastickers(Uint8List bytes) {
+  /// Reads a `.wastickers` — which is just a zip — into stickers, tolerating
+  /// what different makers produce:
+  ///
+  ///  * `contents.json` at the root or inside one folder
+  ///  * `{"sticker_packs": [...]}`, a single pack object, or a bare list
+  ///  * `image_file` / `file` / `image` / `path`, or plain file names
+  ///  * no metadata at all: every image in the zip becomes one pack
+  ///
+  /// The last case is the safety net — a pack file that names things
+  /// differently still imports instead of failing.
+  ///
+  /// Throws [FormatException] when there is nothing usable inside, and says
+  /// what it did find so the failure is diagnosable from a screenshot.
+  static ImportedPack parseWastickers(Uint8List bytes, {int depth = 0}) {
     final Archive archive;
     try {
       archive = ZipDecoder().decodeBytes(bytes);
     } catch (_) {
       throw const FormatException(
-        "That file isn't a sticker pack. Pick a .wastickers file.",
+        'That file is not a zip. A .wastickers is a zip underneath — if you '
+        're-zipped it, zip the *contents*, not the folder.',
       );
     }
 
     final files = <String, ArchiveFile>{};
+    // Entry names as they were written, so a pack name keeps its capitals.
+    final originals = <String, String>{};
     for (final f in archive.files) {
       if (!f.isFile) continue;
-      files[_normalise(f.name)] = f;
+      final key = _normalise(f.name);
+      files[key] = f;
+      originals[key] = f.name;
+    }
+    if (files.isEmpty) {
+      throw const FormatException('That zip is empty.');
     }
 
-    String? contentsKey;
-    for (final key in files.keys) {
-      if (key == 'contents.json' || key.endsWith('/contents.json')) {
-        contentsKey = key;
-        break;
+    // Occasionally an export is a zip that holds the real .wastickers.
+    if (depth < 2 && files.length == 1) {
+      final only = files.keys.first;
+      if (only.endsWith('.wastickers') || only.endsWith('.zip')) {
+        return parseWastickers(_bytesOf(files[only]!), depth: depth + 1);
       }
     }
-    if (contentsKey == null) {
-      throw const FormatException(
-        "That pack has no contents.json — is it a .wastickers file?",
-      );
+
+    final contentsKey = _contentsKey(files);
+    if (contentsKey != null) {
+      final fromJson = _fromContents(files, contentsKey, originals);
+      if (fromJson != null && fromJson.stickers.isNotEmpty) return fromJson;
     }
 
-    final Map<String, dynamic> json;
+    // No usable metadata: take every image in the zip.
+    final fallback = _fromImages(files, name: _packName(files, originals));
+    if (fallback.stickers.isNotEmpty) return fallback;
+
+    throw FormatException(
+      'No stickers found in that file. It holds: ${_describe(files)}',
+    );
+  }
+
+  /// `contents.json` anywhere; failing that, any json that looks like a pack.
+  static String? _contentsKey(Map<String, ArchiveFile> files) {
+    for (final key in files.keys) {
+      if (key == 'contents.json' || key.endsWith('/contents.json')) return key;
+    }
+    for (final key in files.keys) {
+      if (!key.endsWith('.json')) continue;
+      if (key.contains('content') ||
+          key.contains('sticker') ||
+          key.contains('pack')) {
+        return key;
+      }
+    }
+    return null;
+  }
+
+  static ImportedPack? _fromContents(
+    Map<String, ArchiveFile> files,
+    String contentsKey,
+    Map<String, String> originals,
+  ) {
+    dynamic json;
     try {
-      json = jsonDecode(utf8.decode(files[contentsKey]!.content))
-          as Map<String, dynamic>;
+      json = jsonDecode(utf8.decode(_bytesOf(files[contentsKey]!)));
     } catch (_) {
-      throw const FormatException("That pack's contents.json is unreadable.");
+      return null;
     }
 
-    final pack = json['sticker_packs'] is List
-        ? (json['sticker_packs'] as List).first as Map<String, dynamic>
-        : json;
+    final pack = _firstPack(json);
+    if (pack == null) return null;
 
-    final base = contentsKey.substring(0, contentsKey.length - 13); // + slash
-    final name = (pack['name'] as String?)?.trim();
+    // Folder the json sits in, so `image_file` can be resolved relative to it.
+    final leaf = contentsKey.split('/').last;
+    final base = contentsKey.substring(0, contentsKey.length - leaf.length);
+
+    final rawName = pack['name'] ?? pack['title'];
+    final name = rawName is String ? rawName.trim() : '';
 
     final drafts = <StickerDraft>[];
-    for (final entry in (pack['stickers'] as List? ?? const [])) {
-      if (entry is! Map) continue;
-      final imageFile = entry['image_file'] as String?;
-      if (imageFile == null) continue;
+    final entries = pack['stickers'];
+    if (entries is List) {
+      for (final entry in entries) {
+        String? file;
+        var emojis = const <String>[];
 
-      final found = _find(files, base, imageFile);
-      if (found == null) continue;
+        if (entry is String) {
+          file = entry;
+        } else if (entry is Map) {
+          final f = entry['image_file'] ??
+              entry['file'] ??
+              entry['image'] ??
+              entry['path'] ??
+              entry['filename'];
+          if (f is String) file = f;
+          emojis = _emojisOf(entry);
+        }
+        if (file == null || file.isEmpty) continue;
 
-      final stickerBytes = _bytesOf(found);
-      drafts.add(
-        StickerDraft(
-          bytes: stickerBytes,
-          extension: imageExtension(stickerBytes, fileName: imageFile),
-          emojis: (entry['emojis'] as List?)?.cast<String>() ?? const [],
-        ),
-      );
+        final found = _find(files, base, file);
+        if (found == null) continue;
+
+        final data = _bytesOf(found);
+        drafts.add(
+          StickerDraft(
+            bytes: data,
+            extension: imageExtension(data, fileName: file),
+            emojis: emojis,
+          ),
+        );
+      }
     }
 
-    if (drafts.isEmpty) {
-      throw const FormatException('That pack has no stickers in it.');
-    }
-
-    final trayFile = pack['tray_image_file'] as String?;
-    final trayEntry = trayFile == null ? null : _find(files, base, trayFile);
+    final trayFile =
+        pack['tray_image_file'] ?? pack['tray_image'] ?? pack['tray'];
+    final trayEntry =
+        trayFile is String ? _find(files, base, trayFile) : null;
 
     return ImportedPack(
-      name: name == null || name.isEmpty ? 'Imported stickers' : name,
+      name: name.isEmpty ? _packName(files, originals) : name,
       tray: trayEntry == null
           ? null
           : StickerDraft(
               bytes: _bytesOf(trayEntry),
               extension: imageExtension(
                 _bytesOf(trayEntry),
-                fileName: trayFile,
+                fileName: '$trayFile',
               ),
             ),
       stickers: drafts,
     );
   }
 
-  static String _normalise(String name) =>
-      name.replaceAll('\\', '/').toLowerCase();
+  /// The first pack in whatever shape the json arrived in.
+  static Map<String, dynamic>? _firstPack(dynamic json) {
+    if (json is List) {
+      for (final entry in json) {
+        if (entry is Map) return entry.cast<String, dynamic>();
+      }
+      return null;
+    }
+    if (json is! Map) return null;
+
+    final map = json.cast<String, dynamic>();
+    final packs = map['sticker_packs'] ?? map['stickerPacks'] ?? map['packs'];
+    if (packs is List) {
+      for (final entry in packs) {
+        if (entry is Map) return entry.cast<String, dynamic>();
+      }
+      return null;
+    }
+    if (packs is Map) return packs.cast<String, dynamic>();
+    return map;
+  }
+
+  static List<String> _emojisOf(Map entry) {
+    final raw = entry['emojis'] ?? entry['emoji'];
+    if (raw is List) {
+      return raw.map((e) => '$e').where((e) => e.isNotEmpty).toList();
+    }
+    if (raw is String) {
+      return raw.split(RegExp(r'\s+')).where((e) => e.isNotEmpty).toList();
+    }
+    return const [];
+  }
+
+  /// Every image in the zip, in name order. `tray`/`icon` files are skipped:
+  /// they are the pack's face, not a sticker.
+  static ImportedPack _fromImages(
+    Map<String, ArchiveFile> files, {
+    required String name,
+  }) {
+    final keys = files.keys
+        .where((k) => _isImage(k) && !k.contains('tray') && !k.contains('icon'))
+        .toList()
+      ..sort();
+
+    final drafts = <StickerDraft>[];
+    for (final key in keys) {
+      final data = _bytesOf(files[key]!);
+      drafts.add(
+        StickerDraft(
+          bytes: data,
+          extension: imageExtension(data, fileName: key),
+        ),
+      );
+    }
+    return ImportedPack(name: name, tray: null, stickers: drafts);
+  }
+
+  static bool _isImage(String key) =>
+      key.endsWith('.webp') ||
+      key.endsWith('.png') ||
+      key.endsWith('.jpg') ||
+      key.endsWith('.jpeg') ||
+      key.endsWith('.gif');
+
+  /// The pack's name when there is no metadata: its one folder name if the
+  /// zip wraps everything in a folder, otherwise a generic label. Reads the
+  /// entry names as written, so the capitals survive.
+  static String _packName(
+    Map<String, ArchiveFile> files,
+    Map<String, String> originals,
+  ) {
+    final folders = <String>{};
+    var loose = false;
+    for (final key in files.keys) {
+      final written = (originals[key] ?? key).replaceAll('\\', '/');
+      final slash = written.indexOf('/');
+      if (slash < 0) {
+        loose = true;
+      } else {
+        folders.add(written.substring(0, slash));
+      }
+    }
+    if (!loose && folders.length == 1) {
+      final cleaned =
+          folders.first.replaceAll(RegExp(r'[-_]+'), ' ').trim();
+      if (cleaned.isNotEmpty) return cleaned;
+    }
+    return 'Imported stickers';
+  }
+
+  static String _describe(Map<String, ArchiveFile> files) {
+    final names = files.keys.take(6).join(', ');
+    return files.length > 6 ? '$names, …' : names;
+  }
+
+  /// Lower-case, forward slashes, percent-decoded: enough that a name in
+  /// contents.json and the same name as a zip entry compare equal.
+  static String _normalise(String name) {
+    var normalised = name.replaceAll('\\', '/');
+    try {
+      normalised = Uri.decodeComponent(normalised);
+    } catch (_) {
+      // A literal '%' in a file name is not an escape; leave it alone.
+    }
+    return normalised.toLowerCase();
+  }
 
   static ArchiveFile? _find(
     Map<String, ArchiveFile> files,
