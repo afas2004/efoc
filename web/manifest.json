@@ -10,6 +10,29 @@
     "description": "Friends only. 3 seconds every hour, stitched into a daily vlog.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
+    "share_target": {
+        "action": "/share",
+        "method": "POST",
+        "enctype": "multipart/form-data",
+        "params": {
+            "title": "title",
+            "text": "text",
+            "url": "url",
+            "files": [
+                {
+                    "name": "media",
+                    "accept": [
+                        "image/png",
+                        "image/jpeg",
+                        "image/gif",
+                        "image/webp",
+                        "application/zip",
+                        "application/octet-stream"
+                    ]
+                }
+            ]
+        }
+    },
     "icons": [
         {
             "src": "icons/Icon-192.png",

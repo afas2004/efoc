@@ -78,6 +78,28 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  /// Keeps this one sticker, in a "Saved" pack of the viewer's own.
+  Future<void> _saveSticker(EfocMessage msg) async {
+    final url = msg.stickerUrl;
+    if (url == null) return;
+    try {
+      await StickerService.instance.saveSticker(url: url);
+      await _loadInstalledPacks();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Saved to your stickers'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not save that: $e')),
+      );
+    }
+  }
+
   Future<void> _addPack(EfocMessage msg) async {
     final packId = msg.stickerPackId;
     if (packId == null) return;
@@ -448,6 +470,11 @@ class _ChatScreenState extends State<ChatScreen> {
                                   onMoreEmojis: () => _pickMoreEmoji(msg),
                                   onCopy: msg.copyText != null
                                       ? () => _copy(msg)
+                                      : null,
+                                  onSaveSticker: msg.kind ==
+                                              MessageKind.sticker &&
+                                          msg.stickerUrl != null
+                                      ? () => _saveSticker(msg)
                                       : null,
                                   // Cards mirror the grid, so they stay.
                                   onDelete: msg.isMe && !msg.isCard

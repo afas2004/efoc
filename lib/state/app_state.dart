@@ -11,6 +11,7 @@ import '../models/vlog.dart';
 import '../services/chat_service.dart';
 import '../services/clip_service.dart';
 import '../services/group_service.dart';
+import '../services/picked_file.dart';
 import '../services/reminder_service.dart';
 import '../services/vlog_service.dart';
 
@@ -126,6 +127,22 @@ class AppState extends ChangeNotifier {
 
   void clearPendingStickerPackSlug() {
     _pendingStickerPackSlug = null;
+  }
+
+  // ---------- a file shared into efoc (Android share sheet) ----------
+  PickedBytes? _pendingSharedFile;
+  PickedBytes? get pendingSharedFile => _pendingSharedFile;
+
+  void setPendingSharedFile(PickedBytes file) {
+    _pendingSharedFile = file;
+    notifyListeners();
+  }
+
+  /// Hands the file over once and forgets it, so a rebuild doesn't re-import.
+  PickedBytes? takePendingSharedFile() {
+    final file = _pendingSharedFile;
+    _pendingSharedFile = null;
+    return file;
   }
 
   // ---------- groups ----------

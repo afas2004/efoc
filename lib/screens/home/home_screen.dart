@@ -11,6 +11,7 @@ import '../../games/games_screen.dart';
 import '../../games/open_table_link.dart';
 import '../../services/export_service.dart';
 import '../../services/reminder_service.dart';
+import '../../services/sticker_service.dart';
 import '../../services/update_service.dart';
 import '../../services/vlog_service.dart';
 import '../../state/app_state.dart';
@@ -237,6 +238,43 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         builder: (_) => StickerPackScreen(slug: slug),
       ),
     );
+  }
+
+  /// A file shared into efoc from another app: a .wastickers becomes a pack,
+  /// anything else becomes a sticker in "Saved". No prompts — sharing should
+  /// land somewhere.
+  Future<void> _importPendingSharedFile() async {
+    if (!mounted) return;
+    final state = context.read<AppState>();
+    final file = state.takePendingSharedFile();
+    if (file == null) return;
+    _stripInviteParamFromUrl();
+
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final lower = file.name.toLowerCase();
+      if (lower.endsWith('.wastickers') || lower.endsWith('.zip')) {
+        final pack = StickerService.parseWastickers(file.bytes);
+        await StickerService.instance.createPack(
+          name: pack.name,
+          drafts: pack.stickers,
+          tray: pack.tray,
+        );
+        messenger.showSnackBar(
+          SnackBar(content: Text('Added "${pack.name}" to your stickers')),
+        );
+      } else {
+        final ext = imageExtension(file.bytes, fileName: file.name);
+        await StickerService.instance.saveStickerBytes(file.bytes, ext);
+        messenger.showSnackBar(
+          const SnackBar(content: Text('Saved to your stickers')),
+        );
+      }
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text("Couldn't import that: $e")),
+      );
+    }
   }
 
   /// Removes ?code=... from the browser URL so a refresh doesn't re-trigger
@@ -475,6 +513,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (state.pendingStickerPackSlug != null && !state.isLoadingGroups) {
       WidgetsBinding.instance
           .addPostFrameCallback((_) => _openPendingStickerPack());
+    }
+    // A file shared into efoc from another app.
+    if (state.pendingSharedFile != null && !state.isLoadingGroups) {
+      WidgetsBinding.instance
+          .addPostFrameCallback((_) => _importPendingSharedFile());
     }
 
     final needsInitialLoad = state.isLoadingGroups ||

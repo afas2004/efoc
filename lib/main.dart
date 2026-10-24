@@ -11,6 +11,7 @@ import 'games/active_table.dart';
 import 'games/guest_pass.dart';
 import 'games/guest_play_screen.dart';
 import 'games/table_link.dart';
+import 'services/inbound_share.dart';
 import 'state/app_state.dart';
 import 'theme/theme_controller.dart';
 
@@ -49,6 +50,13 @@ Future<void> main() async {
   final packSlug = initialUri?.queryParameters['pack'];
   if (packSlug != null && packSlug.isNotEmpty) {
     appState.setPendingStickerPackSlug(packSlug);
+  }
+
+  // A file shared into efoc from another app (Android share sheet). The
+  // service worker left it in the Cache API and sent us here with ?shared=1.
+  if (kIsWeb && initialUri?.queryParameters['shared'] == '1') {
+    final shared = await takeInboundShare();
+    if (shared != null) appState.setPendingSharedFile(shared);
   }
 
   // A card-game table link (efoc.party/join?table=...).

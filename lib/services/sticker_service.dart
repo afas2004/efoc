@@ -159,6 +159,39 @@ class StickerService {
   }
 
   // ------------------------------------------------------------
+  // Saving one sticker
+  // ------------------------------------------------------------
+
+  /// Puts a single sticker into the viewer's "Saved" pack. Nothing is copied:
+  /// the new row points at the same public URL, so this is one row insert.
+  Future<String?> saveSticker({
+    required String url,
+    List<String> emojis = const [],
+  }) async {
+    final packId = await _client.rpc(
+      'save_sticker',
+      params: {'p_url': url, 'p_emojis': emojis},
+    );
+    return packId as String?;
+  }
+
+  /// Saves an image that exists only as bytes — what the share sheet hands us.
+  /// Uploads first, then appends it like any other saved sticker.
+  Future<String?> saveStickerBytes(
+    Uint8List bytes,
+    String extension, {
+    List<String> emojis = const [],
+  }) async {
+    final packId = await _client.rpc('ensure_saved_pack') as String;
+    final url = await _upload(
+      bytes,
+      extension,
+      '$_uid/$packId/${DateTime.now().millisecondsSinceEpoch}.$extension',
+    );
+    return saveSticker(url: url, emojis: emojis);
+  }
+
+  // ------------------------------------------------------------
   // Creating and filling packs
   // ------------------------------------------------------------
 

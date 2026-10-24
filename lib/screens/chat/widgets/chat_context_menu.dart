@@ -13,6 +13,7 @@ void showChatContextMenu({
   required VoidCallback onMoreEmojis,
   required VoidCallback? onCopy,
   required VoidCallback? onDelete,
+  VoidCallback? onSaveSticker,
 }) {
   final overlay = Overlay.of(context);
   late OverlayEntry entry;
@@ -50,6 +51,12 @@ void showChatContextMenu({
               dismiss();
               onDelete();
             },
+      onSaveSticker: onSaveSticker == null
+          ? null
+          : () {
+              dismiss();
+              onSaveSticker();
+            },
     ),
   );
 
@@ -65,6 +72,7 @@ class _ContextMenuLayer extends StatelessWidget {
   final VoidCallback onMoreEmojis;
   final VoidCallback? onCopy;
   final VoidCallback? onDelete;
+  final VoidCallback? onSaveSticker;
 
   const _ContextMenuLayer({
     required this.message,
@@ -75,6 +83,7 @@ class _ContextMenuLayer extends StatelessWidget {
     required this.onMoreEmojis,
     required this.onCopy,
     required this.onDelete,
+    this.onSaveSticker,
   });
 
   /// WhatsApp's default quick reactions, in its order.
@@ -118,6 +127,7 @@ class _ContextMenuLayer extends StatelessWidget {
         onReply: onReply,
         onCopy: onCopy,
         onDelete: onDelete,
+        onSaveSticker: onSaveSticker,
       ),
     );
 
@@ -163,6 +173,7 @@ class _MenuCard extends StatelessWidget {
   final VoidCallback onReply;
   final VoidCallback? onCopy;
   final VoidCallback? onDelete;
+  final VoidCallback? onSaveSticker;
 
   const _MenuCard({
     required this.emojis,
@@ -172,6 +183,7 @@ class _MenuCard extends StatelessWidget {
     required this.onReply,
     required this.onCopy,
     required this.onDelete,
+    this.onSaveSticker,
   });
 
   List<String> _quickRow() {
@@ -262,6 +274,19 @@ class _MenuCard extends StatelessWidget {
             label: 'Reply',
             onTap: onReply,
           ),
+
+          // Stickers only: keep this one, in your own pack.
+          if (onSaveSticker != null) ...[
+            Container(
+              height: 1,
+              color: Colors.white.withValues(alpha: 0.06),
+            ),
+            _MenuItem(
+              icon: Icons.bookmark_add_outlined,
+              label: 'Save sticker',
+              onTap: onSaveSticker!,
+            ),
+          ],
 
           if (onCopy != null) ...[
             Container(
