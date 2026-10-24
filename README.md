@@ -1,16 +1,24 @@
 # efoc
 
-A new Flutter project.
+Three seconds every hour, stitched into a daily vlog for a group of friends.
+Runs in the browser at [efoc.party](https://efoc.party) as a PWA, plus an
+Android build. Invite-only.
 
-## Getting Started
+Flutter (web + Android) · Supabase (Postgres, Storage, Edge Functions) ·
+Firebase (Hosting, Messaging) · Python workers on GitHub Actions.
 
-This project is a starting point for a Flutter application.
+## Working on it
 
-A few resources to get you started if this is your first Flutter project:
+Read **[NOTES.md](NOTES.md)** first — deploy process, migration order, the
+sticker model, and the traps that have already bitten once.
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+```powershell
+flutter pub get
+flutter analyze
+flutter test
+build_web.bat -Version X.Y.Z -Notes "What changed"   # bump, build, deploy
+```
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+The design specs live one folder up (`# Chat Page…`, `# Vlog Grid…`, and
+friends). They describe the original intent and several decisions have since
+changed — where they disagree with the code, the code wins.
