@@ -1,5 +1,5 @@
 {
-    "latest_version":  "1.8.8",
-    "latest_build":  33,
-    "release_notes":  "Sticker packs from other apps now import properly, whatever shape their zip is."
+    "latest_version":  "1.8.9",
+    "latest_build":  34,
+    "release_notes":  "Landscape clips now show landscape in the chat."
 }
