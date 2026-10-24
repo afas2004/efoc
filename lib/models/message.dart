@@ -183,6 +183,20 @@ MessageKind messageKindOf(String? s) => switch (s) {
       _ => MessageKind.text,
     };
 
+/// The author line of a reply quote: `▶ Ali · 3 PM` for a clip, `Ali` for
+/// text, `▶ Daily vlog` for the stitched vlog (spec 5.3).
+String replyAuthorLabel(EfocMessage message) {
+  final name = message.replySenderName ?? 'User';
+  return switch (message.replyKind) {
+    MessageKind.clip => [
+        '▶ $name',
+        if (message.replyHour != null) formatHour12(message.replyHour!),
+      ].join(' · '),
+    MessageKind.vlog => '▶ Daily vlog',
+    _ => name,
+  };
+}
+
 /// 3 PM, 12 AM.
 String formatHour12(int hour) {
   if (hour == 0) return '12 AM';

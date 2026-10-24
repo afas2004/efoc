@@ -60,6 +60,7 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_onScroll);
     _load();
     _loadInstalledPacks();
     _channel = ChatService.instance.subscribe(
@@ -121,31 +122,62 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  // ---------- reading position ----------
+  // The list is reversed: offset 0 is the newest message. Spec 6.9: never
+  // yank someone out of history — show a pill instead.
+  bool _atBottom = true;
+  int _pendingNew = 0;
+
   @override
   void dispose() {
     _debounce?.cancel();
     _channel?.unsubscribe();
+    _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     super.dispose();
   }
 
-  void _onRealtime() {
-    _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 200), _load);
+  void _onScroll() {
+    if (!_scrollController.hasClients) return;
+    final atBottom = _scrollController.offset <= 60;
+    if (atBottom == _atBottom) return;
+    setState(() {
+      _atBottom = atBottom;
+      if (atBottom) _pendingNew = 0;
+    });
   }
 
-  Future<void> _load() async {
+  void _onRealtime() {
+    _debounce?.cancel();
+    _debounce = Timer(
+      const Duration(milliseconds: 200),
+      () => _load(follow: false),
+    );
+  }
+
+  /// [follow] is true for the first load and after sending: those should land
+  /// at the newest message. Realtime arrivals only scroll if the reader is
+  /// already at the bottom.
+  Future<void> _load({bool follow = true}) async {
+    final known = _messages.map((m) => m.id).toSet();
     try {
       final msgs = await ChatService.instance.fetchMessages(
         groupId: widget.groupId,
       );
       if (!mounted) return;
+      final added =
+          known.isEmpty ? 0 : msgs.where((m) => !known.contains(m.id)).length;
       setState(() {
         _messages = msgs;
         _loading = false;
         _error = null;
       });
-      _scrollToBottom();
+      if (follow || _atBottom) {
+        if (_pendingNew != 0) setState(() => _pendingNew = 0);
+        _scrollToBottom();
+      } else if (added > 0) {
+        setState(() => _pendingNew += added);
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -397,102 +429,26 @@ class _ChatScreenState extends State<ChatScreen> {
       body: Column(
         children: [
           Expanded(
-            child: _loading
-                ? Center(
-                    child: SizedBox(
-                      width: 22,
-                      height: 22,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: EfocColors.accent,
+            child: Stack(
+              children: [
+                Positioned.fill(child: _listArea()),
+                if (_pendingNew > 0)
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 10,
+                    child: Center(
+                      child: _NewMessagesPill(
+                        count: _pendingNew,
+                        onTap: () {
+                          setState(() => _pendingNew = 0);
+                          _scrollToBottom();
+                        },
                       ),
                     ),
-                  )
-                : _error != null
-                    ? Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(24),
-                          child: Text(
-                            _error!,
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                              color: Colors.white54,
-                              fontSize: 13,
-                            ),
-                          ),
-                        ),
-                      )
-                    : _messages.isEmpty
-                        ? const _EmptyChat()
-                        : ListView.builder(
-                            controller: _scrollController,
-                            reverse: true,
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            // Build every row (at most 100) so a quote can
-                            // jump to any of them.
-                            cacheExtent: 100000,
-                            itemCount: _messages.length,
-                            itemBuilder: (context, i) {
-                              final msg =
-                                  _messages[_messages.length - 1 - i];
-                              final prev = i < _messages.length - 1
-                                  ? _messages[_messages.length - 2 - i]
-                                  : null;
-                              final isGrouped = prev != null &&
-                                  prev.userId == msg.userId &&
-                                  prev.kind != MessageKind.vlog &&
-                                  msg.kind != MessageKind.vlog;
-                              final bubble = MessageBubble(
-                                message: msg,
-                                isGrouped: isGrouped,
-                                onCardTap: () => _openCard(msg),
-                                onQuoteTap: () => _jumpTo(msg.replyToId),
-                                onAddPack: msg.kind == MessageKind.sticker &&
-                                        msg.stickerPackId != null &&
-                                        !_installedPackIds
-                                            .contains(msg.stickerPackId)
-                                    ? () => _addPack(msg)
-                                    : null,
-                                onReactionsTap: () => showReactionsSheet(
-                                  context: context,
-                                  message: msg,
-                                  members: _members(),
-                                  onRemoveMine: () => _react(msg, null),
-                                ),
-                                onLongPress: (globalPos) =>
-                                    showChatContextMenu(
-                                  context: context,
-                                  message: msg,
-                                  tapPosition: globalPos,
-                                  onReply: () =>
-                                      setState(() => _replyTo = msg),
-                                  onReact: (emoji) => _react(msg, emoji),
-                                  onMoreEmojis: () => _pickMoreEmoji(msg),
-                                  onCopy: msg.copyText != null
-                                      ? () => _copy(msg)
-                                      : null,
-                                  onSaveSticker: msg.kind ==
-                                              MessageKind.sticker &&
-                                          msg.stickerUrl != null
-                                      ? () => _saveSticker(msg)
-                                      : null,
-                                  // Cards mirror the grid, so they stay.
-                                  onDelete: msg.isMe && !msg.isCard
-                                      ? () => _deleteMessage(msg)
-                                      : null,
-                                ),
-                              );
-                              return _HighlightRow(
-                                key: _rowKeys.putIfAbsent(
-                                  msg.id,
-                                  () => GlobalKey(),
-                                ),
-                                active: _highlightId == msg.id,
-                                run: _highlightRun,
-                                child: bubble,
-                              );
-                            },
-                          ),
+                  ),
+              ],
+            ),
           ),
           ChatComposer(
             replySenderName: replyName,
@@ -506,6 +462,123 @@ class _ChatScreenState extends State<ChatScreen> {
       ),
     );
   }
+
+  // ---------- message list ----------
+
+  bool _sameDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
+
+  Widget _listArea() {
+    if (_loading) {
+      return Center(
+        child: SizedBox(
+          width: 22,
+          height: 22,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            color: EfocColors.accent,
+          ),
+        ),
+      );
+    }
+    if (_error != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            _error!,
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: Colors.white54, fontSize: 13),
+          ),
+        ),
+      );
+    }
+    if (_messages.isEmpty) return const _EmptyChat();
+
+    return ListView.builder(
+      controller: _scrollController,
+      reverse: true,
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      // Build every row (at most 100) so a quote can jump to any of them.
+      cacheExtent: 100000,
+      itemCount: _messages.length,
+      itemBuilder: (context, i) {
+        final msg = _messages[_messages.length - 1 - i];
+        // Older neighbour: the message above this one on screen.
+        final prev = i < _messages.length - 1
+            ? _messages[_messages.length - 2 - i]
+            : null;
+        // Newer neighbour: it owns the timestamp for the run.
+        final next = i > 0 ? _messages[_messages.length - i] : null;
+
+        final isGrouped = prev != null &&
+            prev.userId == msg.userId &&
+            prev.kind != MessageKind.vlog &&
+            msg.kind != MessageKind.vlog;
+
+        // Spec 4: only the last message of a sender's run shows a time.
+        final isLastInGroup = next == null ||
+            next.userId != msg.userId ||
+            next.kind == MessageKind.vlog ||
+            msg.kind == MessageKind.vlog;
+
+        // Spec 4: a divider whenever the day changes.
+        final isFirstOfDay =
+            prev == null || !_sameDay(prev.createdAt, msg.createdAt);
+
+        final bubble = MessageBubble(
+          message: msg,
+          isGrouped: isGrouped,
+          showTime: isLastInGroup,
+          onCardTap: () => _openCard(msg),
+          onQuoteTap: () => _jumpTo(msg.replyToId),
+          onAddPack: msg.kind == MessageKind.sticker &&
+                  msg.stickerPackId != null &&
+                  !_installedPackIds.contains(msg.stickerPackId)
+              ? () => _addPack(msg)
+              : null,
+          onReactionsTap: () => showReactionsSheet(
+            context: context,
+            message: msg,
+            members: _members(),
+            onRemoveMine: () => _react(msg, null),
+          ),
+          onLongPress: (globalPos) => showChatContextMenu(
+            context: context,
+            message: msg,
+            tapPosition: globalPos,
+            onReply: () => setState(() => _replyTo = msg),
+            onReact: (emoji) => _react(msg, emoji),
+            onMoreEmojis: () => _pickMoreEmoji(msg),
+            onCopy: msg.copyText != null ? () => _copy(msg) : null,
+            onSaveSticker: msg.kind == MessageKind.sticker &&
+                    msg.stickerUrl != null
+                ? () => _saveSticker(msg)
+                : null,
+            // Cards mirror the grid, so they stay.
+            onDelete: msg.isMe && !msg.isCard
+                ? () => _deleteMessage(msg)
+                : null,
+          ),
+        );
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (isFirstOfDay) _DayDivider(label: vlogDayLabel(msg.createdAt)),
+            _HighlightRow(
+              key: _rowKeys.putIfAbsent(msg.id, () => GlobalKey()),
+              active: _highlightId == msg.id,
+              run: _highlightRun,
+              child: bubble,
+            ),
+          ],
+        );
+      },
+    );
+  }
+
 }
 
 /// Purple ring + glow that holds, then fades out over 1800ms (spec 6.5).
@@ -552,6 +625,85 @@ class _HighlightRow extends StatelessWidget {
   }
 }
 
+/// Spec 4: a centred marker wherever the day changes.
+class _DayDivider extends StatelessWidget {
+  final String label;
+
+  const _DayDivider({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.06),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white54,
+              fontSize: 11,
+              letterSpacing: 0.3,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Spec 6.9: "↓ N new" while the reader is away from the bottom.
+class _NewMessagesPill extends StatelessWidget {
+  final int count;
+  final VoidCallback onTap;
+
+  const _NewMessagesPill({required this.count, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: EfocColors.accent,
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: [
+            BoxShadow(
+              color: EfocColors.accent.withValues(alpha: 0.35),
+              blurRadius: 14,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.arrow_downward_rounded,
+              size: 15,
+              color: Colors.white,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              '$count new',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
 class _EmptyChat extends StatelessWidget {
   const _EmptyChat();
 

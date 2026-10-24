@@ -23,6 +23,9 @@ class MessageBubble extends StatelessWidget {
   /// Set when this is a sticker whose pack the viewer doesn't have yet.
   final VoidCallback? onAddPack;
 
+  /// Spec 4: only the last message of a sender's run carries a timestamp.
+  final bool showTime;
+
   const MessageBubble({
     super.key,
     required this.message,
@@ -32,6 +35,7 @@ class MessageBubble extends StatelessWidget {
     required this.onCardTap,
     required this.onQuoteTap,
     this.onAddPack,
+    this.showTime = true,
   });
 
   @override
@@ -103,14 +107,22 @@ class MessageBubble extends StatelessWidget {
                     message: message,
                     onReactionsTap: onReactionsTap,
                     child: switch (message.kind) {
-                      MessageKind.clip =>
-                        ClipCard(message: message, onTap: onCardTap),
+                      MessageKind.clip => ClipCard(
+                          message: message,
+                          onTap: onCardTap,
+                          onQuoteTap: onQuoteTap,
+                        ),
                       MessageKind.sticker => _StickerMessage(
                         message: message,
                         onQuoteTap: onQuoteTap,
                         onAddPack: onAddPack,
+                        showTime: showTime,
                       ),
-                      _ => _Bubble(message: message, onQuoteTap: onQuoteTap),
+                      _ => _Bubble(
+                          message: message,
+                          onQuoteTap: onQuoteTap,
+                          showTime: showTime,
+                        ),
                     },
                   ),
                 ],
@@ -166,8 +178,13 @@ class _WithReactions extends StatelessWidget {
 class _Bubble extends StatelessWidget {
   final EfocMessage message;
   final VoidCallback onQuoteTap;
+  final bool showTime;
 
-  const _Bubble({required this.message, required this.onQuoteTap});
+  const _Bubble({
+    required this.message,
+    required this.onQuoteTap,
+    this.showTime = true,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -228,20 +245,21 @@ class _Bubble extends StatelessWidget {
                 ),
               ),
 
-            Padding(
-              padding: const EdgeInsets.fromLTRB(11, 0, 11, 6),
-              child: Align(
-                alignment: Alignment.centerRight,
-                child: Text(
-                  _formatTime(message.createdAt),
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.55),
-                    fontSize: 10,
-                    fontWeight: FontWeight.w500,
+            if (showTime)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(11, 0, 11, 6),
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: Text(
+                    _formatTime(message.createdAt),
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.55),
+                      fontSize: 10,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 ),
               ),
-            ),
           ],
         ),
       ),
@@ -278,7 +296,7 @@ class _ReplyPreview extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            _replyAuthor(message),
+            replyAuthorLabel(message),
             style: const TextStyle(
               color: Colors.white70,
               fontSize: 11,
@@ -304,19 +322,6 @@ class _ReplyPreview extends StatelessWidget {
       ),
     );
   }
-}
-
-/// `▶ Ali · 3 PM` for a clip, `Ali` for text (spec 5.3).
-String _replyAuthor(EfocMessage message) {
-  final name = message.replySenderName ?? 'User';
-  return switch (message.replyKind) {
-      MessageKind.clip => [
-          '▶ $name',
-          if (message.replyHour != null) formatHour12(message.replyHour!),
-        ].join(' · '),
-      MessageKind.vlog => '▶ Daily vlog',
-      _ => name,
-    };
 }
 
 class _ClipPreview extends StatefulWidget {
@@ -471,11 +476,13 @@ class _StickerMessage extends StatelessWidget {
   final EfocMessage message;
   final VoidCallback onQuoteTap;
   final VoidCallback? onAddPack;
+  final bool showTime;
 
   const _StickerMessage({
     required this.message,
     required this.onQuoteTap,
     this.onAddPack,
+    this.showTime = true,
   });
 
   @override
@@ -498,14 +505,15 @@ class _StickerMessage extends StatelessWidget {
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
-              _clock(message.createdAt),
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.42),
-                fontSize: 10,
-                fontWeight: FontWeight.w500,
+            if (showTime)
+              Text(
+                _clock(message.createdAt),
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.42),
+                  fontSize: 10,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
-            ),
             // Like Telegram: a sticker from a pack you don't have offers the
             // pack, without getting in the way.
             if (onAddPack != null) ...[
@@ -594,7 +602,7 @@ class _StickerQuote extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              _replyAuthor(message),
+              replyAuthorLabel(message),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(

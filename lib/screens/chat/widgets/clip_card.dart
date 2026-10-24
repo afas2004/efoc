@@ -21,7 +21,15 @@ class ClipCard extends StatelessWidget {
   final EfocMessage message;
   final VoidCallback onTap;
 
-  const ClipCard({super.key, required this.message, required this.onTap});
+  /// Tapping the quoted message: jump to it.
+  final VoidCallback? onQuoteTap;
+
+  const ClipCard({
+    super.key,
+    required this.message,
+    required this.onTap,
+    this.onQuoteTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -35,7 +43,7 @@ class ClipCard extends StatelessWidget {
     final rotation = message.clipRotation;
     final landscape = rotation == 90 || rotation == 270;
 
-    return _CardFrame(
+    final card = _CardFrame(
       isMe: message.isMe,
       onTap: onTap,
       // 3:2 for a sideways clip (the camera's portrait frame held a landscape
@@ -60,6 +68,89 @@ class ClipCard extends StatelessWidget {
             ),
       caption: caption.isEmpty ? null : caption,
       showPlay: !expired,
+    );
+
+    // A reply to a clip keeps its context: the quote sits above the card.
+    if (message.replySenderName == null) return card;
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment:
+          message.isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: landscape ? 236 : 200,
+          child: _ClipQuote(message: message, onTap: onQuoteTap),
+        ),
+        card,
+      ],
+    );
+  }
+}
+
+/// The quoted message above a clip card. Same information as a bubble's quote,
+/// standing on the page instead of inside a bubble.
+class _ClipQuote extends StatelessWidget {
+  final EfocMessage message;
+  final VoidCallback? onTap;
+
+  const _ClipQuote({required this.message, this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 4),
+        decoration: BoxDecoration(
+          color: const Color(0xFF262629),
+          borderRadius: BorderRadius.circular(10),
+          border: Border(
+            left: BorderSide(
+              color: EfocColors.accent.withValues(alpha: 0.8),
+              width: 3,
+            ),
+          ),
+        ),
+        padding: const EdgeInsets.fromLTRB(8, 5, 8, 5),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              replyAuthorLabel(message),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.white70,
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            if (message.replyStickerUrl != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 3),
+                child: Image.network(
+                  message.replyStickerUrl!,
+                  width: 32,
+                  height: 32,
+                  fit: BoxFit.contain,
+                  errorBuilder: (_, __, ___) => const SizedBox(
+                    width: 32,
+                    height: 32,
+                  ),
+                ),
+              )
+            else if (message.replyPreviewText != null)
+              Text(
+                message.replyPreviewText!,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: Colors.white60, fontSize: 11),
+              ),
+          ],
+        ),
+      ),
     );
   }
 }
