@@ -531,7 +531,7 @@ export class ZombieTable {
         for (let i = 0; i < backs; i++) fan.appendChild(makeBack());
       }
       fan.dataset.count = String(count);
-      s.querySelector('.count')!.textContent = safe ? L().zb.safe : fmt(L().zb.cards, { n: count });
+      s.querySelector('.count')!.textContent = safe ? L().zb.safe : cardsText(count);
       const afk = this.meta.afk[seat] === true;
       const conn = this.conn[seat];
       s.classList.toggle('bot', meta.bot || afk || conn === 'left');
@@ -551,7 +551,7 @@ export class ZombieTable {
         chip.textContent = L().ui.afk;
         chip.className = 'chip chip-danger';
       } else chip.className = 'chip hidden';
-      s.setAttribute('aria-label', `${meta.name}, ${safe ? L().zb.safe : fmt(L().zb.cards, { n: count })}${isTurn ? ', ' + L().ui.yourTurn.toLowerCase() : ''}`);
+      s.setAttribute('aria-label', `${meta.name}, ${safe ? L().zb.safe : cardsText(count)}${isTurn ? ', ' + L().ui.yourTurn.toLowerCase() : ''}`);
     }
     for (let r = v.players - 1; r < this.seatEls.length; r++) this.seatEls[r]!.remove();
     this.seatEls.length = Math.max(0, v.players - 1);
@@ -912,7 +912,8 @@ export class ZombieTable {
           this.feel.play(4, 'zombie_loser', (ctx) => {
             dim(this.fx, ctx);
             this.chomp(at, ctx.reduced);
-            banner(this.fx, me ? `🧟 ${u.youLose}` : `🧟 ${fmt(u.theyLose, { name: this.nameOf(seat!) })}`, 'danger', 'banner', ctx);
+            // Short enough for a phone; the seat being eaten says who.
+            banner(this.fx, `🧟 ${me ? u.youBanner : u.zombieBanner}`, 'danger', 'banner', ctx);
             shake(this.table, 'big', ctx);
             sound.bass();
             sound.trombone();
@@ -1106,6 +1107,8 @@ export class ZombieTable {
 
 const sameOrder = (a: readonly Card[], b: readonly Card[]): boolean => a.length === b.length && a.every((c, i) => c === b[i]);
 const samePile = (a: readonly Card[], b: readonly Card[]): boolean => a.length === b.length && a.every((c) => b.includes(c));
+
+const cardsText = (n: number): string => (n === 1 ? L().zb.oneCard : fmt(L().zb.cards, { n }));
 
 function ordinal(n: number): string {
   return fmt(L().zb.place, { n });

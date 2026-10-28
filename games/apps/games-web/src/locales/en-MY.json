@@ -929,6 +929,9 @@
       "The card you draw goes to the end of your hand, and the player you took it from knows. Drag cards or tap Shuffle to hide the Zombie. Others see that you shuffled.",
       "15 seconds to pick, then the game picks for you.",
       "Empty hand: you're SAFE. The last one holding the Zombie loses."
-    ]
+    ],
+    "oneCard": "1 card",
+    "zombieBanner": "ZOMBIE!",
+    "youBanner": "IT'S YOU!"
   }
 }
