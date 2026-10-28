@@ -1960,114 +1960,219 @@ table.stats tr.me {
 }
 
 /* ============================================================= Zombie */
-/* A graveyard green felt; the hand being drawn from spreads big in the
-   middle; the Zombie card grins; the loser's seat gets eaten. */
+/* A real table: everyone's hand at their edge of the screen, half off it,
+   turned their way. The two players in an exchange slide in and grow;
+   everything moves slowly enough to follow (--zb-slide). */
 
 .felt-zombie {
-  background: radial-gradient(ellipse at 50% 40%, #2f4a1e 0%, #1c3312 55%, #0d1a08 100%);
+  --zb-slide: 650ms;
+  background: radial-gradient(ellipse at 50% 42%, #2f4a1e 0%, #1c3312 55%, #0d1a08 100%);
 }
 .zb-felt {
   position: absolute;
-  left: 3%;
-  right: 3%;
-  top: 2%;
-  bottom: 16%;
+  left: 6%;
+  right: 6%;
+  top: 7%;
+  bottom: 24%;
   border-radius: 46% / 40%;
   background: radial-gradient(ellipse at 50% 45%, rgba(163, 230, 53, 0.08), rgba(0, 0, 0, 0.25) 75%);
   box-shadow: inset 0 0 0 6px rgba(76, 52, 28, 0.6), inset 0 0 50px rgba(0, 0, 0, 0.4);
   pointer-events: none;
 }
-.zb-stage {
+
+/* Their cards: backs at the edge, sliding in when they're in the exchange. */
+.zb-back {
   position: absolute;
+  left: 0;
+  top: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  border-radius: 9%;
+  transform-origin: 50% 50%;
+  transition: transform var(--zb-slide) cubic-bezier(0.3, 0.75, 0.3, 1), width var(--zb-slide), height var(--zb-slide), opacity var(--zb-slide), filter 300ms;
+  cursor: default;
 }
-.zb-stage-label {
-  position: absolute;
-  left: 4px;
-  top: 4px;
-  padding: 4px 10px;
-  border-radius: 999px;
-  background: rgba(15, 23, 42, 0.6);
-  right: 4px;
-  font-size: 14px;
+.zb-back .back {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 9%;
+  background-size: 100% 100%;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.5);
+}
+.zb-back.pickable {
+  cursor: pointer;
+}
+.zb-back.pickable .back {
+  box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.9), 0 4px 10px rgba(0, 0, 0, 0.5);
+}
+.zb-back.aimed .back {
+  box-shadow: 0 0 0 3px #fde047, 0 0 22px rgba(250, 204, 21, 0.9);
+}
+.zb-dim {
+  opacity: 0.45;
+  filter: saturate(0.6);
+}
+
+/* Badges: avatar, name and count; they grow in the exchange. */
+.zb-seat {
+  left: 0;
+  top: 0;
+  padding: 3px 2px;
+  gap: 0;
+  z-index: 30;
+  transform-origin: 50% 50%;
+  transition: transform var(--zb-slide) cubic-bezier(0.3, 0.75, 0.3, 1), opacity var(--zb-slide), background 300ms, box-shadow 300ms;
+}
+.zb-seat .avatar {
+  width: 36px !important;
+  height: 36px !important;
+}
+.zb-seat .face {
+  font-size: 20px !important;
+}
+.zb-seat .name {
+  font-size: 12px;
+  line-height: 1.1;
+}
+.zb-count {
+  font-size: 11px;
   font-weight: 800;
+  color: var(--ink-dim);
+  line-height: 1.1;
+}
+.zb-seat.zb-active {
+  z-index: 60;
+  background: rgba(15, 23, 42, 0.85);
+}
+.zb-seat.turn {
+  box-shadow: 0 0 0 3px var(--turn), 0 0 18px rgba(34, 197, 94, 0.6);
+}
+.zb-seat.zb-target {
+  box-shadow: 0 0 0 3px var(--danger), 0 0 18px rgba(239, 68, 68, 0.6);
+}
+.zb-seat .zb-eat {
+  position: absolute;
+  inset: -6px;
+  display: none;
+  place-items: center;
+  font-size: 34px;
+}
+.zb-seat.zb-eaten .zb-eat {
+  display: grid;
+}
+.zb-seat.zb-eaten .face {
+  opacity: 0.15;
+}
+.zb-seat.zb-eaten {
+  background: rgba(77, 124, 15, 0.7);
+  box-shadow: 0 0 0 3px #a3e635;
+}
+
+/* What's happening, in words, at the top of the middle. */
+.zb-label {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 35;
+  padding: 5px 10px;
+  border-radius: 14px;
+  background: rgba(15, 23, 42, 0.7);
+  font-size: 15px;
+  font-weight: 900;
   line-height: 1.15;
   text-align: center;
-  max-height: 40px;
-  overflow: hidden;
+  pointer-events: none;
 }
-.zb-stage-label:empty {
-  display: none;
-}
-.zb-stage-label.mine {
+.zb-label.mine {
   background: var(--turn);
   color: #052e16;
-  font-size: 15px;
 }
-.zb-stage-label.danger {
+.zb-label.danger {
   background: var(--danger);
   color: #fff;
   animation: turn-pulse 1s ease-in-out infinite;
 }
-.zb-pick {
-  position: absolute;
-  padding: 0;
-  border: 0;
-  background: none;
-  border-radius: 10%;
-  transform-origin: 50% 100%;
-  transition: translate 160ms ease-out, filter 160ms;
-  cursor: default;
+.zb-prompt.zb-danger {
+  background: var(--danger);
+  color: #fff;
 }
-.zb-pick .back {
-  display: block;
-  width: 100%;
-  height: 100%;
-  border-radius: 10%;
-  background-size: 100% 100%;
-  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.45);
-}
-.zb-pick.pickable {
-  cursor: pointer;
-}
-.zb-pick.pickable .back {
-  box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.9), 0 4px 10px rgba(0, 0, 0, 0.45);
-}
-.zb-pick.pickable:hover,
-.zb-pick.pickable:focus-visible {
-  translate: 0 -14px;
-}
-.zb-pick.lifted {
-  translate: 0 -22px;
-  filter: brightness(1.15);
-}
+
+/* The pile: pairs lie exactly where they landed. */
 .zb-pile {
   position: absolute;
-  border-radius: 10%;
-  background: rgba(0, 0, 0, 0.25);
-  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.12);
-}
-.zb-pile .card {
-  position: absolute;
   inset: 0;
-  width: 100%;
-  height: 100%;
-  transform: rotate(-6deg);
-  transition: none;
+  pointer-events: none;
 }
-.zb-pile .card .idx {
-  font-size: calc(var(--card-w) * 0.2);
+.zb-pile .zb-pile-card {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 50% 50%;
+  transition: none;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
+}
+.zb-pile .zb-pile-card .idx {
+  font-size: calc(var(--card-w) * 0.22);
 }
 .zb-pile-label {
   position: absolute;
-  left: 50%;
-  bottom: -14px;
-  transform: translateX(-50%);
+  left: 0;
+  top: 0;
+  width: 56px;
   padding: 0 6px;
   border-radius: 999px;
   background: #0f172a;
   font-size: 12px;
   font-weight: 900;
+  text-align: center;
   white-space: nowrap;
+  pointer-events: none;
+}
+
+/* My hand. */
+.zb-mine-wrap {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 50% 50%;
+  transition: transform var(--zb-slide) cubic-bezier(0.3, 0.75, 0.3, 1);
+}
+.zb-mine-wrap .zb-mine-face {
+  position: absolute;
+  inset: 0;
+  width: 100% !important;
+  height: 100% !important;
+  transform: none !important;
+  transition: none;
+}
+.zb-mine-wrap .back.zb-mine-face {
+  display: block;
+  border-radius: 9%;
+  background-size: 100% 100%;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.45);
+}
+.zb-mine-wrap.pickable {
+  cursor: pointer;
+}
+.zb-mine-wrap.zb-paired .zb-mine-face {
+  box-shadow: 0 0 0 3px var(--good), 0 0 22px rgba(250, 204, 21, 0.9);
+  animation: zb-glow 650ms ease-in-out infinite alternate;
+}
+@keyframes zb-glow {
+  to { filter: brightness(1.22); }
+}
+.zb-mine-wrap.aimed .zb-mine-face {
+  box-shadow: 0 0 0 3px var(--danger), 0 0 24px rgba(239, 68, 68, 0.9);
+}
+.zb-mine-wrap.zb-shiver {
+  animation: zb-shiver 900ms ease-in-out infinite;
+}
+@keyframes zb-shiver {
+  0%, 100% { translate: 0 0; }
+  25% { translate: 0 -3px; }
+  75% { translate: 0 1px; }
 }
 .zb-hand-note {
   position: absolute;
@@ -2079,46 +2184,55 @@ table.stats tr.me {
   text-align: center;
   padding: 8px;
 }
-.zb-prompt.zb-danger {
-  background: var(--danger);
-  color: #fff;
-}
-.card.zb-mine {
-  cursor: grab;
-}
-.card.zb-mine.dragging {
-  cursor: grabbing;
-}
-.card.zb-fresh {
-  box-shadow: 0 0 0 3px var(--info), 0 0 18px rgba(59, 130, 246, 0.8);
-}
-.card.zb-fresh::after {
-  content: 'NEW';
+
+/* Cards in flight. */
+.zb-flights {
   position: absolute;
-  right: -4px;
-  top: -10px;
-  padding: 0 6px;
-  border-radius: 999px;
-  background: var(--info);
-  color: #fff;
-  font-size: 11px;
-  font-weight: 900;
+  inset: 0;
+  z-index: 45;
+  pointer-events: none;
 }
-.card.zb-paired {
-  box-shadow: 0 0 0 3px var(--good), 0 0 22px rgba(250, 204, 21, 0.9);
-  animation: zb-glow 600ms ease-in-out infinite alternate;
+.zb-flyer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 50% 50%;
+  perspective: 700px;
+  will-change: transform;
 }
-@keyframes zb-glow {
-  to { filter: brightness(1.25); }
+.zb-flip {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transform-style: preserve-3d;
 }
-.card.zb-shiver {
-  animation: zb-shiver 900ms ease-in-out infinite;
+.zb-face {
+  position: absolute;
+  inset: 0;
+  border-radius: 9%;
+  background-color: #fff;
+  background-size: 100% 100%;
+  backface-visibility: hidden;
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.45);
 }
-@keyframes zb-shiver {
-  0%, 100% { translate: 0 0; }
-  25% { translate: 0 -3px; }
-  75% { translate: 0 1px; }
+.zb-face.back {
+  transform: rotateY(180deg);
 }
+.zb-fly-face {
+  position: absolute !important;
+  inset: 0;
+  width: 100% !important;
+  height: 100% !important;
+  transform: none !important;
+  transition: none !important;
+}
+.zb-wobble {
+  border-radius: 9%;
+  background-size: 100% 100%;
+  box-shadow: 0 0 0 3px #fde047, 0 12px 24px rgba(0, 0, 0, 0.5);
+}
+
+/* The Zombie card. */
 .zb-zombie-card {
   background: radial-gradient(circle at 50% 40%, #bef264 0%, #4d7c0f 70%, #1a2e05 100%) !important;
   color: #1a2e05;
@@ -2141,48 +2255,8 @@ table.stats tr.me {
   color: #ecfccb;
   text-shadow: 0 1px 0 #1a2e05;
 }
-.zb-fly-face {
-  position: absolute !important;
-  inset: 0;
-  width: 100% !important;
-  height: 100% !important;
-  transform: none !important;
-}
-.zb-wobble {
-  border-radius: 10%;
-  background-size: 100% 100%;
-  box-shadow: 0 0 0 3px var(--danger), 0 12px 24px rgba(0, 0, 0, 0.5);
-}
-.zb-seat {
-  transition: transform 220ms var(--spring), background 200ms;
-}
-.zb-seat.zb-drawing {
-  transform: scale(1.08);
-  z-index: 3;
-}
-.zb-seat.zb-target {
-  box-shadow: 0 0 0 2px var(--danger);
-}
-.zb-seat.turn.zb-target {
-  box-shadow: 0 0 0 2px var(--turn);
-}
-.zb-seat .zb-eat {
-  position: absolute;
-  inset: -6px;
-  display: none;
-  place-items: center;
-  font-size: 40px;
-}
-.zb-seat.zb-eaten .zb-eat {
-  display: grid;
-}
-.zb-seat.zb-eaten .face {
-  opacity: 0.15;
-}
-.zb-seat.zb-eaten {
-  background: rgba(77, 124, 15, 0.55);
-  box-shadow: 0 0 0 2px #a3e635;
-}
+
+/* The loser's moment and the results. */
 .zb-chomp {
   position: absolute;
   font-size: 120px;
@@ -2213,6 +2287,8 @@ table.stats tr.me {
 .zb-stats li {
   margin: 2px 0;
 }
-.zb-shuffle {
-  font-size: 18px;
+.reduced-motion .zb-back,
+.reduced-motion .zb-seat,
+.reduced-motion .zb-mine-wrap {
+  transition-timing-function: linear;
 }

@@ -51,6 +51,11 @@ export interface HostOptions {
   sideMove?: (move: unknown) => boolean;
   /** Turn moves that may be made against an older entry (a blind pick doesn't depend on it). */
   staleOk?: (move: unknown) => boolean;
+  /**
+   * Keep the running clock after this move (Zombie's deal: everyone throws
+   * pairs at once on one clock, so one player's throw doesn't reset it).
+   */
+  keepClock?: (before: unknown, after: unknown) => boolean;
 }
 
 /** Everything a new host needs to carry on where the old one stopped. */
@@ -111,7 +116,8 @@ export class HostCore<Config, State, Move, View> {
   readonly totals: number[];
   private consecutive: number[];
   private timer: unknown = null;
-  private botTimer: unknown = null;
+  /** One per bot seat that may move (several at once when everyone chooses together). */
+  private botTimers = new Map<SeatId, unknown>();
   private deadline: number | null = null;
   private rng!: Rng;
   private seedBase: number;
@@ -324,6 +330,7 @@ export class HostCore<Config, State, Move, View> {
   }
 
   private commit(seat: SeatId, move: Move, extra: GameEvent[]): void {
+    const before = this.state;
     const { state, events } = this.game.apply(this.state, seat, move, this.rng);
     this.state = state;
     let all = [...extra, ...events];
@@ -334,6 +341,8 @@ export class HostCore<Config, State, Move, View> {
       const points = result.points.map((p, i) => (this.doubled[i] ? p * 2 : p));
       points.forEach((p, i) => (this.totals[i] = this.totals[i]! + p));
       all.push({ type: 'match_points', points, totals: this.totals.slice(), doubled: this.doubled.slice(), placings: result.placings });
+      all = this.decorate(all);
+    } else if (this.opts.keepClock?.(before, state)) {
       all = this.decorate(all);
     } else {
       all = this.decorate(all);
@@ -349,8 +358,9 @@ export class HostCore<Config, State, Move, View> {
 
   private stopTimers(): void {
     if (this.timer !== null) this.clock.clear(this.timer);
-    if (this.botTimer !== null) this.clock.clear(this.botTimer);
-    this.timer = this.botTimer = null;
+    for (const t of this.botTimers.values()) this.clock.clear(t);
+    this.botTimers.clear();
+    this.timer = null;
   }
 
   private armTurn(extraMs = 0): void {
@@ -365,8 +375,16 @@ export class HostCore<Config, State, Move, View> {
     const seats = this.waiting();
     if (seats.length === 0) return;
     // Auto-select with the Easy bot for everyone still choosing.
-    const seat = seats[0]!;
+    for (const seat of seats) {
+      if (this.game.legalMoves(this.state, seat).length === 0) continue;
+      this.autoSelect(seat);
+    }
+  }
+
+  private autoSelect(seat: SeatId): void {
     const move = this.game.bot(this.game.view(this.state, seat), 'easy', this.rng);
+    // A bot caught by the clock (several seats choosing at once) just moves.
+    if (this.seats[seat]!.bot) return this.commit(seat, move, []);
     const extra: GameEvent[] = [{ type: 'too_slow', seat }];
     this.stamps[seat] = this.stamps[seat]! + 1;
     this.consecutive[seat] = this.consecutive[seat]! + 1;
@@ -382,19 +400,28 @@ export class HostCore<Config, State, Move, View> {
   }
 
   private scheduleBot(): void {
-    if (this.botTimer !== null) this.clock.clear(this.botTimer);
-    this.botTimer = null;
-    const seat = this.waiting().find((s) => this.seats[s]!.bot || this.afk[s]);
-    if (seat === undefined) return;
-    const info = this.seats[seat]!.bot;
-    const [lo, hi] = BOT_DELAY[info?.personality ?? 'grandmaster'];
-    const delay = (this.lastDwell + lo + this.rng.next() * (hi - lo)) * (this.opts.botSpeed ?? 1);
-    this.botTimer = this.clock.set(() => {
-      this.botTimer = null;
-      if (!this.waiting().includes(seat)) return;
-      const level: BotLevel = info?.level ?? 'normal';
-      const move = this.game.bot(this.game.view(this.state, seat), level, this.rng);
-      this.commit(seat, move, []);
-    }, delay);
+    const waiting = this.waiting();
+    // A bot already thinking keeps its timer (everyone choosing at once); one that can't move any more stops.
+    for (const [seat, t] of this.botTimers) {
+      if (waiting.includes(seat) && (this.seats[seat]!.bot || this.afk[seat])) continue;
+      this.clock.clear(t);
+      this.botTimers.delete(seat);
+    }
+    for (const seat of waiting) {
+      if (!(this.seats[seat]!.bot || this.afk[seat]) || this.botTimers.has(seat)) continue;
+      const info = this.seats[seat]!.bot;
+      const [lo, hi] = BOT_DELAY[info?.personality ?? 'grandmaster'];
+      const delay = (this.lastDwell + lo + this.rng.next() * (hi - lo)) * (this.opts.botSpeed ?? 1);
+      this.botTimers.set(
+        seat,
+        this.clock.set(() => {
+          this.botTimers.delete(seat);
+          if (!this.waiting().includes(seat)) return;
+          const level: BotLevel = info?.level ?? 'normal';
+          const move = this.game.bot(this.game.view(this.state, seat), level, this.rng);
+          this.commit(seat, move, []);
+        }, delay),
+      );
+    }
   }
 }

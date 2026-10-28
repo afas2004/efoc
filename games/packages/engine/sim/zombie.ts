@@ -5,12 +5,12 @@
 //   - no view and no public event shows a card from someone's hand,
 //   - private events go only to the seat they're for,
 //   - every phone's masked copy (each seat and a spectator), fed only the
-//     public log with reorders stripped plus its own private events, matches
+//     public log plus its own private events, matches
 //     the host's checksum and shows its seat exactly the host's view,
 // and per game: it ends within a move cap, the result is sane, and
 // replaying the move log with the same seed reproduces the final state.
-// Players also drag their hands around at random moments (reorders) on
-// anyone's turn, as people do.
+// Players also point at cards before drawing, and throw dealt pairs one
+// at a time or all at once, in any order across seats.
 //
 //   npm run sim:zombie                    10,000 games per player count 2–8
 //   npm run sim:zombie -- --games 500 --players 4
@@ -25,6 +25,8 @@ import {
   defaultConfig,
   HIDDEN,
   mask,
+  pairsIn,
+  targetOf,
   zombie,
   type ZombieMove,
   type ZombieState,
@@ -81,7 +83,7 @@ function checkViews(s: ZombieState): string | null {
 }
 
 /** What the public log carries: a reorder loses its cards. */
-const publicMove = (m: ZombieMove): { type: string; slot?: number } => (m.type === 'order' ? { type: 'order' } : m);
+const publicMove = (m: ZombieMove): { type: string; slot?: number } => m;
 
 function checkEvents(before: ZombieState, after: ZombieState, seat: number, move: ZombieMove, events: GameEvent[]): string | null {
   const pub = events.filter((e) => e.to === undefined);
@@ -94,10 +96,12 @@ function checkEvents(before: ZombieState, after: ZombieState, seat: number, move
   for (const c of leaked) if (secret.has(c)) return `a public event shows ${c}`;
   for (const e of events) {
     if (e.to === undefined) continue;
-    if ((e.type === 'drawn_card' || e.type === 'hand') && e.to !== seat) return `private ${e.type} went to seat ${e.to}, not ${seat}`;
+    if (e.type === 'drawn_card' && e.to !== seat) return `private drawn_card went to seat ${e.to}, not the drawer ${seat}`;
     if (e.type === 'hand') {
-      const mine = new Set(after.hands[seat]);
-      if ((e.cards as Card[]).some((c) => !mine.has(c))) return 'a private hand event names a card not in that hand';
+      // A shuffled hand's new order, for its holder only: exactly their cards.
+      const theirs = after.hands[e.to as number]!.slice().sort();
+      if (JSON.stringify((e.cards as Card[]).slice().sort()) !== JSON.stringify(theirs)) return 'a private hand event is not exactly that hand';
+      if (!events.some((x) => x.type === 'shuffled' && x.seat === e.to)) return 'a private hand event without a shuffle';
     }
   }
   return null;
@@ -139,19 +143,16 @@ function playMatch(players: number, seed: number, levels: BotLevel[], follow: bo
   if (checkConservation(s) ?? checkViews(s)) return `bad deal: ${checkConservation(s) ?? checkViews(s)}`;
   while (s.phase === 'play') {
     if (moves.length > cap) return `did not end within ${cap} moves`;
-    let seat = s.turn;
-    const legal = zombie.legalMoves(s, seat);
-    if (legal.length === 0) return `seat ${seat} has no legal move`;
-    for (let other = 0; other < players; other++) if (other !== seat && zombie.legalMoves(s, other).length > 0) return `seat ${other} can move out of turn`;
+    // Who may move: everyone with pairs at the deal, else only the player to move.
+    const waiting = [...Array(players).keys()].filter((i) => zombie.legalMoves(s, i).length > 0);
+    if (waiting.length === 0) return 'nobody can move';
+    if (s.step !== 'deal' && (waiting.length !== 1 || waiting[0] !== s.turn)) return `seats ${waiting.join(',')} can move on seat ${s.turn}'s turn`;
+    if (s.step === 'deal' && waiting.some((i) => !pairsIn(s.hands[i]!).length)) return 'a seat without pairs may throw';
+    const seat = waiting[botRng.int(waiting.length)]!;
     let move: ZombieMove = zombie.bot(zombie.view(s, seat), levels[seat]!, botRng);
-    // Now and then someone drags their own hand around, on anyone's turn.
-    if (botRng.next() < 0.25) {
-      const who = botRng.int(players);
-      if (s.hands[who]!.length > 0) {
-        seat = who;
-        move = { type: 'order', cards: botRng.shuffle(s.hands[who]!) };
-      }
-    }
+    // People point at a card (maybe change their mind) before confirming; some throw one pair at a time.
+    if (move.type === 'draw' && botRng.next() < 0.4) move = { type: 'aim', slot: botRng.int(s.hands[targetOf(s, seat)]!.length) };
+    else if (move.type === 'throw' && s.step === 'deal' && botRng.next() < 0.5) move = { type: 'throw', rank: pairsIn(s.hands[seat]!)[0]![0]![0] };
     const ok = zombie.validate(s, seat, move);
     if (!ok.ok) return `seat ${seat} made an illegal move ${JSON.stringify(move)}: ${ok.reason}`;
     const before = s;

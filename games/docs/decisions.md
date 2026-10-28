@@ -74,13 +74,15 @@ The spec's rules stand. Clarified with Fahmi:
 
 ## Zombie (28 Oct)
 
-The spec's rules stand. Settled with Fahmi:
+The spec's rules stand. Settled with Fahmi (first build, then his playtest the same day):
 
-- **Hiding the Zombie:** drag a card to move it, or tap **Shuffle**. Allowed any time, on anyone's turn, without using a turn. Everyone sees *that* a hand was shuffled (a 🔀 on the seat, like a real table's tell), never the new order. Bots shuffle after some draws.
-- **Pairs drop by themselves:** at the deal and after every draw, a pair glows in your hand for a moment, then drops face up to the graveyard. Pairs are by rank, any suits; the Zombie never pairs (not even with a J).
-- **Draw clock:** 15 s, then a random card is picked and stamped "Too slow!".
-- **Results:** the loser's seat is eaten by the Zombie (T4); the results list who got safe 1st, 2nd…, the loser last, plus stats: times the Zombie changed hands, who was dealt it, who held it longest, hot potato (taken from most), most pairs, draws.
-- Clarified while building: the host (seat 0) draws first; you draw from the next player clockwise still holding cards. A drawn card goes to the **end** of your hand, so the player you took it from knows where it is until you move it. The Zombie's path stays secret until the end (even the Jester doesn't know).
+- **The table is a real table:** every player's hand sits at their edge of the screen, the same size as mine (smaller from 5 players), turned the way they hold it, half off the screen. The two players in an exchange expand (hands slide in, badges grow) and everyone else dims. Nothing is arranged in the middle except the pile.
+- **Slow on purpose:** every step animates and waits for the last: shrink, expand, shuffle, point, wobble, fly, turn over, throw. Nothing is allowed to feel snappy; every action must be easy to follow.
+- **Auto-shuffle:** the hand about to be drawn from shuffles itself (animated) at the start of every turn, so nobody can track the Zombie. No Shuffle button and no dragging.
+- **Pick with a confirm:** tap a card to point at it (everyone sees it lift, its holder too), then tap it again or **Take it**. 15 s; at zero the card pointed at is taken, or a random one.
+- **Throwing is manual:** pairs glow; tap one to throw it. At the deal everyone throws at once on one 20 s clock, with a **Throw all** button. A pair made by a draw has 10 s. At zero the game throws for you. **Auto-throw** in the menu throws for you every time. A pair flies to its exact place on the pile and stays there.
+- **Results:** the loser's seat is eaten by the Zombie (T4); the results list who got safe 1st, 2nd…, the loser last, plus the Zombie's story: times it changed hands, who was dealt it, who held it longest, hot potato (taken from most), most pairs, draws.
+- The host (seat 0) draws first; you draw from the next player clockwise still holding cards; a drawn card goes to the end of your hand. Pairs are by rank, any suits; the Zombie never pairs, not even with a J. The Zombie's path stays secret until the end (even the Jester doesn't know).
 
 ## Left for later (as the spec says)
 
