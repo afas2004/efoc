@@ -78,6 +78,8 @@ export interface NetGame {
   cleanMove(raw: unknown): unknown | null;
   /** The move as the public log may show it (default: as it is). */
   publicMove?(move: unknown): unknown;
+  /** May `seat` move now, from its view? (Default: it's their turn.) */
+  canMove?(view: any, seat: number): boolean;
   /** Each player's private fields at a snapshot. */
   handAt(state: any, seat: number): Record<string, Json>;
   mask(state: any): any;
@@ -279,11 +281,11 @@ function reviveZombie(raw: Json, players: number): ZB {
     ...s,
     players,
     hands: rows(s.hands),
-    dealPairs: rows(s.dealPairs),
     pile: arr<string>(s.pile),
     pairs: nums(s.pairs),
     safe: arr<number>(s.safe),
     loser: s.loser ?? null,
+    aim: s.aim ?? null,
     stats: st ? { moves: st.moves ?? 0, drawnFrom: nums(st.drawnFrom), held: nums(st.held), dealtTo: st.dealtTo ?? 0 } : null,
     config: { ...zombie.defaultConfig, ...(s.config ?? {}) },
   };
@@ -308,17 +310,17 @@ const zombieGame: NetGame = {
     if (m.type === 'draw') {
       const slot = int(m.slot);
       if (slot === undefined) return null;
-      return m.shuffle === true ? { type: 'draw', slot, shuffle: true } : { type: 'draw', slot };
+      return { type: 'draw', slot };
     }
-    if (m.type === 'order') {
-      const cards = arr<unknown>(m.cards);
-      if (cards.length > 30 || cards.some((c) => typeof c !== 'string')) return null;
-      return { type: 'order', cards };
+    if (m.type === 'aim') {
+      const slot = int(m.slot);
+      return slot === undefined ? null : { type: 'aim', slot };
     }
+    if (m.type === 'throw') return typeof m.rank === 'string' && m.rank.length === 1 ? { type: 'throw', rank: m.rank } : { type: 'throw' };
     return null;
   },
-  // Intents are read by the host only; the log never learns my new order.
-  publicMove: (m) => ((m as { type?: string } | null)?.type === 'order' ? { type: 'order' } : m),
+  // Everyone throws their dealt pairs at once.
+  canMove: (v: zombie.ZombieView, seat) => (v.step === 'deal' ? zombie.pairsIn(v.hand).length > 0 : v.turn === seat),
   handAt: (s: ZB, seat) => ({ cards: s.hands[seat]! }),
   mask: (s: ZB) => zombie.mask(s, 'public'),
   revive: reviveZombie,

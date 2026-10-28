@@ -401,11 +401,11 @@ test('after a match, players say "I\'m in" and the host sees who is in before pl
   for (const f of [host, ann]) await expect(f.locator('.overlay.results')).toBeHidden({ timeout: 15_000 });
 });
 
-test('Zombie online on Firebase-shaped data: orders and drawn cards stay private; a player and the host reload and it finishes', async ({ page }) => {
+test('Zombie online on Firebase-shaped data: drawn cards and shuffled hands stay private; a player and the host reload and it finishes', async ({ page }) => {
   test.setTimeout(300_000);
   await openHarness(page);
   const room = `zb-${Date.now()}`;
-  const q = 'mute=1&turn=6000&autopilot=1&migrate=600000&speed=0.15';
+  const q = 'mute=1&turn=6000&autopilot=1&migrate=600000&speed=0.15&anim=0.05&reduced=1';
   await page.evaluate(
     ({ room, q }) => {
       const h = (window as any).harness;
@@ -420,7 +420,6 @@ test('Zombie online on Firebase-shaped data: orders and drawn cards stay private
   await host.getByRole('button', { name: '+ Add bot' }).click();
   for (let i = 0; i < 3; i++) await page.frameLocator('iframe').nth(i).getByRole('button', { name: 'Ready?' }).click();
   await host.getByRole('button', { name: 'Start' }).click();
-  await page.frameLocator('iframe').nth(1).getByRole('button', { name: 'Shuffle' }).click();
 
   const logLen = () => page.evaluate((room) => Object.keys((window as any).harness.read(`rooms/${room}/log`) ?? {}).length, room);
   await expect.poll(logLen, { timeout: 120_000, intervals: [500] }).toBeGreaterThanOrEqual(8);
@@ -431,13 +430,10 @@ test('Zombie online on Firebase-shaped data: orders and drawn cards stay private
     for (const [uid, v] of Object.entries(hands) as [string, any][]) out[uid] = Object.values(v.ev ?? {}).flatMap((e: any) => e.events.map((x: any) => `${x.type}:${x.to}`));
     const log = Object.values(h.read(`rooms/${room}/log`) ?? {}) as any[];
     const leaked = log.flatMap((e: any) => (e.events ?? []).filter((x: any) => x.to !== undefined || x.type === 'drawn_card' || x.type === 'hand'));
-    const orders = log.filter((e: any) => e.move?.type === 'order');
     const seats = Object.values(h.read(`rooms/${room}/meta/seats`) ?? {}).map((x: any) => x.uid ?? null);
-    return { out, leaked: leaked.length, orders: orders.length, orderCards: orders.filter((e: any) => e.move.cards !== undefined).length, seats };
+    return { out, leaked: leaked.length, seats };
   }, room);
   expect(priv.leaked).toBe(0);
-  expect(priv.orders).toBeGreaterThanOrEqual(1);
-  expect(priv.orderCards).toBe(0);
   for (const [uid, events] of Object.entries(priv.out)) {
     const seat = priv.seats.indexOf(uid);
     expect(seat).toBeGreaterThanOrEqual(0);

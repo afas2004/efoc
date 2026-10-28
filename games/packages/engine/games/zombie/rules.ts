@@ -1,22 +1,23 @@
 // Zombie rules (docs/spec.md "Zombie", docs/decisions.md).
 //
 // Old Maid with one Joker, the Zombie. All 53 cards are dealt (uneven hands,
-// never burned) and every pair of the same rank is thrown face up. On your
-// turn you draw one face-down card from the next player still holding cards;
-// a new pair is thrown at once. Empty hands are safe. The last player left
-// holding the Zombie loses.
+// never burned). Then everyone throws their pairs of the same rank face up,
+// all at once (step 'deal'). On your turn the next player still holding
+// cards has their hand shuffled for them, you aim at one face-down card
+// (everyone sees which slot you're pointing at, the holder too), and
+// confirm to draw it. If it makes a pair you throw that pair (step
+// 'throw'). Empty hands are safe. The last player left holding the Zombie
+// loses.
 //
 // Hidden positions: the drawer picks a slot index, never a card; the host
-// maps it through the holder's private order. A drawn card goes to the end
-// of the drawer's hand, so the player it came from knows where it is until
-// the drawer reorders (drag) or shuffles. Reordering is allowed any time,
-// on anyone's turn, and everyone sees *that* a hand was shuffled (a real
-// table's tell), never the new order.
+// maps it through the holder's private order. The holder's hand is
+// shuffled by the host at the start of every turn it's drawn from, so
+// nobody can track where the Zombie went.
 //
 // Hidden information: the host holds the real state. Every phone holds
 // mask(state, seat) (its own hand real, the rest placeholders) and advances
-// it with applyPublic(entry); its drawn card and its new order arrive as
-// private events (`to` its seat). Who held the Zombie when stays secret
+// it with applyPublic(entry); its drawn card and its shuffled order arrive
+// as private events (`to` its seat). Who held the Zombie when stays secret
 // until the round ends.
 
 import { fullDeck, JOKER, rankOf, type Card } from '../../core/cards';
@@ -31,10 +32,12 @@ export const ZOMBIE = JOKER;
 export const isZombie = (c: Card | null | undefined): boolean => c === ZOMBIE;
 
 export type ZombieMove =
-  /** Draw the card at `slot` of the next player's hand; `shuffle` mixes my hand after. */
-  | { type: 'draw'; slot: number; shuffle?: boolean }
-  /** My whole hand in a new order (drag or Shuffle). Any time, anyone's turn. */
-  | { type: 'order'; cards: Card[] };
+  /** Point at the card at `slot` of the next player's hand (anyone can see which). Doesn't end the turn. */
+  | { type: 'aim'; slot: number }
+  /** Draw the card at `slot` of the next player's hand. */
+  | { type: 'draw'; slot: number }
+  /** Throw a pair face up: of `rank`, or every pair I hold when no rank is given. */
+  | { type: 'throw'; rank?: string };
 
 /** Secret until the end: how the Zombie moved. */
 export interface ZombieStats {
@@ -42,7 +45,7 @@ export interface ZombieStats {
   moves: number;
   /** Per seat: times the Zombie was drawn from them (Hot Potato). */
   drawnFrom: number[];
-  /** Per seat: turns they held the Zombie at the end of a draw. */
+  /** Per seat: draws that ended with them holding the Zombie. */
   held: number[];
   /** Who held it at the deal. */
   dealtTo: SeatId;
@@ -51,15 +54,17 @@ export interface ZombieStats {
 export interface ZombieState {
   config: ZombieConfig;
   players: number;
-  /** hands[seat], in the holder's own order. Private. */
+  /** hands[seat], in the holder's order. Private. */
   hands: Card[][];
-  /** Pairs thrown at the deal, per seat (public, face up). */
-  dealPairs: Card[][];
   /** Every pair thrown, face up, in order. */
   pile: Card[];
-  /** Pairs thrown per seat, deal included. */
+  /** Pairs thrown per seat. */
   pairs: number[];
+  /** 'deal': everyone throws their dealt pairs at once; 'draw': `turn` aims and draws; 'throw': `turn` throws the pair it drew. */
+  step: 'deal' | 'draw' | 'throw';
   turn: SeatId;
+  /** The slot the drawer is pointing at, or null. */
+  aim: number | null;
   /** Seats whose hands emptied, in that order. */
   safe: SeatId[];
   draws: number;
@@ -74,7 +79,6 @@ function clone(s: ZombieState): ZombieState {
   return {
     ...s,
     hands: s.hands.map((h) => h.slice()),
-    dealPairs: s.dealPairs.map((h) => h.slice()),
     pile: s.pile.slice(),
     pairs: s.pairs.slice(),
     safe: s.safe.slice(),
@@ -82,25 +86,21 @@ function clone(s: ZombieState): ZombieState {
   };
 }
 
-/** Removes every pair of the same rank; returns what's left (order kept) and the pairs. */
-export function throwPairs(hand: Card[]): { left: Card[]; pairs: Card[] } {
-  const seen = new Map<string, number>();
-  const drop = new Set<number>();
-  hand.forEach((c, i) => {
-    if (isZombie(c) || c === HIDDEN) return;
+/** Pairs in a hand: [[a, b], ...] in hand order, two cards of a rank each (the Zombie never pairs, not even with a J). */
+export function pairsIn(hand: readonly Card[]): Card[][] {
+  const seen = new Map<string, Card>();
+  const out: Card[][] = [];
+  for (const c of hand) {
+    if (isZombie(c) || c === HIDDEN) continue;
     const r = rankOf(c);
-    const j = seen.get(r);
-    if (j === undefined) seen.set(r, i);
+    const mate = seen.get(r);
+    if (mate === undefined) seen.set(r, c);
     else {
-      drop.add(j);
-      drop.add(i);
+      out.push([mate, c]);
       seen.delete(r);
     }
-  });
-  const pairs: Card[] = [];
-  const left: Card[] = [];
-  hand.forEach((c, i) => (drop.has(i) ? pairs : left).push(c));
-  return { left, pairs };
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------- setup
@@ -110,37 +110,29 @@ export function setup(seats: SeatId[], config: ZombieConfig, rng: Rng): ZombieSt
   if (n < 2 || n > 8) throw new Error(`Zombie needs 2 to 8 players, got ${n}`);
   for (;;) {
     const deck = rng.shuffle(fullDeck(true));
-    const dealt: Card[][] = Array.from({ length: n }, () => []);
-    deck.forEach((c, i) => dealt[i % n]!.push(c));
-    const hands: Card[][] = [];
-    const dealPairs: Card[][] = [];
-    for (const h of dealt) {
-      const { left, pairs } = throwPairs(h);
-      hands.push(left);
-      dealPairs.push(pairs);
-    }
-    // Vanishingly rare: everyone but one paired out at the deal. Deal again.
-    if (hands.filter((h) => h.length > 0).length < 2) continue;
-    const holder = hands.findIndex((h) => h.includes(ZOMBIE));
+    const hands: Card[][] = Array.from({ length: n }, () => []);
+    deck.forEach((c, i) => hands[i % n]!.push(c));
+    // Vanishingly rare: everyone but one would pair out at the deal. Deal again.
+    const left = hands.filter((h) => h.length > pairsIn(h).length * 2).length;
+    if (left < 2) continue;
     const s: ZombieState = {
       config,
       players: n,
       hands,
-      dealPairs,
-      pile: dealPairs.flat(),
-      pairs: dealPairs.map((p) => p.length / 2),
+      pile: [],
+      pairs: new Array<number>(n).fill(0),
+      step: 'deal',
       turn: 0,
+      aim: null,
       safe: [],
       draws: 0,
       maxDraws: config.maxDraws > 0 ? config.maxDraws : 2000,
       phase: 'play',
       loser: null,
-      stats: { moves: 0, drawnFrom: new Array<number>(n).fill(0), held: new Array<number>(n).fill(0), dealtTo: holder },
+      stats: { moves: 0, drawnFrom: new Array<number>(n).fill(0), held: new Array<number>(n).fill(0), dealtTo: hands.findIndex((h) => h.includes(ZOMBIE)) },
     };
-    // Empty at the deal: safe already, in seat order.
-    hands.forEach((h, i) => h.length === 0 && s.safe.push(i));
-    // The host (seat 0) draws first, or the next player still in.
-    s.turn = hands[0]!.length > 0 ? 0 : nextIn(s, 0);
+    // Nobody dealt a pair (rare, big tables): straight to the first draw.
+    if (hands.every((h) => pairsIn(h).length === 0)) startTurn(s, 0, rng, []);
     return s;
   }
 }
@@ -160,17 +152,12 @@ export function nextIn(s: ZombieState, seat: SeatId): SeatId {
 export const targetOf = (s: ZombieState, seat: SeatId): SeatId => nextIn(s, seat);
 
 export function legalMoves(state: ZombieState, seat: SeatId): ZombieMove[] {
-  if (state.phase !== 'play' || seat !== state.turn) return [];
+  if (state.phase !== 'play') return [];
+  if (state.step === 'deal') return pairsIn(state.hands[seat]!).length > 0 ? [{ type: 'throw' }] : [];
+  if (seat !== state.turn) return [];
+  if (state.step === 'throw') return [{ type: 'throw' }];
   const n = state.hands[targetOf(state, seat)]!.length;
   return Array.from({ length: n }, (_, slot) => ({ type: 'draw', slot }));
-}
-
-/** Same cards, maybe in another order. */
-function samePile(a: readonly Card[], b: readonly Card[]): boolean {
-  if (a.length !== b.length) return false;
-  const x = a.slice().sort();
-  const y = b.slice().sort();
-  return x.every((c, i) => c === y[i]);
 }
 
 export function validate(state: ZombieState, seat: SeatId, move: unknown): ValidateResult {
@@ -179,15 +166,17 @@ export function validate(state: ZombieState, seat: SeatId, move: unknown): Valid
   const m = move as ZombieMove | null;
   if (!m || typeof m !== 'object') return no('Bad move');
   if (!Number.isInteger(seat) || seat < 0 || seat >= state.players) return no('Bad seat');
-  if (m.type === 'order') {
-    const hand = state.hands[seat]!;
-    if (hand.length === 0) return no("You're safe");
-    if (!Array.isArray(m.cards) || !samePile(m.cards, hand)) return no('Your hand changed');
+  if (m.type === 'throw') {
+    if (state.step === 'draw' || (state.step === 'throw' && seat !== state.turn)) return no('Nothing to throw now');
+    const pairs = pairsIn(state.hands[seat]!);
+    if (pairs.length === 0) return no('No pairs to throw');
+    if (m.rank !== undefined && !pairs.some((p) => rankOf(p[0]!) === m.rank)) return no('No pair of that rank');
     return { ok: true };
   }
-  if (m.type !== 'draw') return no('Bad move');
+  if (m.type !== 'draw' && m.type !== 'aim') return no('Bad move');
+  if (state.step === 'deal') return no('Throw your pairs first');
   if (seat !== state.turn) return no('Not your turn');
-  if (m.shuffle !== undefined && typeof m.shuffle !== 'boolean') return no('Bad move');
+  if (state.step !== 'draw') return no('Throw your pair first');
   const n = state.hands[targetOf(state, seat)]!.length;
   if (!Number.isInteger(m.slot) || m.slot < 0 || m.slot >= n) return no('Pick one of their cards');
   return { ok: true };
@@ -200,16 +189,65 @@ export function apply(state: ZombieState, seat: SeatId, move: ZombieMove, rng: R
 }
 
 /**
- * Applies a checked move on the host's real state. Phones never run it:
- * applyPublic follows the log on a masked copy instead.
+ * Starts `seat`'s turn: the hand it draws from is shuffled first, so nobody
+ * knows where any card sits in it. Only its holder learns the new order.
  */
+function startTurn(s: ZombieState, seat: SeatId, rng: Rng, events: GameEvent[]): void {
+  s.turn = seat;
+  s.step = 'draw';
+  s.aim = null;
+  const from = targetOf(s, seat);
+  s.hands[from] = rng.shuffle(s.hands[from]!);
+  events.push({ type: 'turn', seat, from });
+  events.push({ type: 'shuffled', seat: from, auto: true });
+  events.push({ type: 'hand', to: from, cards: s.hands[from]!.slice() });
+}
+
+function markSafe(s: ZombieState, events: GameEvent[], who: SeatId[]): void {
+  for (const w of who) {
+    if (s.hands[w]!.length === 0 && !s.safe.includes(w)) {
+      s.safe.push(w);
+      events.push({ type: 'safe', seat: w, place: s.safe.length });
+    }
+  }
+}
+
+/** After a turn's draw (and its pair): the round ends, or the next player draws. */
+function endTurn(s: ZombieState, seat: SeatId, rng: Rng, events: GameEvent[]): void {
+  const holder = s.hands.findIndex((h) => h.includes(ZOMBIE));
+  if (holder >= 0) s.stats!.held[holder]!++;
+  const left = s.hands.filter((h) => h.length > 0).length;
+  if (left <= 1 || s.draws >= s.maxDraws) return finish(s, events);
+  startTurn(s, nextIn(s, seat), rng, events);
+}
+
+/** Applies a checked move on the host's real state. Phones run applyPublic instead. */
 function applyTrusted(state: ZombieState, seat: SeatId, move: ZombieMove, rng: Rng): { state: ZombieState; events: GameEvent[] } {
   const s = clone(state);
   const events: GameEvent[] = [];
-  if (move.type === 'order') {
-    s.hands[seat] = move.cards.slice();
-    events.push({ type: 'shuffled', seat });
-    events.push({ type: 'hand', to: seat, cards: s.hands[seat]!.slice() });
+  if (move.type === 'aim') {
+    s.aim = move.slot;
+    events.push({ type: 'aim', seat, from: targetOf(s, seat), slot: move.slot });
+    return { state: s, events };
+  }
+  if (move.type === 'throw') {
+    const hand = s.hands[seat]!;
+    const pairs = pairsIn(hand).filter((p) => move.rank === undefined || rankOf(p[0]!) === move.rank);
+    for (const pair of move.rank === undefined ? pairs : pairs.slice(0, 1)) {
+      for (const c of pair) hand.splice(hand.indexOf(c), 1);
+      s.pile.push(...pair);
+      s.pairs[seat]!++;
+      events.push({ type: 'pair', seat, cards: pair.slice() });
+    }
+    if (s.step === 'throw') {
+      s.step = 'draw';
+      markSafe(s, events, [seat]);
+      endTurn(s, seat, rng, events);
+    } else {
+      markSafe(s, events, [seat]);
+      // Everyone's dealt pairs are down: the host (or the next player in) draws first.
+      if (s.hands.every((h) => pairsIn(h).length === 0)) startTurn(s, s.hands[0]!.length > 0 ? 0 : nextIn(s, 0), rng, events);
+    }
     return { state: s, events };
   }
 
@@ -217,49 +255,28 @@ function applyTrusted(state: ZombieState, seat: SeatId, move: ZombieMove, rng: R
   const card = s.hands[from]!.splice(move.slot, 1)[0]!;
   const hand = s.hands[seat]!;
   hand.push(card);
-  events.push({ type: 'drew', seat, from, slot: move.slot });
+  s.aim = null;
+  s.draws++;
+  const pair = !isZombie(card) && hand.some((c, i) => i < hand.length - 1 && !isZombie(c) && rankOf(c) === rankOf(card));
+  events.push({ type: 'drew', seat, from, slot: move.slot, pair });
   events.push({ type: 'drawn_card', to: seat, card, from });
   if (isZombie(card)) {
     s.stats!.moves++;
     s.stats!.drawnFrom[from]!++;
   }
-  // A new pair goes face up at once.
-  const partner = isZombie(card) ? -1 : hand.findIndex((c, i) => i < hand.length - 1 && !isZombie(c) && rankOf(c) === rankOf(card));
-  if (partner >= 0) {
-    const mate = hand[partner]!;
-    hand.splice(hand.length - 1, 1);
-    hand.splice(partner, 1);
-    s.pile.push(mate, card);
-    s.pairs[seat]!++;
-    events.push({ type: 'pair', seat, cards: [mate, card] });
-  }
-  if (move.shuffle && hand.length > 1) {
-    s.hands[seat] = rng.shuffle(hand);
-    events.push({ type: 'shuffled', seat });
-    events.push({ type: 'hand', to: seat, cards: s.hands[seat]!.slice() });
-  }
-  s.draws++;
-  for (const who of [from, seat]) {
-    if (s.hands[who]!.length === 0 && !s.safe.includes(who)) {
-      s.safe.push(who);
-      events.push({ type: 'safe', seat: who, place: s.safe.length });
-    }
-  }
-  const holder = s.hands.findIndex((h) => h.includes(ZOMBIE));
-  if (holder >= 0) s.stats!.held[holder]!++;
-  const left = s.hands.map((h, i) => (h.length > 0 ? i : -1)).filter((i) => i >= 0);
-  if (left.length <= 1 || s.draws >= s.maxDraws) {
-    finish(s, events);
+  markSafe(s, events, [from]);
+  if (pair) {
+    s.step = 'throw';
     return { state: s, events };
   }
-  s.turn = nextIn(s, seat);
-  events.push({ type: 'turn', seat: s.turn, from: targetOf(s, s.turn) });
+  endTurn(s, seat, rng, events);
   return { state: s, events };
 }
 
 /** The Zombie's holder loses; everyone else ranks by when they got safe. */
 function finish(s: ZombieState, events: GameEvent[]): void {
   s.phase = 'over';
+  s.aim = null;
   const loser = s.hands.findIndex((h) => h.includes(ZOMBIE));
   s.loser = loser;
   const order = placings(s);
@@ -291,8 +308,8 @@ function placings(s: ZombieState): SeatId[] {
 /**
  * The table as `seat`'s phone may hold it: its own hand real, every other
  * hand placeholders of the right length, and the Zombie's story secret. A
- * spectator ('public') sees no hand at all. After the end, only the loser's
- * hand (the Zombie) is shown; it's in the zombie_loser event.
+ * spectator ('public') sees no hand at all. After the end the loser's hand
+ * is public (it's in the zombie_loser event).
  */
 export function mask(state: ZombieState, seat: SeatId | 'public'): ZombieState {
   const s = clone(state);
@@ -302,49 +319,67 @@ export function mask(state: ZombieState, seat: SeatId | 'public'): ZombieState {
   return s;
 }
 
-/**
- * Advances a masked copy by one public log entry. The move may arrive with
- * its private part stripped (an order's cards never enter the log).
- */
+/** Advances a masked copy by one public log entry, from the entry's events. */
 export function applyPublic(state: ZombieState, seat: SeatId, move: { type: string; slot?: number }, events: readonly GameEvent[]): ZombieState {
   const s = clone(state);
-  if (move.type !== 'draw') return s; // a reorder: nothing public changes
-  const from = targetOf(s, seat);
-  s.hands[from]!.splice(move.slot!, 1);
-  // Someone else's hand, or mine before my private event says what I drew.
-  s.hands[seat]!.push(HIDDEN);
-  s.draws++;
   for (const e of events) {
-    if (e.type === 'pair') {
-      const hand = s.hands[seat]!;
-      for (const c of e.cards as Card[]) {
-        const i = hand.lastIndexOf(c);
-        hand.splice(i >= 0 ? i : hand.lastIndexOf(HIDDEN), 1);
+    switch (e.type) {
+      case 'aim':
+        s.aim = e.slot as number;
+        break;
+      case 'drew': {
+        const from = e.from as SeatId;
+        s.hands[from]!.splice(e.slot as number, 1);
+        // Someone else's hand, or mine until my private event says what I drew.
+        s.hands[seat]!.push(HIDDEN);
+        s.aim = null;
+        s.draws++;
+        if (e.pair) s.step = 'throw';
+        break;
       }
-      s.pile.push(...(e.cards as Card[]));
-      s.pairs[seat]!++;
-    } else if (e.type === 'safe') {
-      s.safe.push(e.seat as SeatId);
-    } else if (e.type === 'turn') {
-      s.turn = e.seat as SeatId;
-    } else if (e.type === 'zombie_loser') {
-      s.phase = 'over';
-      s.loser = e.seat as SeatId;
-      s.hands[s.loser] = (e.hand as Card[]).slice();
-    } else if (e.type === 'round_ended') {
-      const st = e.stats as unknown as ZombieStats;
-      s.stats = { ...st, drawnFrom: st.drawnFrom.slice(), held: st.held.slice() };
+      case 'pair': {
+        const who = e.seat as SeatId;
+        const hand = s.hands[who]!;
+        for (const c of e.cards as Card[]) {
+          const i = hand.lastIndexOf(c);
+          hand.splice(i >= 0 ? i : hand.lastIndexOf(HIDDEN), 1);
+        }
+        s.pile.push(...(e.cards as Card[]));
+        s.pairs[who]!++;
+        break;
+      }
+      case 'safe':
+        s.safe.push(e.seat as SeatId);
+        break;
+      case 'turn':
+        s.turn = e.seat as SeatId;
+        s.step = 'draw';
+        s.aim = null;
+        break;
+      case 'zombie_loser':
+        s.phase = 'over';
+        s.step = 'draw';
+        s.aim = null;
+        s.loser = e.seat as SeatId;
+        s.hands[s.loser] = (e.hand as Card[]).slice();
+        break;
+      case 'round_ended': {
+        const st = e.stats as unknown as ZombieStats;
+        s.stats = { ...st, drawnFrom: st.drawnFrom.slice(), held: st.held.slice() };
+        break;
+      }
+      default:
     }
   }
+  void move;
   return s;
 }
 
-/** A private event for `seat` (its drawn card, its new order) folded into its copy. */
+/** A private event for `seat` (its drawn card, its shuffled order) folded into its copy. */
 export function applyPrivate(state: ZombieState, seat: SeatId, e: GameEvent): ZombieState {
   if (e.type === 'drawn_card') {
-    const hand = state.hands[seat]!;
-    const i = hand.lastIndexOf(HIDDEN);
-    if (i < 0) return state; // it paired straight away
+    const i = state.hands[seat]!.lastIndexOf(HIDDEN);
+    if (i < 0) return state;
     const s = clone(state);
     s.hands[seat]![i] = e.card as Card;
     return s;
@@ -374,13 +409,14 @@ export type ZombieView = {
   seat: SeatId | 'public';
   config: ZombieConfig;
   players: number;
+  step: ZombieState['step'];
   turn: SeatId;
   /** Whose hand the player to move draws from. */
   from: SeatId;
-  /** My own hand in my order (empty for a spectator). */
+  aim: number | null;
+  /** My own hand in its order (empty for a spectator). */
   hand: Card[];
   counts: number[];
-  dealPairs: Card[][];
   pile: Card[];
   pairs: number[];
   safe: SeatId[];
@@ -395,16 +431,16 @@ export type ZombieView = {
 
 export function view(state: ZombieState, seat: SeatId | 'public'): ZombieView {
   const over = state.phase === 'over';
-  const own = seat === 'public' ? [] : state.hands[seat]!.slice();
   return {
     seat,
     config: state.config,
     players: state.players,
+    step: state.step,
     turn: state.turn,
     from: targetOf(state, state.turn),
-    hand: own,
+    aim: state.aim,
+    hand: seat === 'public' ? [] : state.hands[seat]!.slice(),
     counts: state.hands.map((h) => h.length),
-    dealPairs: state.dealPairs.map((p) => p.slice()),
     pile: state.pile.slice(),
     pairs: state.pairs.slice(),
     safe: state.safe.slice(),

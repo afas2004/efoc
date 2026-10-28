@@ -1,19 +1,20 @@
 // Zombie's Jester: the host picks at most one line per log entry, so every
 // phone shows the same line. Only public facts feed it: pairs thrown face
-// up, who got safe, who shuffled, how many cards everyone holds, and the
+// up, who got safe, how many cards everyone holds, and the
 // loser at the end. Where the Zombie is stays secret: the Jester never
 // says who drew it (the host knows; it would give the game away).
 
 import { zombie, type GameEvent } from '@efoc/engine';
 import { JesterDirector, type JesterEvent } from '../../feel/jester';
 import { rankText } from '../../table/cardFace';
+import { animScale } from './table';
 
 type State = zombie.ZombieState;
 
 /** Big moments always speak; the rest wait for the Jester's gap. */
 const MAJOR = new Set(['zb_start', 'zb_safe', 'zb_two_left', 'zb_lose']);
 /** When several things happen at once, the best story wins. */
-const PRIORITY = ['zb_lose', 'zb_two_left', 'zb_safe', 'zb_start', 'zb_one_card', 'zb_shuffle', 'zb_pair'];
+const PRIORITY = ['zb_lose', 'zb_two_left', 'zb_safe', 'zb_start', 'zb_one_card', 'zb_pair'];
 
 export class ZombieCommentator {
   readonly director: JesterDirector;
@@ -40,9 +41,6 @@ export class ZombieCommentator {
           break;
         case 'pair':
           candidates.push(['zb_pair', seat, { name: name(seat!), rank: rankText((e.cards as string[])[0]!) }]);
-          break;
-        case 'shuffled':
-          candidates.push(['zb_shuffle', seat, { name: name(seat!) }]);
           break;
         case 'safe':
           candidates.push(['zb_safe', seat, { name: name(seat!), place: e.place as number }]);
@@ -83,13 +81,16 @@ export function dwellMs(events: GameEvent[]): number {
   let ms = 0;
   for (const e of events) {
     let t = 0;
-    if (e.type === 'round_started') t = 2200;
-    else if (e.type === 'drew') t = 1100;
-    else if (e.type === 'pair') t = 1700;
-    else if (e.type === 'safe') t = 1500;
-    else if (e.type === 'zombie_loser') t = 3000;
+    // Matches the table's steps (table.ts): slow on purpose, so everyone can follow.
+    if (e.type === 'round_started') t = 4200;
+    else if (e.type === 'turn') t = 3900; // shrink, expand, shuffle
+    else if (e.type === 'drew') t = 3300; // lift, wobble, fly, turn over
+    // A pair thrown during the deal (no turn follows it) flies alongside everyone else's.
+    else if (e.type === 'pair') t = events.some((x) => x.type === 'turn' || x.type === 'zombie_loser') ? 1500 : 500;
+    else if (e.type === 'safe') t = 600;
+    else if (e.type === 'zombie_loser') t = 3400;
     else if (e.type === 'jester') t = 900;
-    ms = Math.max(ms, t);
+    ms += t;
   }
-  return ms;
+  return ms * animScale();
 }

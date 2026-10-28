@@ -746,25 +746,6 @@
         "tone": "neutral"
       }
     ],
-    "zb_shuffle": [
-      {
-        "text": "{name} is shuffling… nervous ah?",
-        "tone": "tease"
-      },
-      {
-        "text": "{name} shuffles. Hiding something?",
-        "tone": "tease"
-      },
-      {
-        "text": "Shuffle, shuffle. {name} knows something we don't.",
-        "tone": "tease",
-        "spicy": true
-      },
-      {
-        "text": "Smart move, {name}. Keep them guessing.",
-        "tone": "cheer"
-      }
-    ],
     "zb_safe": [
       {
         "text": "{name} is SAFE! Out of the graveyard.",
@@ -888,7 +869,7 @@
   },
   "zb": {
     "title": "Zombie",
-    "setupHint": "Old Maid with a Zombie. Pairs drop by themselves. Draw from the next player, and don't be the one left holding the Zombie.",
+    "setupHint": "Old Maid with a Zombie. Throw your pairs, pick from the next player, and don't be the one left holding the Zombie.",
     "zombieCard": "The Zombie",
     "zombie": "ZOMBIE",
     "cards": "{n} cards",
@@ -899,13 +880,9 @@
     "pickingYou": "{name} is picking from YOU!",
     "pickLabel": "Card {n} of {name}'s hand",
     "pileLabel": "Graveyard, {n} pairs",
-    "position": "position {n}",
     "yourTurn": "YOUR TURN · tap one of their cards",
     "drawing": "Drawing…",
     "youreSafe": "You're SAFE ({place}). Watch the Zombie hunt!",
-    "shuffle": "Shuffle",
-    "shuffleHelp": "Mix your hand so nobody knows where the Zombie is. You can also drag cards.",
-    "dealt": "Pairs drop!",
     "gotZombie": "You got the ZOMBIE!",
     "zombieGone": "Phew! The Zombie's gone.",
     "youDrew": "You drew {card}",
@@ -924,14 +901,28 @@
       "youSafe": "YOU'RE SAFE!"
     },
     "help": [
-      "53 cards: the deck plus one Joker, the Zombie. Every pair of the same rank drops by itself.",
-      "On your turn, tap one face-down card of the next player. If it makes a pair, the pair drops.",
-      "The card you draw goes to the end of your hand, and the player you took it from knows. Drag cards or tap Shuffle to hide the Zombie. Others see that you shuffled.",
-      "15 seconds to pick, then the game picks for you.",
+      "53 cards: the deck plus one Joker, the Zombie. First everyone throws their pairs (same rank): tap a glowing pair, or Throw all.",
+      "On your turn the next player's hand shuffles itself. Tap one of their cards to point at it (they see it too), then tap it again or Take it.",
+      "If it makes a pair, tap the pair to throw it. Turn on Auto-throw below to skip the tapping.",
+      "15 s to pick, 10 s to throw, then the game does it for you.",
       "Empty hand: you're SAFE. The last one holding the Zombie loses."
     ],
     "oneCard": "1 card",
     "zombieBanner": "ZOMBIE!",
-    "youBanner": "IT'S YOU!"
+    "youBanner": "IT'S YOU!",
+    "drawingNow": "drawing",
+    "beingPicked": "being picked from",
+    "faceDown": "Face-down card",
+    "tapToThrow": "tap to throw its pair",
+    "dealPhase": "Throw your pairs!",
+    "throwYourPairs": "Tap a glowing pair to throw it",
+    "waitThrows": "Waiting for everyone's pairs…",
+    "throwYourPair": "PAIR! Tap it to throw",
+    "confirmPick": "Tap it again (or Take it) to take it",
+    "takeIt": "Take it",
+    "theyPick": "They're picking one of YOUR cards…",
+    "throwAll": "Throw all {n} pairs",
+    "throwPair": "Throw pair",
+    "autoThrow": "Auto-throw pairs"
   }
 }

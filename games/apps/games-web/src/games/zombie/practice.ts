@@ -34,7 +34,7 @@ const BOTS: { name: string; avatar: string; personality: Personality; level: 'ea
 
 export type ZombieHost = HostCore<zombie.ZombieConfig, zombie.ZombieState, zombie.ZombieMove, zombie.ZombieView>;
 
-/** Zombie's draw clock (Fahmi, 28 Oct: 15 s, then a random pick). */
+/** Zombie's draw clock (Fahmi, 28 Oct: 15 s, then the card pointed at, or a random one). */
 export const ZOMBIE_TURN_MS = 15_000;
 
 /** Host options shared by Practice and online tables. */
@@ -45,10 +45,14 @@ export function zombieHostOptions(turnMs: number, commentator: ZombieCommentator
     previewMs: 0,
     commentate: (events: Parameters<ZombieCommentator['comment']>[0], state: unknown) => commentator.comment(events, state as zombie.ZombieState),
     dwell: dwellMs,
-    // Reordering your hand is allowed any time and doesn't take a turn.
-    sideMove: (m: unknown) => (m as { type?: string } | null)?.type === 'order',
-    // A blind pick doesn't depend on which entry it was made against.
-    staleOk: (m: unknown) => (m as { type?: string } | null)?.type === 'draw',
+    // Pointing at a card doesn't take the turn or touch the clock.
+    sideMove: (m: unknown) => (m as { type?: string } | null)?.type === 'aim',
+    // A blind pick or a throw doesn't depend on which entry it was made against.
+    staleOk: (m: unknown) => ['draw', 'throw'].includes((m as { type?: string } | null)?.type ?? ''),
+    // The deal's pairs are thrown by everyone at once, on one clock.
+    keepClock: (before: unknown, after: unknown) => (before as zombie.ZombieState).step === 'deal' && (after as zombie.ZombieState).step === 'deal',
+    // 20 s for the deal's pairs, 15 s to draw, 10 s to throw a drawn pair (Fahmi, 28 Oct).
+    turnScale: (state: unknown) => ({ deal: 20 / 15, draw: 1, throw: 10 / 15 })[(state as zombie.ZombieState).step],
   };
 }
 

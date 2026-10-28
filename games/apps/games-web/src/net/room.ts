@@ -340,7 +340,8 @@ export class OnlineGame {
     if (!v || this.mySeat === 'public' || v.phase !== 'play') return;
     this.autoTimer = window.setTimeout(() => {
       const view = this.lastView;
-      if (!view || view.turn !== this.mySeat || view.phase !== 'play') return;
+      if (!view || this.mySeat === 'public' || view.phase !== 'play') return;
+      if (!(this.game.canMove ? this.game.canMove(view, this.mySeat) : view.turn === this.mySeat)) return;
       const move = this.game.module.bot(view, 'normal', createRng(Math.floor(Math.random() * 2 ** 31)));
       void this.intent(move);
     }, 250 + Math.random() * 250);
