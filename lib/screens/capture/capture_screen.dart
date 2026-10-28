@@ -254,6 +254,11 @@ class _CaptureScreenState extends State<CaptureScreen>
       _showError('Pick at least one Log');
       return;
     }
+    if (ClipService.openSlotDay(widget.hour) == null) {
+      _showError('That hour has closed. Record for this hour instead.');
+      Navigator.of(context).pop();
+      return;
+    }
 
     setState(() => _uploading = true);
 
@@ -280,6 +285,9 @@ class _CaptureScreenState extends State<CaptureScreen>
           textBg: _highlight,
         );
         successCount++;
+      } on HourClosedException catch (e) {
+        errors.add('$e');
+        break;
       } catch (e) {
         errors.add('$groupId: $e');
       }

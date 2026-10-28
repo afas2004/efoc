@@ -481,7 +481,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (filled) {
       _openClipPopup(context, mIdx, hIdx);
     } else if (member.isMe) {
-      _openCapture(state.hours[hIdx]);
+      if (state.hours[hIdx] == state.currentHour) {
+        _openCapture(state.hours[hIdx]);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('You can only record for the current hour'),
+            duration: Duration(milliseconds: 1400),
+          ),
+        );
+      }
     }
   }
 
