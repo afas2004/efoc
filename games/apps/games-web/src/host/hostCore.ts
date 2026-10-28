@@ -43,6 +43,14 @@ export interface HostOptions {
   extraMs?: (events: GameEvent[]) => number;
   /** Multiplies the turn time for the current state (Lucky 7's final lap halves it). */
   turnScale?: (state: unknown) => number;
+  /**
+   * Moves that don't take a turn (Zombie: reordering your own hand, on
+   * anyone's turn). They go in the log but leave the clock, the bots and
+   * the Jester alone, and a move made against an older entry still counts.
+   */
+  sideMove?: (move: unknown) => boolean;
+  /** Turn moves that may be made against an older entry (a blind pick doesn't depend on it). */
+  staleOk?: (move: unknown) => boolean;
 }
 
 /** Everything a new host needs to carry on where the old one stopped. */
@@ -228,10 +236,17 @@ export class HostCore<Config, State, Move, View> {
   /** A move from a seat. Returns the rejection reason, or null if accepted. */
   submit(seat: SeatId, move: Move, madeAt?: number): string | null {
     if (this.stopped) return 'The match has ended';
-    if (madeAt !== undefined && madeAt !== this.n - 1) return 'The table moved on; try again';
-    if (this.now() < this.holdUntil) return 'Get ready…';
+    const side = this.opts.sideMove?.(move) ?? false;
+    if (madeAt !== undefined && madeAt !== this.n - 1 && !side && !this.opts.staleOk?.(move)) return 'The table moved on; try again';
+    if (this.now() < this.holdUntil && !side) return 'Get ready…';
     const check = this.game.validate(this.state, seat, move);
     if (!check.ok) return check.reason;
+    if (side) {
+      const { state, events } = this.game.apply(this.state, seat, move, this.rng);
+      this.state = state;
+      this.emit(seat, move, events);
+      return null;
+    }
     this.consecutive[seat] = 0;
     this.commit(seat, move, []);
     return null;

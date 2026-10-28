@@ -716,6 +716,112 @@
         "text": "{name} spies on {victim}. Now they know something you don't!",
         "tone": "tease"
       }
+    ],
+    "zb_start": [
+      {
+        "text": "{pairs} pairs gone already. One Zombie left somewhere. Not me, I swear.",
+        "tone": "neutral"
+      },
+      {
+        "text": "Somebody here is holding the Zombie. Look at their face!",
+        "tone": "neutral"
+      },
+      {
+        "text": "Deal done. Somebody's poker face is about to crack.",
+        "tone": "neutral",
+        "spicy": true
+      }
+    ],
+    "zb_pair": [
+      {
+        "text": "{name} drops a pair of {rank}s. Clean.",
+        "tone": "cheer"
+      },
+      {
+        "text": "Pair of {rank}s for {name}. One step closer to safety.",
+        "tone": "cheer"
+      },
+      {
+        "text": "{name}: pair! The graveyard grows.",
+        "tone": "neutral"
+      }
+    ],
+    "zb_shuffle": [
+      {
+        "text": "{name} is shuffling… nervous ah?",
+        "tone": "tease"
+      },
+      {
+        "text": "{name} shuffles. Hiding something?",
+        "tone": "tease"
+      },
+      {
+        "text": "Shuffle, shuffle. {name} knows something we don't.",
+        "tone": "tease",
+        "spicy": true
+      },
+      {
+        "text": "Smart move, {name}. Keep them guessing.",
+        "tone": "cheer"
+      }
+    ],
+    "zb_safe": [
+      {
+        "text": "{name} is SAFE! Out of the graveyard.",
+        "tone": "cheer"
+      },
+      {
+        "text": "{name} escapes! Number {place} to safety.",
+        "tone": "cheer"
+      },
+      {
+        "text": "{name} is out. Lucky or clever? Both lah.",
+        "tone": "cheer"
+      }
+    ],
+    "zb_one_card": [
+      {
+        "text": "{name} has ONE card left!",
+        "tone": "neutral"
+      },
+      {
+        "text": "One card for {name}. So close…",
+        "tone": "cheer"
+      }
+    ],
+    "zb_two_left": [
+      {
+        "text": "Down to {a} and {b}. One of you is the Zombie.",
+        "tone": "neutral"
+      },
+      {
+        "text": "{a} vs {b}. Stare-down time.",
+        "tone": "neutral"
+      },
+      {
+        "text": "Final two: {a} and {b}. Somebody's sweating.",
+        "tone": "neutral",
+        "spicy": true
+      }
+    ],
+    "zb_lose": [
+      {
+        "text": "{name} is the ZOMBIE! Braaaains…",
+        "tone": "tease"
+      },
+      {
+        "text": "The Zombie changed hands {moves} times and stopped at {name}.",
+        "tone": "neutral"
+      },
+      {
+        "text": "{name}, the Zombie chose you. Next round, revenge!",
+        "tone": "cheer"
+      },
+      {
+        "text": "Alamak {name}, Zombie lagi!",
+        "tone": "tease",
+        "spicy": true
+      }
     ]
   },
   "l7": {
@@ -779,5 +885,50 @@
     "setupHint": "Lowest total wins. 7 = 0, A = 1, J Q K = 10.",
     "me": "Me",
     "peekMine": "👀 All my cards"
+  },
+  "zb": {
+    "title": "Zombie",
+    "setupHint": "Old Maid with a Zombie. Pairs drop by themselves. Draw from the next player, and don't be the one left holding the Zombie.",
+    "zombieCard": "The Zombie",
+    "zombie": "ZOMBIE",
+    "cards": "{n} cards",
+    "safe": "SAFE",
+    "place": "#{n}",
+    "pickFrom": "Pick a card from {name}!",
+    "picking": "{name} is picking from {from}…",
+    "pickingYou": "{name} is picking from YOU!",
+    "pickLabel": "Card {n} of {name}'s hand",
+    "pileLabel": "Graveyard, {n} pairs",
+    "position": "position {n}",
+    "yourTurn": "YOUR TURN · tap one of their cards",
+    "drawing": "Drawing…",
+    "youreSafe": "You're SAFE ({place}). Watch the Zombie hunt!",
+    "shuffle": "Shuffle",
+    "shuffleHelp": "Mix your hand so nobody knows where the Zombie is. You can also drag cards.",
+    "dealt": "Pairs drop!",
+    "gotZombie": "You got the ZOMBIE!",
+    "zombieGone": "Phew! The Zombie's gone.",
+    "youDrew": "You drew {card}",
+    "youLose": "YOU are the Zombie!",
+    "theyLose": "{name} is the Zombie!",
+    "pairsN": "{n} pairs",
+    "statMoves": "The Zombie changed hands {n} times",
+    "statDealt": "Dealt the Zombie: {name}",
+    "statHeld": "Held it longest: {name} ({n} turns)",
+    "statHot": "Hot potato: {name} (taken from them {n}×)",
+    "statPairs": "Most pairs: {name} ({n})",
+    "statDraws": "{n} draws in all",
+    "stamps": {
+      "pair": "PAIR!",
+      "safe": "SAFE!",
+      "youSafe": "YOU'RE SAFE!"
+    },
+    "help": [
+      "53 cards: the deck plus one Joker, the Zombie. Every pair of the same rank drops by itself.",
+      "On your turn, tap one face-down card of the next player. If it makes a pair, the pair drops.",
+      "The card you draw goes to the end of your hand, and the player you took it from knows. Drag cards or tap Shuffle to hide the Zombie. Others see that you shuffled.",
+      "15 seconds to pick, then the game picks for you.",
+      "Empty hand: you're SAFE. The last one holding the Zombie loses."
+    ]
   }
 }

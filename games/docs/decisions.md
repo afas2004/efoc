@@ -72,6 +72,16 @@ The spec's rules stand. Clarified with Fahmi:
 - **Crowded tables (5+ players, 18 Oct):** other seats rest as mini cards (22 px) under their name badge. The seat whose turn it is grows to the 4-player size (about 45 px; a top-row seat fits between its neighbours) and is drawn over the felt; nothing else moves. In the final reveal the seat being flipped grows. A card I J-peek at shows at the grown size for its 8 s. Targeting small seats still goes through the focus sheet. My own cards are unchanged.
 - The Jester reacts to public stories: a 7 or A thrown away, a 9 thrown when the next player is locked, a power left on Discard, a good card swapped out by mistake, revenge, grudges, halfway and the last card, close wins. It never repeats a line soon after itself.
 
+## Zombie (28 Oct)
+
+The spec's rules stand. Settled with Fahmi:
+
+- **Hiding the Zombie:** drag a card to move it, or tap **Shuffle**. Allowed any time, on anyone's turn, without using a turn. Everyone sees *that* a hand was shuffled (a 🔀 on the seat, like a real table's tell), never the new order. Bots shuffle after some draws.
+- **Pairs drop by themselves:** at the deal and after every draw, a pair glows in your hand for a moment, then drops face up to the graveyard. Pairs are by rank, any suits; the Zombie never pairs (not even with a J).
+- **Draw clock:** 15 s, then a random card is picked and stamped "Too slow!".
+- **Results:** the loser's seat is eaten by the Zombie (T4); the results list who got safe 1st, 2nd…, the loser last, plus stats: times the Zombie changed hands, who was dealt it, who held it longest, hot potato (taken from most), most pairs, draws.
+- Clarified while building: the host (seat 0) draws first; you draw from the next player clockwise still holding cards. A drawn card goes to the **end** of your hand, so the player you took it from knows where it is until you move it. The Zombie's path stays secret until the end (even the Jester doesn't know).
+
 ## Left for later (as the spec says)
 
 - Pressure-rule numbers get tuned in beta.

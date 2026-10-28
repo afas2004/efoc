@@ -10,13 +10,16 @@
 //     the relay writes them to hands/{uid}/ev/{n}, and that player's
 //     follower applies them after entry n.
 
-import { bigtwo, lucky7, type GameEvent, type GameModule, type Rng } from '@efoc/engine';
+import { bigtwo, lucky7, zombie, type GameEvent, type GameModule, type Rng } from '@efoc/engine';
 import type { Humour } from '../feel/jester';
 import { BigTwoCommentator, dwellMs as bigTwoDwell } from '../games/bigtwo/commentary';
 import { BigTwoTable } from '../games/bigtwo/table';
 import { LuckySevenCommentator } from '../games/lucky7/commentary';
 import { luckyHostOptions } from '../games/lucky7/practice';
 import { LuckySevenTable } from '../games/lucky7/table';
+import { ZombieCommentator } from '../games/zombie/commentary';
+import { zombieHostOptions } from '../games/zombie/practice';
+import { ZombieTable } from '../games/zombie/table';
 import type { HostOptions } from '../host/hostCore';
 import type { RematchInfo } from '../table/rematch';
 import { L } from '../strings';
@@ -24,7 +27,7 @@ import { arr, reviveState as reviveBigTwo } from './follower';
 import type { RoomMeta } from './protocol';
 import type { Json } from './store';
 
-export type OnlineGameId = 'bigtwo' | 'lucky7';
+export type OnlineGameId = 'bigtwo' | 'lucky7' | 'zombie';
 
 export interface TableUpdateMeta {
   deadline: number | null;
@@ -73,6 +76,8 @@ export interface NetGame {
   hostOptions(meta: RoomMeta, names: string[], rand: () => number): Omit<HostOptions, 'turnMs'>;
   /** Shape-check an intent's move before the engine sees it. */
   cleanMove(raw: unknown): unknown | null;
+  /** The move as the public log may show it (default: as it is). */
+  publicMove?(move: unknown): unknown;
   /** Each player's private fields at a snapshot. */
   handAt(state: any, seat: number): Record<string, Json>;
   mask(state: any): any;
@@ -254,6 +259,88 @@ const luckySevenGame: NetGame = {
     ) as unknown as NetTable,
 };
 
-export const NET_GAMES: Record<OnlineGameId, NetGame> = { bigtwo: bigTwoGame, lucky7: luckySevenGame };
+// -------------------------------------------------------------- Zombie
 
-export const netGame = (id: unknown): NetGame => NET_GAMES[id === 'lucky7' ? 'lucky7' : 'bigtwo'];
+type ZB = zombie.ZombieState;
+
+/** Zombie state back from the database: fill in what Firebase dropped (empty hands, nulls). */
+function reviveZombie(raw: Json, players: number): ZB {
+  const s = raw as unknown as ZB;
+  const rows = (v: unknown): string[][] => {
+    const a = arr<unknown>(v);
+    return Array.from({ length: players }, (_, i) => arr<string>(a[i]));
+  };
+  const nums = (v: unknown): number[] => {
+    const a = arr<number>(v);
+    return Array.from({ length: players }, (_, i) => a[i] ?? 0);
+  };
+  const st = s.stats as zombie.ZombieStats | null | undefined;
+  return {
+    ...s,
+    players,
+    hands: rows(s.hands),
+    dealPairs: rows(s.dealPairs),
+    pile: arr<string>(s.pile),
+    pairs: nums(s.pairs),
+    safe: arr<number>(s.safe),
+    loser: s.loser ?? null,
+    stats: st ? { moves: st.moves ?? 0, drawnFrom: nums(st.drawnFrom), held: nums(st.held), dealtTo: st.dealtTo ?? 0 } : null,
+    config: { ...zombie.defaultConfig, ...(s.config ?? {}) },
+  };
+}
+
+const zombieGame: NetGame = {
+  id: 'zombie',
+  title: () => L().zb.title,
+  felt: 'felt-zombie',
+  houseRules: false,
+  module: zombie.zombie,
+  config: () => zombie.defaultConfig,
+  hostOptions: (meta, names, rand) => {
+    const commentator = new ZombieCommentator(names, rand);
+    commentator.director.humour = meta.humour;
+    const { turnMs: _turnMs, ...rest } = zombieHostOptions(meta.turnMs, commentator);
+    return rest as Omit<HostOptions, 'turnMs'>;
+  },
+  cleanMove: (raw) => {
+    const m = raw as Record<string, unknown> | null;
+    if (!m) return null;
+    if (m.type === 'draw') {
+      const slot = int(m.slot);
+      if (slot === undefined) return null;
+      return m.shuffle === true ? { type: 'draw', slot, shuffle: true } : { type: 'draw', slot };
+    }
+    if (m.type === 'order') {
+      const cards = arr<unknown>(m.cards);
+      if (cards.length > 30 || cards.some((c) => typeof c !== 'string')) return null;
+      return { type: 'order', cards };
+    }
+    return null;
+  },
+  // Intents are read by the host only; the log never learns my new order.
+  publicMove: (m) => ((m as { type?: string } | null)?.type === 'order' ? { type: 'order' } : m),
+  handAt: (s: ZB, seat) => ({ cards: s.hands[seat]! }),
+  mask: (s: ZB) => zombie.mask(s, 'public'),
+  revive: reviveZombie,
+  loadHand: (s: ZB, seat, hand) => {
+    s.hands[seat] = arr<string>(hand?.cards);
+    return s;
+  },
+  applyEntry: (s: ZB, seat, move, events) => zombie.applyPublic(s, seat, move as { type: string; slot?: number }, events),
+  applyPrivate: (s: ZB, seat, events) => events.reduce((acc, e) => zombie.applyPrivate(acc, seat, e), s),
+  checksum: (s: ZB) => zombie.checksum(s),
+  view: (s: ZB, seat) => zombie.view(s, seat),
+  createTable: (root, me, seats, isHost, hooks, humour) =>
+    new ZombieTable(
+      root,
+      me,
+      seats,
+      isHost,
+      { move: (m) => hooks.move(m), back: () => hooks.back(), playAgain: () => hooks.playAgain(), exit: () => hooks.exit() },
+      { humour, sound: true, reducedMotion: false },
+    ) as unknown as NetTable,
+};
+
+export const NET_GAMES: Record<OnlineGameId, NetGame> = { bigtwo: bigTwoGame, lucky7: luckySevenGame, zombie: zombieGame };
+
+export const netGame = (id: unknown): NetGame => NET_GAMES[id === 'lucky7' || id === 'zombie' ? id : 'bigtwo'];

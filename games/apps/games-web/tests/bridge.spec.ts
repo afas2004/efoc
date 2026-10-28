@@ -400,3 +400,71 @@ test('after a match, players say "I\'m in" and the host sees who is in before pl
   await host.getByRole('button', { name: 'Play again' }).click();
   for (const f of [host, ann]) await expect(f.locator('.overlay.results')).toBeHidden({ timeout: 15_000 });
 });
+
+test('Zombie online on Firebase-shaped data: orders and drawn cards stay private; a player and the host reload and it finishes', async ({ page }) => {
+  test.setTimeout(300_000);
+  await openHarness(page);
+  const room = `zb-${Date.now()}`;
+  const q = 'mute=1&turn=6000&autopilot=1&migrate=600000&speed=0.15';
+  await page.evaluate(
+    ({ room, q }) => {
+      const h = (window as any).harness;
+      h.addPhone({ game: 'zombie', room, uid: 'h1', name: 'Host', avatar: '🦁', query: q, create: { groupId: 'g1', allowed: ['h1', 'a2', 'b3'] } });
+      h.addPhone({ game: 'zombie', room, uid: 'a2', name: 'Ann', avatar: '🐸', query: q });
+      h.addPhone({ game: 'zombie', room, uid: 'b3', name: 'Ben', avatar: '🐵', query: q });
+    },
+    { room, q },
+  );
+  const host = page.frameLocator('iframe').nth(0);
+  for (let i = 0; i < 3; i++) await expect(page.frameLocator('iframe').nth(i).locator('.lobby-seat')).toHaveCount(3);
+  await host.getByRole('button', { name: '+ Add bot' }).click();
+  for (let i = 0; i < 3; i++) await page.frameLocator('iframe').nth(i).getByRole('button', { name: 'Ready?' }).click();
+  await host.getByRole('button', { name: 'Start' }).click();
+  await page.frameLocator('iframe').nth(1).getByRole('button', { name: 'Shuffle' }).click();
+
+  const logLen = () => page.evaluate((room) => Object.keys((window as any).harness.read(`rooms/${room}/log`) ?? {}).length, room);
+  await expect.poll(logLen, { timeout: 120_000, intervals: [500] }).toBeGreaterThanOrEqual(8);
+  const priv = await page.evaluate((room) => {
+    const h = (window as any).harness;
+    const hands = h.read(`rooms/${room}/hands`) ?? {};
+    const out: Record<string, string[]> = {};
+    for (const [uid, v] of Object.entries(hands) as [string, any][]) out[uid] = Object.values(v.ev ?? {}).flatMap((e: any) => e.events.map((x: any) => `${x.type}:${x.to}`));
+    const log = Object.values(h.read(`rooms/${room}/log`) ?? {}) as any[];
+    const leaked = log.flatMap((e: any) => (e.events ?? []).filter((x: any) => x.to !== undefined || x.type === 'drawn_card' || x.type === 'hand'));
+    const orders = log.filter((e: any) => e.move?.type === 'order');
+    const seats = Object.values(h.read(`rooms/${room}/meta/seats`) ?? {}).map((x: any) => x.uid ?? null);
+    return { out, leaked: leaked.length, orders: orders.length, orderCards: orders.filter((e: any) => e.move.cards !== undefined).length, seats };
+  }, room);
+  expect(priv.leaked).toBe(0);
+  expect(priv.orders).toBeGreaterThanOrEqual(1);
+  expect(priv.orderCards).toBe(0);
+  for (const [uid, events] of Object.entries(priv.out)) {
+    const seat = priv.seats.indexOf(uid);
+    expect(seat).toBeGreaterThanOrEqual(0);
+    for (const e of events) expect(e.endsWith(`:${seat}`)).toBe(true);
+  }
+
+  // Ann reloads mid-game: her hand comes back in her own order.
+  await page.evaluate(({ room, q }) => {
+    const h = (window as any).harness;
+    h.dropPhone(1);
+    h.addPhone({ game: 'zombie', room, uid: 'a2', name: 'Ann', avatar: '🐸', query: q });
+  }, { room, q });
+  // Then the host's tab reloads and carries on from hostState.
+  await page.waitForTimeout(3000);
+  await page.evaluate(({ room, q }) => {
+    const h = (window as any).harness;
+    h.dropPhone(0);
+    h.addPhone({ game: 'zombie', room, uid: 'h1', name: 'Host', avatar: '🦁', query: q });
+  }, { room, q });
+
+  const phones = [0, 1, 2].map((i) => page.frameLocator('iframe').nth(i));
+  for (const f of phones) await expect(f.locator('.overlay.results')).toBeVisible({ timeout: 240_000 });
+  const lost = await Promise.all(phones.map((f) => f.locator('.zb-standings .standing.zb-lost .who').textContent()));
+  // Same loser everywhere ("You" on the loser's own phone).
+  expect(lost.filter((w) => w?.includes('You')).length).toBeLessThanOrEqual(1);
+  expect(new Set(lost.filter((w) => !w?.includes('You'))).size).toBe(1);
+  const st = await page.evaluate(() => [...document.querySelectorAll('iframe')].map((f) => (f.contentWindow as any).__room?.status()));
+  expect(st.map((s: any) => s.drift)).toEqual([0, 0, 0]);
+  expect(await page.evaluate(() => (window as any).harness.errors)).toEqual([]);
+});

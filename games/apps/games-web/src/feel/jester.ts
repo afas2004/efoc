@@ -77,6 +77,13 @@ const STYLE: Record<string, { mood: Mood; emoji: string | null }> = {
   l7_close: { mood: 'shock', emoji: 'explode' },
   l7_win: { mood: 'cheer', emoji: 'party' },
   l7_zero: { mood: 'shock', emoji: 'party' },
+  zb_start: { mood: 'smug', emoji: 'cool' },
+  zb_pair: { mood: 'talk', emoji: null },
+  zb_shuffle: { mood: 'laugh', emoji: 'eyeroll' },
+  zb_safe: { mood: 'cheer', emoji: 'party' },
+  zb_one_card: { mood: 'shock', emoji: 'scream' },
+  zb_two_left: { mood: 'shock', emoji: 'fire' },
+  zb_lose: { mood: 'laugh', emoji: 'laugh' },
   cheer: { mood: 'cheer', emoji: null },
 };
 

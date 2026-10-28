@@ -80,7 +80,8 @@ export class HostRelay {
     const priv = e.events.filter((x) => x.to !== undefined);
     const entry: Entry = {
       seat: e.seat,
-      move: e.move as unknown as Json,
+      // A move's private part (a Zombie reorder's cards) never enters the log.
+      move: (this.game.publicMove ? this.game.publicMove(e.move) : e.move) as unknown as Json,
       events: pub as unknown as Json[],
       deadline: e.deadline,
       afk: this.host.afk.slice(),

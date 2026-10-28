@@ -68,7 +68,7 @@ export async function createRoom(store: RoomStore, room: string, me: Me, c: Crea
     humour: 'spicy',
     bots: [],
     createdAt: store.now(),
-    turnMs: c.turnMs ?? 20_000,
+    turnMs: c.turnMs ?? (c.gameId === 'zombie' ? 15_000 : 20_000),
     migrateAfterMs: c.migrateAfterMs ?? 60_000,
     previewMs: c.previewMs ?? 15_000,
   };

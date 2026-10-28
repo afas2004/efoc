@@ -1958,3 +1958,261 @@ table.stats tr.me {
 .l7-card[data-peek-left] {
   box-shadow: 0 0 0 3px var(--info), 0 0 22px rgba(59, 130, 246, 0.9);
 }
+
+/* ============================================================= Zombie */
+/* A graveyard green felt; the hand being drawn from spreads big in the
+   middle; the Zombie card grins; the loser's seat gets eaten. */
+
+.felt-zombie {
+  background: radial-gradient(ellipse at 50% 40%, #2f4a1e 0%, #1c3312 55%, #0d1a08 100%);
+}
+.zb-felt {
+  position: absolute;
+  left: 3%;
+  right: 3%;
+  top: 2%;
+  bottom: 16%;
+  border-radius: 46% / 40%;
+  background: radial-gradient(ellipse at 50% 45%, rgba(163, 230, 53, 0.08), rgba(0, 0, 0, 0.25) 75%);
+  box-shadow: inset 0 0 0 6px rgba(76, 52, 28, 0.6), inset 0 0 50px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+}
+.zb-stage {
+  position: absolute;
+}
+.zb-stage-label {
+  position: absolute;
+  left: 4px;
+  top: 4px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.6);
+  right: 4px;
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.15;
+  text-align: center;
+  max-height: 40px;
+  overflow: hidden;
+}
+.zb-stage-label:empty {
+  display: none;
+}
+.zb-stage-label.mine {
+  background: var(--turn);
+  color: #052e16;
+  font-size: 15px;
+}
+.zb-stage-label.danger {
+  background: var(--danger);
+  color: #fff;
+  animation: turn-pulse 1s ease-in-out infinite;
+}
+.zb-pick {
+  position: absolute;
+  padding: 0;
+  border: 0;
+  background: none;
+  border-radius: 10%;
+  transform-origin: 50% 100%;
+  transition: translate 160ms ease-out, filter 160ms;
+  cursor: default;
+}
+.zb-pick .back {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 10%;
+  background-size: 100% 100%;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.45);
+}
+.zb-pick.pickable {
+  cursor: pointer;
+}
+.zb-pick.pickable .back {
+  box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.9), 0 4px 10px rgba(0, 0, 0, 0.45);
+}
+.zb-pick.pickable:hover,
+.zb-pick.pickable:focus-visible {
+  translate: 0 -14px;
+}
+.zb-pick.lifted {
+  translate: 0 -22px;
+  filter: brightness(1.15);
+}
+.zb-pile {
+  position: absolute;
+  border-radius: 10%;
+  background: rgba(0, 0, 0, 0.25);
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.12);
+}
+.zb-pile .card {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  transform: rotate(-6deg);
+  transition: none;
+}
+.zb-pile .card .idx {
+  font-size: calc(var(--card-w) * 0.2);
+}
+.zb-pile-label {
+  position: absolute;
+  left: 50%;
+  bottom: -14px;
+  transform: translateX(-50%);
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #0f172a;
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+.zb-hand-note {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  border-radius: 16px;
+  background: rgba(15, 23, 42, 0.5);
+  font-weight: 800;
+  text-align: center;
+  padding: 8px;
+}
+.zb-prompt.zb-danger {
+  background: var(--danger);
+  color: #fff;
+}
+.card.zb-mine {
+  cursor: grab;
+}
+.card.zb-mine.dragging {
+  cursor: grabbing;
+}
+.card.zb-fresh {
+  box-shadow: 0 0 0 3px var(--info), 0 0 18px rgba(59, 130, 246, 0.8);
+}
+.card.zb-fresh::after {
+  content: 'NEW';
+  position: absolute;
+  right: -4px;
+  top: -10px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--info);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 900;
+}
+.card.zb-paired {
+  box-shadow: 0 0 0 3px var(--good), 0 0 22px rgba(250, 204, 21, 0.9);
+  animation: zb-glow 600ms ease-in-out infinite alternate;
+}
+@keyframes zb-glow {
+  to { filter: brightness(1.25); }
+}
+.card.zb-shiver {
+  animation: zb-shiver 900ms ease-in-out infinite;
+}
+@keyframes zb-shiver {
+  0%, 100% { translate: 0 0; }
+  25% { translate: 0 -3px; }
+  75% { translate: 0 1px; }
+}
+.zb-zombie-card {
+  background: radial-gradient(circle at 50% 40%, #bef264 0%, #4d7c0f 70%, #1a2e05 100%) !important;
+  color: #1a2e05;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  box-shadow: 0 0 0 2px #1a2e05 inset, 0 2px 0 rgba(0, 0, 0, 0.18), 0 4px 10px rgba(0, 0, 0, 0.25);
+}
+.zb-z-face {
+  font-size: calc(var(--card-w) * 0.62);
+  line-height: 1;
+  filter: drop-shadow(0 2px 0 rgba(0, 0, 0, 0.35));
+}
+.zb-z-word {
+  font-size: calc(var(--card-w) * 0.15);
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  color: #ecfccb;
+  text-shadow: 0 1px 0 #1a2e05;
+}
+.zb-fly-face {
+  position: absolute !important;
+  inset: 0;
+  width: 100% !important;
+  height: 100% !important;
+  transform: none !important;
+}
+.zb-wobble {
+  border-radius: 10%;
+  background-size: 100% 100%;
+  box-shadow: 0 0 0 3px var(--danger), 0 12px 24px rgba(0, 0, 0, 0.5);
+}
+.zb-seat {
+  transition: transform 220ms var(--spring), background 200ms;
+}
+.zb-seat.zb-drawing {
+  transform: scale(1.08);
+  z-index: 3;
+}
+.zb-seat.zb-target {
+  box-shadow: 0 0 0 2px var(--danger);
+}
+.zb-seat.turn.zb-target {
+  box-shadow: 0 0 0 2px var(--turn);
+}
+.zb-seat .zb-eat {
+  position: absolute;
+  inset: -6px;
+  display: none;
+  place-items: center;
+  font-size: 40px;
+}
+.zb-seat.zb-eaten .zb-eat {
+  display: grid;
+}
+.zb-seat.zb-eaten .face {
+  opacity: 0.15;
+}
+.zb-seat.zb-eaten {
+  background: rgba(77, 124, 15, 0.55);
+  box-shadow: 0 0 0 2px #a3e635;
+}
+.zb-chomp {
+  position: absolute;
+  font-size: 120px;
+  line-height: 1;
+  transform: translate(-50%, -50%);
+  filter: drop-shadow(0 6px 12px rgba(0, 0, 0, 0.6));
+  pointer-events: none;
+}
+.reduced-motion .zb-chomp {
+  animation: stamp-fade 2400ms ease forwards;
+}
+.zb-results-sub {
+  margin: -4px 0 10px;
+  font-size: 20px;
+  font-weight: 900;
+  color: #bef264;
+}
+.standing.zb-lost {
+  background: rgba(77, 124, 15, 0.45);
+  box-shadow: 0 0 0 2px #a3e635;
+}
+.zb-stats {
+  margin: 12px 0 4px;
+  padding-left: 20px;
+  font-size: 15px;
+  color: var(--ink-dim);
+}
+.zb-stats li {
+  margin: 2px 0;
+}
+.zb-shuffle {
+  font-size: 18px;
+}
