@@ -14,6 +14,7 @@ export default defineConfig({
         index: resolve(__dirname, 'index.html'),
         bigtwo: resolve(__dirname, 'bigtwo/index.html'),
         lucky7: resolve(__dirname, 'lucky7/index.html'),
+        zombie: resolve(__dirname, 'zombie/index.html'),
       },
     },
   },
