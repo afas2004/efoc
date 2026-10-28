@@ -32,9 +32,10 @@ const List<GameInfo> kGames = [
       ready: true),
   GameInfo('lucky7', 'Lucky 7', '🍀', '2–8 players · lowest hidden total wins',
       ready: true),
+  GameInfo('zombie', 'Zombie', '🧟', '2–8 players · last one holding the Zombie loses',
+      ready: true),
   GameInfo('hearts', 'Hearts', '♥️', 'Coming soon'),
   GameInfo('21', '21', '🎰', 'Coming soon'),
-  GameInfo('zombie', 'Zombie', '🧟', 'Coming soon'),
 ];
 
 /// Seat avatars in the table are emoji (the rules cap them at 16 chars),
