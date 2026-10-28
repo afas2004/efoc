@@ -51,6 +51,22 @@ class ClipService {
 
   // ---------- upload ----------
 
+  /// How long after an hour ends a clip can still be sent for it, so a
+  /// take started at 3:59 isn't lost at 4:00. The clips_hour_open trigger
+  /// in supabase/migrations enforces the same window server-side.
+  static const hourGrace = Duration(minutes: 5);
+
+  /// The day [hour]'s slot belongs to if it can still take a clip at [now]:
+  /// the current hour, or the one just ended while inside [hourGrace].
+  /// Null once the slot has closed (or for a future hour).
+  static DateTime? openSlotDay(int hour, [DateTime? now]) {
+    final t = now ?? DateTime.now();
+    if (hour == t.hour) return t;
+    final graced = t.subtract(hourGrace);
+    if (hour == graced.hour) return graced;
+    return null;
+  }
+
   Future<void> uploadClip({
     required String filePath,
     required String groupId,
@@ -72,8 +88,10 @@ class ClipService {
     final Uint8List bytes = await _readFileBytes(filePath);
     final ext = _extFor(filePath, mimeType);
 
-    final now = DateTime.now();
-    final dateStr = _dateString(now);
+    // Dated by the slot's own day, so 11 PM sent at 12:03 AM stays yesterday.
+    final slotDay = openSlotDay(hour);
+    if (slotDay == null) throw const HourClosedException();
+    final dateStr = _dateString(slotDay);
     final hourStr = hour.toString().padLeft(2, '0');
     final storagePath = '$groupId/$userId/$hourStr-$dateStr.$ext';
 
@@ -278,4 +296,12 @@ class ClipService {
     final day = d.day.toString().padLeft(2, '0');
     return '$y-$m-$day';
   }
+}
+
+/// Thrown when a clip is sent for an hour that is no longer open.
+class HourClosedException implements Exception {
+  const HourClosedException();
+
+  @override
+  String toString() => 'That hour has closed';
 }
