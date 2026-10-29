@@ -7,7 +7,7 @@ import { apply, applyPrivate, applyPublic, checksum, HIDDEN, legalMoves, mask, p
 
 const rng = createRng(1);
 
-/** A table mid-game with chosen hands: seat 0 to draw from seat 1. */
+/** A table mid-game with chosen hands: seat 0 to draw from the last seat. */
 function table(hands: string[], over: Partial<ZombieState> = {}): ZombieState {
   const h = hands.map((x) => (x ? x.split(' ') : []));
   return {
@@ -54,30 +54,30 @@ describe('deal', () => {
     expect(r.state.step).toBe('draw');
     expect(r.state.turn).toBe(0);
     expect(r.events.map((e) => e.type)).toEqual(['pair', 'turn', 'shuffled', 'hand']);
-    expect(r.events.find((e) => e.type === 'hand')).toMatchObject({ to: 1 });
+    expect(r.events.find((e) => e.type === 'hand')).toMatchObject({ to: 2 }); // the player before the host
     expect(validate(s, 1, { type: 'throw' }).ok).toBe(false); // no pairs
   });
 });
 
 describe('a turn', () => {
-  it('point at a card (everyone sees which), then draw it: it goes to the end of my hand', () => {
-    const s = table(['3d 4d', '5s 6s 7s', '8h 9h']);
+  it('point at a card (everyone sees which), then draw it into my hand', () => {
+    const s = table(['3d 4d', '8h 9h', '5s 6s 7s']);
     const aimed = apply(s, 0, { type: 'aim', slot: 2 }, rng);
     expect(aimed.state.aim).toBe(2);
-    expect(aimed.events).toEqual([{ type: 'aim', seat: 0, from: 1, slot: 2 }]);
+    expect(aimed.events).toEqual([{ type: 'aim', seat: 0, from: 2, slot: 2 }]);
     expect(aimed.state.turn).toBe(0);
     const { state, events } = apply(aimed.state, 0, { type: 'draw', slot: 1 }, rng);
-    expect(state.hands[0]).toEqual(['3d', '4d', '6s']);
-    expect(events.find((e) => e.type === 'drew')).toEqual({ type: 'drew', seat: 0, from: 1, slot: 1, pair: false });
+    expect(state.hands[0]!.slice().sort()).toEqual(['3d', '4d', '6s']); // then shuffled: I'm picked from next
+    expect(events.find((e) => e.type === 'drew')).toEqual({ type: 'drew', seat: 0, from: 2, slot: 1, pair: false });
     expect(events.find((e) => e.type === 'drawn_card')).toMatchObject({ to: 0, card: '6s' });
-    // Seat 1 draws next, from seat 2's hand, shuffled for it.
+    // The turn moves on: seat 1 draws next, from me (the one who just picked), my hand shuffled for it.
     expect(state.turn).toBe(1);
     expect(state.aim).toBeNull();
-    expect(events.find((e) => e.type === 'shuffled')).toEqual({ type: 'shuffled', seat: 2, auto: true });
+    expect(events.find((e) => e.type === 'shuffled')).toEqual({ type: 'shuffled', seat: 0, auto: true });
   });
 
   it('a draw that makes a pair waits for me to throw it; then the next player draws', () => {
-    const s = table(['3d 4d', '4s 6s', '8h']);
+    const s = table(['3d 4d', '8h', '4s 6s']);
     const r = apply(s, 0, { type: 'draw', slot: 0 }, rng);
     expect(r.state.step).toBe('throw');
     expect(r.state.turn).toBe(0);
@@ -91,20 +91,20 @@ describe('a turn', () => {
   });
 
   it('empty hands are safe and skipped; the last one holding the Zombie loses', () => {
-    let s = table(['3d', '3s JK', '9c']);
+    let s = table(['3d', '9c', '3s JK']);
     s = apply(s, 0, { type: 'draw', slot: 0 }, rng).state;
     s = apply(s, 0, { type: 'throw' }, rng).state; // seat 0 pairs out: safe
     expect(s.safe).toEqual([0]);
     expect(s.turn).toBe(1);
-    const r = apply(s, 1, { type: 'draw', slot: 0 }, rng); // seat 1 takes seat 2's last card
+    const r = apply(s, 1, { type: 'draw', slot: 0 }, rng); // seat 0 is out, so seat 1 takes seat 2's last card
     expect(r.state.phase).toBe('over');
     expect(r.state.loser).toBe(1);
     expect(result(r.state)).toEqual({ points: [0, 1, 0], placings: [0, 2, 1] });
-    expect(r.events.find((e) => e.type === 'zombie_loser')).toEqual({ type: 'zombie_loser', seat: 1, hand: ['JK', '9c'] });
+    expect(r.events.find((e) => e.type === 'zombie_loser')).toEqual({ type: 'zombie_loser', seat: 1, hand: ['9c', 'JK'] });
   });
 
   it('only the player to move aims or draws, only a slot that exists', () => {
-    const s = table(['3d', '5s 6s', '8h']);
+    const s = table(['3d', '8h', '5s 6s']);
     expect(validate(s, 1, { type: 'draw', slot: 0 })).toEqual({ ok: false, reason: 'Not your turn' });
     expect(validate(s, 0, { type: 'aim', slot: 2 }).ok).toBe(false);
     expect(validate(s, 0, { type: 'draw', slot: 1 }).ok).toBe(true);
@@ -122,19 +122,23 @@ describe('hidden cards', () => {
     expect(checksum(m)).toBe(checksum(s));
   });
 
-  it("a phone follows the log: the drawer learns its card privately, the giver's copy just loses it, the next target gets its new order", () => {
-    const s = table(['3d 4d', '5s JK', '8h 9h']);
+  it("a phone follows the log: the drawer learns its card privately, then its hand's new order (it's picked from next); the giver's copy just loses it", () => {
+    const s = table(['3d 4d', '8h 9h', '5s JK']);
     const { state, events } = apply(s, 0, { type: 'draw', slot: 1 }, rng);
     const pub = events.filter((e) => e.to === undefined);
     let me = applyPublic(mask(s, 0), 0, { type: 'draw', slot: 1 }, pub);
     expect(me.hands[0]).toEqual(['3d', '4d', HIDDEN]);
-    for (const e of events.filter((x) => x.to === 0)) me = applyPrivate(me, 0, e);
+    const mine = events.filter((x) => x.to === 0);
+    expect(mine.map((e) => e.type)).toEqual(['drawn_card', 'hand']);
+    me = applyPrivate(me, 0, mine[0]!);
     expect(me.hands[0]).toEqual(['3d', '4d', 'JK']);
-    const giver = applyPublic(mask(s, 1), 0, { type: 'draw', slot: 1 }, pub);
-    expect(giver.hands[1]).toEqual(['5s']);
-    let next = applyPublic(mask(s, 2), 0, { type: 'draw', slot: 1 }, pub);
-    for (const e of events.filter((x) => x.to === 2)) next = applyPrivate(next, 2, e);
-    expect(next.hands[2]).toEqual(state.hands[2]);
+    me = applyPrivate(me, 0, mine[1]!);
+    expect(me.hands[0]).toEqual(state.hands[0]);
+    expect(me.hands[0]!.slice().sort()).toEqual(['3d', '4d', 'JK']);
+    const giver = applyPublic(mask(s, 2), 0, { type: 'draw', slot: 1 }, pub);
+    expect(giver.hands[2]).toEqual(['5s']);
+    const next = applyPublic(mask(s, 1), 0, { type: 'draw', slot: 1 }, pub);
+    expect(events.some((x) => x.to === 1)).toBe(false);
     for (const c of [me, giver, next]) expect(checksum(c)).toBe(checksum(state));
   });
 });
@@ -156,7 +160,7 @@ describe('bots', () => {
       expect(result(s)!.placings.slice().sort()).toEqual(Array.from({ length: players }, (_, i) => i));
       expect(s.hands[s.loser!]).toEqual([ZOMBIE]);
     }
-    const aimed = apply(table(['3d', '5s 6s 7s', '8h']), 0, { type: 'aim', slot: 2 }, rng).state;
+    const aimed = apply(table(['3d', '8h', '5s 6s 7s']), 0, { type: 'aim', slot: 2 }, rng).state;
     expect(bot(view(aimed, 0), 'easy', rng)).toEqual({ type: 'draw', slot: 2 });
   });
 });

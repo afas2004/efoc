@@ -78,7 +78,7 @@ for (const players of [2, 4, 6, 8]) {
     await page.waitForTimeout(300);
     const b = await tableBoxes(page);
     expect(layoutProblems(b)).toEqual([]);
-    expect(b.picks.length).toBe(await host(page, 'h.state.hands[h.state.hands.findIndex((x, i) => i > 0 && x.length)].length'));
+    expect(b.picks.length).toBe(await host(page, 'h.state.hands[h.game.view(h.state, 0).from].length'));
     // The two in the exchange are expanded; everyone else rests.
     expect(b.badges.filter((x) => x.active).map((x) => x.seat)).toEqual([String(await host(page, 'h.game.view(h.state, 0).from'))]);
     expect(errs).toEqual([]);
@@ -141,7 +141,7 @@ test('the deal: my pairs glow; tap one to throw it, then Throw all; nothing move
   expect(errs).toEqual([]);
 });
 
-test('my pick: tap a card to point at it (it lifts, the host knows), tap it again to take it; it lands at the end of my hand', async ({ page }) => {
+test('my pick: tap a card to point at it (it lifts, the host knows), tap it again to take it; then my hand is shuffled, as I am picked from next', async ({ page }) => {
   const errs = errorsOf(page);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`/zombie/?players=3&seed=2&turn=60000&${FAST}`);
@@ -157,8 +157,9 @@ test('my pick: tap a card to point at it (it lifts, the host knows), tap it agai
   await page.getByRole('button', { name: /Take it/ }).click();
   const taken = before.theirs[0]!;
   await expect.poll(() => host(page, `h.state.hands[0].includes("${taken}")`)).toBe(true);
+  // Unless I made a pair to throw, the turn moves on to the next player, who picks from me.
+  expect(await host(page, 'h.state.step === "throw" ? "throw" : [h.state.turn, h.game.view(h.state, h.state.turn).from]')).toEqual(await host(page, 'h.state.step === "throw" ? "throw" : [1, 0]'));
   const mine: string[] = await host(page, 'h.state.hands[0].slice()');
-  expect(mine[mine.length - 1]).toBe(taken);
   await expect.poll(() => page.locator('.zb-hand .zb-mine-wrap').evaluateAll((els) => (els as HTMLElement[]).sort((a, b) => Number(a.style.zIndex) - Number(b.style.zIndex)).map((e) => e.dataset.card))).toEqual(mine);
   expect(errs).toEqual([]);
 });
