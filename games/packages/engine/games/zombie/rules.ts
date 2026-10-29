@@ -148,8 +148,20 @@ export function nextIn(s: ZombieState, seat: SeatId): SeatId {
   return seat;
 }
 
-/** Whose hand `seat` draws from on its turn. */
-export const targetOf = (s: ZombieState, seat: SeatId): SeatId => nextIn(s, seat);
+/** The nearest seat before `seat` still holding cards. */
+export function prevIn(s: ZombieState, seat: SeatId): SeatId {
+  for (let k = 1; k <= s.players; k++) {
+    const i = (seat - k + s.players) % s.players;
+    if (s.hands[i]!.length > 0) return i;
+  }
+  return seat;
+}
+
+/**
+ * Whose hand `seat` draws from on its turn: the player before it. The turn
+ * then moves on, so whoever just picked is the next one picked from.
+ */
+export const targetOf = (s: ZombieState, seat: SeatId): SeatId => prevIn(s, seat);
 
 export function legalMoves(state: ZombieState, seat: SeatId): ZombieMove[] {
   if (state.phase !== 'play') return [];

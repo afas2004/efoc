@@ -869,7 +869,7 @@
   },
   "zb": {
     "title": "Zombie",
-    "setupHint": "Old Maid with a Zombie. Throw your pairs, pick from the next player, and don't be the one left holding the Zombie.",
+    "setupHint": "Old Maid with a Zombie. Throw your pairs, pick from the player before you, and don't be the one left holding the Zombie.",
     "zombieCard": "The Zombie",
     "zombie": "ZOMBIE",
     "cards": "{n} cards",

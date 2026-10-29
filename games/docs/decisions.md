@@ -82,7 +82,7 @@ The spec's rules stand. Settled with Fahmi (first build, then his playtest the s
 - **Pick with a confirm:** tap a card to point at it (everyone sees it lift, its holder too), then tap it again or **Take it**. 15 s; at zero the card pointed at is taken, or a random one.
 - **Throwing is manual:** pairs glow; tap one to throw it. At the deal everyone throws at once on one 20 s clock, with a **Throw all** button. A pair made by a draw has 10 s. At zero the game throws for you. **Auto-throw** in the menu throws for you every time. A pair flies to its exact place on the pile and stays there.
 - **Results:** the loser's seat is eaten by the Zombie (T4); the results list who got safe 1st, 2nd…, the loser last, plus the Zombie's story: times it changed hands, who was dealt it, who held it longest, hot potato (taken from most), most pairs, draws.
-- The host (seat 0) draws first; you draw from the next player clockwise still holding cards; a drawn card goes to the end of your hand. Pairs are by rank, any suits; the Zombie never pairs, not even with a J. The Zombie's path stays secret until the end (even the Jester doesn't know).
+- The host (seat 0) draws first; you draw from the player before you (counter-clockwise) still holding cards, then the turn moves clockwise, so the one who just picked is the next one picked from (Fahmi, 29 Oct); a drawn card goes to the end of your hand, and your hand is shuffled before the next player draws from it. Pairs are by rank, any suits; the Zombie never pairs, not even with a J. The Zombie's path stays secret until the end (even the Jester doesn't know).
 
 ## Left for later (as the spec says)
 
